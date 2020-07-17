@@ -1,0 +1,59 @@
+{
+   "MyPath": "C:\\Users\\Maurice\\Documents\\MATLAB\\ExploreASL-Feature-4_SiemensImport",
+   "name": "asasdasdasdasdasdasd",
+   "D": {
+      "ROOT": "C:\\Users\\Maurice\\PycharmProjects\\Deep_Learning\\ExploreASL_GUI"
+   },
+   "subject_regexp": "\\d+",
+   "SESSIONS": [
+      "ASL_1"
+   ],
+   "session": {
+      "options": [
+         "Night",
+         "Day"
+      ]
+   },
+   "exclusion": [],
+   "M0_conventionalProcessing": 0,
+   "M0": "separate_scan",
+   "M0_GMScaleFactor": 1,
+   "M0PositionInASL4D": 1,
+   "readout_dim": "3D",
+   "Vendor": "Siemens",
+   "Sequence": "3D_Spiral",
+   "Quality": 1,
+   "DELETETEMP": 1,
+   "SPIKE_REMOVAL": 1,
+   "SpikeRemovalThreshold": "asdadadadasdasda",
+   "SkipIfNoFlair": 0,
+   "SkipIfNoM0": 0,
+   "SkipIfNoASL": 1,
+   "T1_DARTEL": 1,
+   "PWI_DARTEL": 0,
+   "BILAT_FILTER": 0,
+   "motion_correction": 1,
+   "SegmentSPM12": 0,
+   "bRegistrationContrast": 2,
+   "bAffineRegistration": 2,
+   "bRegisterM02ASL": 1,
+   "bUseMNIasDummyStructural": 0,
+   "ApplyQuantification": [
+      1,
+      1,
+      0,
+      0,
+      1
+   ],
+   "Q": {
+      "BackGrSupprPulses": 2,
+      "LabellingType": "PASL",
+      "Initial_PLD": "werwerwr",
+      "LabellingDuration": "4564564tgdfdfgdf",
+      "SliceReadoutTime": "asdasdasd",
+      "Lambda": 0.9,
+      "T2art": 50,
+      "TissueT1": 1240,
+      "nCompartments": 1
+   }
+}
