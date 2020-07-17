@@ -14,13 +14,4 @@ def infer_regex(items: list):
 
 
 if __name__ == '__main__':
-    x = infer_regex(['Report 4 Health',
-                     'Report 3 Health',
-                     'Report 2 Takeout',
-                     'Report 2 Health',
-                     'C9ORF033_13',
-                     'GRN271_11',
-                     'GRN274_11',
-                     "Population",
-                     'C9ORF033_12'])
-    print(x)
+    print("foobar")

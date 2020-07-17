@@ -1,3 +1,6 @@
 {
- "ExploreASLRoot": "C:/Users/Maurice/Documents/MATLAB/ExploreASL-Feature-4_SiemensImport"
+ "ExploreASLRoot": "C:/Users/Maurice/Documents/MATLAB/ExploreASL-Feature-4_SiemensImport",
+ "DefaultRootDir": "C:\\Users\\Maurice\\PycharmProjects\\Deep_Learning\\ExploreASL_GUI",
+ "DefaultNavigatorRoot": "C:\\Users\\Maurice\\PycharmProjects\\Deep_Learning\\ExploreASL_GUI",
+ "DeveloperMode": false
 }

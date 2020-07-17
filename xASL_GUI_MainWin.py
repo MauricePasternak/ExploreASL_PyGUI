@@ -31,12 +31,12 @@ from platform import platform
 
 class xASL_MainWin(QMainWindow):
     def __init__(self, config=None):
+        super().__init__()
         # Load in the master config file if it exists; otherwise, make it
         if config is None:
-            self.get_config()
+            self.load_config()
         else:
             self.config = config
-        super().__init__()
         # Window Size and initial visual setup
         self.setMinimumSize(1080, 480)
         self.cw = QWidget(self)
@@ -63,7 +63,7 @@ class xASL_MainWin(QMainWindow):
         # Initialize the navigator and essential characteristics
         self.dock_navigator = QDockWidget("Explore ASL Navigator", self)
         self.dock_navigator.setFeatures(QDockWidget.AllDockWidgetFeatures)
-        self.dock_navigator.setMinimumSize(360, 480)
+        self.dock_navigator.setMinimumSize(480, 480)
         self.dock_navigator.setWindowIcon(self.icon_main)
         # The main container and the main layout of the dock
         self.cont_navigator = QWidget(self.dock_navigator)
@@ -87,19 +87,34 @@ class xASL_MainWin(QMainWindow):
         self.hlay_currentanalysis_dir.addWidget(self.btn_currentanalysis_dir)
         self.formlay_navigator.addRow("Explore ASL Directory", self.hlay_exploreasl_dir)
         self.formlay_navigator.addRow("Current Analysis Directory", self.hlay_currentanalysis_dir)
+        # Next, the main player will be a treeview with a FileSystemModel
+        self.treev_navigator = QTreeView(self.cont_navigator)
+        self.filemodel_navigator = QFileSystemModel(self.cont_navigator)
+        self.filemodel_navigator.setRootPath(self.config["DefaultRootDir"])
+        self.treev_navigator.setModel(self.filemodel_navigator)
+        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(self.config["DefaultNavigatorRoot"]))
+        self.treev_navigator.header().resizeSection(0, 250)
+        self.treev_navigator.setDragEnabled(True)
+        self.treev_navigator.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.treev_navigator.setSortingEnabled(True)
+        self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
         # Add all essential widgets to the dock's main layout
         self.vlay_navigator.addLayout(self.formlay_navigator)
+        self.vlay_navigator.addWidget(self.treev_navigator)
+        # self.vlay_navigator.addWidget(QPushButton("Click Me", self.cont_navigator, clicked=self.change_dir))
 
     # Setup the standard Menu
     def UI_Setup_MenuBar(self):
         # Main menubar and main submenus setup
         self.menubar_main = QMenuBar(self)
-        menu_names = ["File", "Edit", "Settings"]
-        self.menu_file, self.menu_edit, self.menu_settings = [self.menubar_main.addMenu(name) for name in menu_names]
+        menu_names = ["File", "Edit", "Settings", "About"]
+        self.menu_file, self.menu_edit, self.menu_settings, self.menu_about = [self.menubar_main.addMenu(name) for name
+                                                                               in menu_names]
         # Setup the actions of the File menu
         self.menu_file.addAction("Show Navigator", self.dock_navigator.show)
         self.menu_file.addAction("Save Master Config", self.save_config)
         self.menu_file.addAction("Select Analysis Directory", self.set_analysis_dir)
+        self.menu_file.addAction("About ExploreASL", self.show_AboutExploreASL)
         # Setup the actions of the Edit menu
         # Setup the actions of the Settings menu
         self.setMenuBar(self.menubar_main)
@@ -157,30 +172,28 @@ class xASL_MainWin(QMainWindow):
     def show_PostAnalysis(self):
         pass
 
-    # Convenience function for saving to the master configuration file; accepts argument to save in a different
-    # master configuration file (for developers flexibility; not for regular users)
-    def save_config(self, other_config=None):
-        if other_config is None:
-            with open("ExploreASL_GUI_masterconfig.json", "w") as w:
-                json.dump(self.config, w, indent=1)
-        else:
-            with open(other_config, "w") as w:
-                json.dump(self.config, w, indent=1)
+    # Launch the "About Explore ASL" window
+    def show_AboutExploreASL(self):
+        pass
+
+    # Convenience function for saving to the master configuration file
+    def save_config(self):
+        with open("ExploreASL_GUI_masterconfig.json", "w") as w:
+            json.dump(self.config, w, indent=1)
 
     # Convenience function for retrieving the master configuration file; accepts argument to load in a different
     # master configuration file (for future developers' flexibility; not for regular users)
-    def load_config(self, other_config):
-        if other_config is None:
-            if os.path.exists(os.path.join(os.getcwd(), "ExploreASL_GUI_masterconfig.json")):
-                with open("ExploreASL_GUI_masterconfig.json", 'r') as f:
-                    self.config = json.load(f)
-            else:
-                self.config = {"ExploreASLRoot": "",
-                               "DeveloperMode": False}
-                self.save_config(self.other_config)
-        else:
-            with open(other_config, 'r') as f:
+    def load_config(self):
+        if os.path.exists(os.path.join(os.getcwd(), "ExploreASL_GUI_masterconfig.json")):
+            with open("ExploreASL_GUI_masterconfig.json", 'r') as f:
                 self.config = json.load(f)
+        # First time startup
+        else:
+            self.config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
+                           "DefaultRootDir": f"{os.getcwd()}",  # The default root for the navigator to watch from
+                           "DefaultNavigatorRoot": f"{os.getcwd()}",  # The default starting node for the file navigator
+                           "DeveloperMode": False}  # Whether to launch the app in developer mode or not
+            self.save_config()
 
     # Sets the analysis directory the user is interested in
     def set_analysis_dir(self):
@@ -191,7 +204,11 @@ class xASL_MainWin(QMainWindow):
         if result:
             if '/' in result and platform() == "Windows":
                 result = result.replace("/", "\\")
+            # Change the display and have the navigator adjust according
             self.le_currentanalysis_dir.setText(result)
+            self.filemodel_navigator.setRootPath(result)
+            self.treev_navigator.setRootIndex(self.filemodel_navigator.index(result))
+            self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
 
     # Sets the ExploreASL directory of the user and updates the config to reflect the change
     def set_exploreasl_dir(self):
@@ -206,12 +223,19 @@ class xASL_MainWin(QMainWindow):
             self.config["ExploreASLRoot"] = result
             self.save_config()
 
+    def change_dir(self):
+        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(self.config["DefaultNavigatorRoot"]))
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    with open("ExploreASL_GUI_masterconfig.json") as reader:
-        master_config = json.load(reader)
-    main_win = xASL_MainWin(master_config)
+    # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
+    if os.path.exists(os.path.join(os.getcwd(), "ExploreASL_GUI_masterconfig.json")):
+        with open("ExploreASL_GUI_masterconfig.json") as reader:
+            master_config = json.load(reader)
+            main_win = xASL_MainWin(master_config)
+    else:
+        main_win = xASL_MainWin(None)
     main_win.show()
     sys.exit(app.exec())
