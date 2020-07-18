@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from xASL_GUI_ParmsMaker import xASL_ParmsMaker, DirectoryDragDrop_ListWidget
+from xASL_GUI_Executor import xASL_Executor
 import os
 import sys
 import json
@@ -56,7 +57,8 @@ class xASL_MainWin(QMainWindow):
         self.UI_Setup_Connections()
 
         # Pre-initialize the main players
-        self.parmsmaker = xASL_ParmsMaker(self, self.config)
+        self.parmsmaker = xASL_ParmsMaker(self)
+        self.executor = xASL_Executor(self)
 
     # This dockable navigator will contain the most essential parameters and will be repeatedly accessed by other
     # subwidgets within the program; should also be dockable within any of them.
@@ -153,13 +155,13 @@ class xASL_MainWin(QMainWindow):
 
     def UI_Setup_Connections(self):
         actions = [self.show_Importer, self.show_ParmsMaker,
-                   self.show_RunExploreASLWin, self.show_PostAnalysis]
+                   self.show_Executor, self.show_PostAnalysis]
         for btn, action in zip(self.main_btns, actions):
             btn.clicked.connect(action)
 
-    # Lauch the RunExploreASL window
-    def show_RunExploreASLWin(self):
-        pass
+    # Lauch the Executor window
+    def show_Executor(self):
+        self.executor.show()
 
     # Launch the ParmsMaker window
     def show_ParmsMaker(self):

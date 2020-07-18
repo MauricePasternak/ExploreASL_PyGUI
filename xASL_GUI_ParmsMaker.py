@@ -15,11 +15,15 @@ from tdda import rexpy
 
 # noinspection PyAttributeOutsideInit
 class xASL_ParmsMaker(QMainWindow):
-    def __init__(self, parent_win, config):
+    def __init__(self, parent_win=None):
         # Parent window is fed into the constructor to allow for communication with parent window devices
-        self.parent_win = parent_win
-        self.config = config
-        super(xASL_ParmsMaker, self).__init__()
+        super().__init__(parent=parent_win)
+        if parent_win is not None:
+            self.config = self.parent().config
+        else:
+            with open("ExploreASL_GUI_masterconfig.json") as f:
+                self.config = json.load(f)
+
         # Window Size and initial visual setup
         self.setMinimumSize(1080, 480)
         self.cw = QWidget(self)
@@ -35,7 +39,6 @@ class xASL_ParmsMaker(QMainWindow):
         font.setPointSize(20)
         self.btn_make_parms.setFont(font)
         self.btn_load_parms.setFont(font)
-
         # Set up each of the components of the widget
         self.UI_Setup_GroupBoxes()
         self.UI_Setup_Layouts()
@@ -99,7 +102,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.hlay_study_parms_exploreasl.addWidget(self.btn_study_parms_exploreasl)
         self.le_study_parms_name = QLineEdit("My Study", self.grp_study_parms)
         self.hlay_study_parms_analysisdir = QHBoxLayout(self.grp_study_parms)
-        self.le_study_parms_analysisdir = QLineEdit(self.parent_win.le_currentanalysis_dir.text(), self.grp_study_parms)
+        self.le_study_parms_analysisdir = QLineEdit(self.parent().le_currentanalysis_dir.text(), self.grp_study_parms)
         self.btn_study_parms_analysisdir = QPushButton("...", self.grp_study_parms,
                                                        clicked=self.set_currentanalysis_dir)
         self.hlay_study_parms_analysisdir.addWidget(self.le_study_parms_analysisdir, 6)
@@ -123,7 +126,6 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_study_parms.addRow("Session Names", self.le_study_parms_sessions)
         self.frmlay_study_parms.addRow("Session Options", self.le_study_parms_session_opts)
         self.collection_study_parms = self.grp_study_parms.findChildren((QLineEdit, QListWidget))
-        pprint(self.collection_study_parms)
 
     def UI_Setup_M0ParmsSection(self):
         # Set up the M0 parameters group
@@ -184,8 +186,9 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_seq_parms.addRow("Labelling Duration", self.spinbox_seq_parms_labdur)
         self.frmlay_seq_parms.addRow("Slice Readout Time", self.hbox_seq_parms_slicerdtime)
         self.collection_seq_parms = [self.cmb_seq_parms_npulses, self.cmb_seq_parms_readdim, self.cmb_seq_parms_vendor,
-                                     self.cmb_seq_parms_seqtype, self.cmb_seq_parms_labeltype, self.spinbox_seq_parms_iniPLD,
-                                      self.spinbox_seq_parms_labdur, self.cmb_seq_parms_slicerdt, self.spinbox_seq_parms_slicerdtime]
+                                     self.cmb_seq_parms_seqtype, self.cmb_seq_parms_labeltype,
+                                     self.spinbox_seq_parms_iniPLD, self.spinbox_seq_parms_labdur,
+                                     self.cmb_seq_parms_slicerdt, self.spinbox_seq_parms_slicerdtime]
 
     def UI_Setup_QuantParmsSection(self):
         # Set up Quantification Parameters
@@ -276,8 +279,8 @@ class xASL_ParmsMaker(QMainWindow):
         for widget_group, section in zip([self.collection_env_parms, self.collection_study_parms,
                                           self.collection_m0_parms, self.collection_seq_parms,
                                           self.collection_quant_parms, self.collection_proc_parms],
-                                         ["EnvParms","StudyParms", "M0Parms", "SeqParms", "QuantParms", "ProcParms"]):
-            for widget, tip in zip(widget_group, self.parent_win.tooltips["ParmsMaker"][section]):
+                                         ["EnvParms", "StudyParms", "M0Parms", "SeqParms", "QuantParms", "ProcParms"]):
+            for widget, tip in zip(widget_group, self.parent().tooltips["ParmsMaker"][section]):
                 widget.setToolTip(tip)
 
     # Retrieve the directory ExploreASL with user interaction; set the appropriate field and save to config file
@@ -302,7 +305,6 @@ class xASL_ParmsMaker(QMainWindow):
         if n_subjects == 0:
             return ""
         subject_list = [self.lst_study_parms_includedsubjects.item(idx).text() for idx in range(n_subjects)]
-        pprint(subject_list)
         extractor = rexpy.Extractor(subject_list)
         extractor.batch_extract(subject_list)
         inferred_regex = extractor.results.rex[0]
@@ -349,7 +351,8 @@ class xASL_ParmsMaker(QMainWindow):
                       range(self.lst_study_parms_exclusions.count())]
         json_parms["exclusion"] = exclusions
         json_parms["M0_conventionalProcessing"] = self.cmb_m0_parms_proctype.currentIndex()
-        parms_source_translate = {"M0 exists as separate scan": "separate_scan", "Use Mean ASL Control as M0": "UseControlAsM0"}
+        parms_source_translate = {"M0 exists as separate scan": "separate_scan",
+                                  "Use Mean ASL Control as M0": "UseControlAsM0"}
         json_parms["M0"] = parms_source_translate[self.cmb_m0_parms_source.currentText()]
         json_parms["M0_GMScaleFactor"] = float(self.spinbox_m0_parms_scale.value())
         parms_m0_pos_translate = {"First Control-Label Pair": "[1 2]", "First Image": 1, "Second Image": 2}
@@ -544,8 +547,9 @@ class xASL_ParmsMaker(QMainWindow):
                                 f"Please ascertain the validity of the values and/or labels for these parameters",
                                 QMessageBox.Ok)
 
+    # This will be utilized in a future setting to control the navigator movement and prevent its deletion if it is
+    # docked within the
     def closeEvent(self, a0) -> None:
-        print("Closing")
         super(xASL_ParmsMaker, self).closeEvent(a0)
 
 
