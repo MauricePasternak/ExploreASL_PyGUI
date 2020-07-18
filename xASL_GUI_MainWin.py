@@ -37,6 +37,7 @@ class xASL_MainWin(QMainWindow):
             self.load_config()
         else:
             self.config = config
+        self.load_tooltips()
         # Window Size and initial visual setup
         self.setMinimumSize(1080, 480)
         self.cw = QWidget(self)
@@ -194,6 +195,11 @@ class xASL_MainWin(QMainWindow):
                            "DefaultNavigatorRoot": f"{os.getcwd()}",  # The default starting node for the file navigator
                            "DeveloperMode": False}  # Whether to launch the app in developer mode or not
             self.save_config()
+
+    def load_tooltips(self):
+        if os.path.exists(os.path.join(os.getcwd(), "xASL_GUI_Tooltips.json")):
+            with open("xASL_GUI_Tooltips.json") as f:
+                self.tooltips = json.load(f)
 
     # Sets the analysis directory the user is interested in
     def set_analysis_dir(self):

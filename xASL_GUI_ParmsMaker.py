@@ -88,6 +88,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.chk_env_parms_mk4dcm = QCheckBox(self.grp_env_parms, checkable=True, checked=False)
         self.frmlay_env_parms.addRow("Detect FSL Automatically?", self.chk_env_parms_fsl)
         self.frmlay_env_parms.addRow("Output CBF native space maps?", self.chk_env_parms_mk4dcm)
+        self.collection_env_parms = [self.chk_env_parms_fsl, self.chk_env_parms_mk4dcm]
 
     def UI_Setup_StudyParmsSection(self):
         # Set up the study parameters group
@@ -107,7 +108,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.lst_study_parms_includedsubjects = DirectoryDragDrop_ListWidget(self.grp_study_parms)
         self.lst_study_parms_exclusions = DirectoryDragDrop_ListWidget(self.grp_study_parms)
         self.btn_study_parms_clearexclusions = QPushButton("Clear Exclusions", self.grp_study_parms,
-                                                           clicked=self.clear_exclusions)
+                                                           clicked=self.lst_study_parms_exclusions.clear)
         self.le_study_parms_sessions = QLineEdit("ASL_1", self.grp_study_parms)
         self.le_study_parms_session_opts = QLineEdit(self.grp_study_parms)
         self.le_study_parms_session_opts.setPlaceholderText("Indicate option names separated by a comma and space")
@@ -121,6 +122,8 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_study_parms.addRow("", self.btn_study_parms_clearexclusions)
         self.frmlay_study_parms.addRow("Session Names", self.le_study_parms_sessions)
         self.frmlay_study_parms.addRow("Session Options", self.le_study_parms_session_opts)
+        self.collection_study_parms = self.grp_study_parms.findChildren((QLineEdit, QListWidget))
+        pprint(self.collection_study_parms)
 
     def UI_Setup_M0ParmsSection(self):
         # Set up the M0 parameters group
@@ -128,7 +131,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.cmb_m0_parms_proctype.addItems(["New Image Processing", "Standard Processing"])
         self.cmb_m0_parms_proctype.setCurrentIndex(0)
         self.cmb_m0_parms_source = QComboBox(self.grp_m0_parms)
-        self.cmb_m0_parms_source.addItems(["Separate Scan", "Use Control as M0"])
+        self.cmb_m0_parms_source.addItems(["M0 exists as separate scan", "Use Mean ASL Control as M0"])
         self.cmb_m0_parms_source.setCurrentIndex(0)
         self.spinbox_m0_parms_scale = QDoubleSpinBox(self.grp_m0_parms)
         self.spinbox_m0_parms_scale.setValue(1)
@@ -139,6 +142,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_m0_parms.addRow("M0 Source", self.cmb_m0_parms_source)
         self.frmlay_m0_parms.addRow("GM Scale Factor", self.spinbox_m0_parms_scale)
         self.frmlay_m0_parms.addRow("M0 Position in ASL", self.cmb_m0_parms_pos)
+        self.collection_m0_parms = self.grp_m0_parms.findChildren((QComboBox, QDoubleSpinBox))
 
     def UI_Setup_SequenceParmsSection(self):
         # Set up the sequence parameters group
@@ -179,6 +183,9 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_seq_parms.addRow("Initial Post-Labelling Delay", self.spinbox_seq_parms_iniPLD)
         self.frmlay_seq_parms.addRow("Labelling Duration", self.spinbox_seq_parms_labdur)
         self.frmlay_seq_parms.addRow("Slice Readout Time", self.hbox_seq_parms_slicerdtime)
+        self.collection_seq_parms = [self.cmb_seq_parms_npulses, self.cmb_seq_parms_readdim, self.cmb_seq_parms_vendor,
+                                     self.cmb_seq_parms_seqtype, self.cmb_seq_parms_labeltype, self.spinbox_seq_parms_iniPLD,
+                                      self.spinbox_seq_parms_labdur, self.cmb_seq_parms_slicerdt, self.spinbox_seq_parms_slicerdtime]
 
     def UI_Setup_QuantParmsSection(self):
         # Set up Quantification Parameters
@@ -207,6 +214,9 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_quant_parms.addRow("Tissue T1", self.spinbox_quant_parms_tissueT1)
         self.frmlay_quant_parms.addRow("Number of Compartments", self.cmb_quant_parms_ncomparts)
         self.frmlay_quant_parms.addRow("Quantification Settings", self.le_quant_parms_logvec)
+        self.collection_quant_parms = [self.spinbox_quant_parms_lambda, self.spinbox_quant_parms_artT2,
+                                       self.spinbox_quant_parms_bloodT1, self.spinbox_quant_parms_tissueT1,
+                                       self.cmb_quant_parms_ncomparts, self.le_quant_parms_logvec]
 
     def UI_Setup_ProcParmsSection(self):
         # Set up Processing Parameters
@@ -255,6 +265,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_proc_parms.addRow("Use Affine Registration", self.cmb_proc_parms_affinereg)
         self.frmlay_proc_parms.addRow("Register M0 to ASL", self.chk_proc_parms_m02aslreg)
         self.frmlay_proc_parms.addRow("Use MNI as a Dummy Template", self.chk_proc_parms_useMNIasdummy)
+        self.collection_proc_parms = self.grp_proc_parms.findChildren((QCheckBox, QComboBox, QDoubleSpinBox))
 
     # Setup of all inner signals here that are not included within constructors (ex. QPushButton 'clicked' arguments)
     def UI_Setup_Connections(self):
@@ -262,7 +273,12 @@ class xASL_ParmsMaker(QMainWindow):
 
     # Setup hover tooltips over all relevant widgets
     def UI_Setup_ToolTips(self):
-        pass
+        for widget_group, section in zip([self.collection_env_parms, self.collection_study_parms,
+                                          self.collection_m0_parms, self.collection_seq_parms,
+                                          self.collection_quant_parms, self.collection_proc_parms],
+                                         ["EnvParms","StudyParms", "M0Parms", "SeqParms", "QuantParms", "ProcParms"]):
+            for widget, tip in zip(widget_group, self.parent_win.tooltips["ParmsMaker"][section]):
+                widget.setToolTip(tip)
 
     # Retrieve the directory ExploreASL with user interaction; set the appropriate field and save to config file
     def set_exploreasl_dir(self):
@@ -280,6 +296,7 @@ class xASL_ParmsMaker(QMainWindow):
         if result:
             self.le_study_parms_analysisdir.setText(result)
 
+    # Updates the regex based on the text patterns placed each time the content of includedsubjects changes
     def get_regex_from_subjectlist(self):
         n_subjects = self.lst_study_parms_includedsubjects.count()
         if n_subjects == 0:
@@ -289,7 +306,6 @@ class xASL_ParmsMaker(QMainWindow):
         extractor = rexpy.Extractor(subject_list)
         extractor.batch_extract(subject_list)
         inferred_regex = extractor.results.rex[0]
-        print(inferred_regex)
         del extractor
         if inferred_regex:
             self.le_study_parms_subregexp.setText(inferred_regex)
@@ -333,7 +349,7 @@ class xASL_ParmsMaker(QMainWindow):
                       range(self.lst_study_parms_exclusions.count())]
         json_parms["exclusion"] = exclusions
         json_parms["M0_conventionalProcessing"] = self.cmb_m0_parms_proctype.currentIndex()
-        parms_source_translate = {"Separate Scan": "separate_scan", "Use Control as M0": "UseControlAsM0"}
+        parms_source_translate = {"M0 exists as separate scan": "separate_scan", "Use Mean ASL Control as M0": "UseControlAsM0"}
         json_parms["M0"] = parms_source_translate[self.cmb_m0_parms_source.currentText()]
         json_parms["M0_GMScaleFactor"] = float(self.spinbox_m0_parms_scale.value())
         parms_m0_pos_translate = {"First Control-Label Pair": "[1 2]", "First Image": 1, "Second Image": 2}
@@ -400,7 +416,8 @@ class xASL_ParmsMaker(QMainWindow):
         if json_filepath == '': return
         if not os.path.exists(json_filepath) and json_filepath != '':
             QMessageBox.warning(self, "Incorrect File Selected", "The file selected was either not a json file or did"
-                                                                 " not contain the essential parameters", QMessageBox.Ok)
+                                                                 " not contain the essential parameters",
+                                QMessageBox.Ok)
             return
 
         with open(json_filepath, 'r') as reader:
@@ -429,7 +446,8 @@ class xASL_ParmsMaker(QMainWindow):
                 elif key == "M0_conventionalProcessing":
                     self.cmb_m0_parms_proctype.setCurrentIndex(value)
                 elif key == "M0":
-                    parms_source_translate = {"separate_scan": "Separate Scan", "UseControlAsM0": "Use Control as M0"}
+                    parms_source_translate = {"separate_scan": "M0 exists as separate scan",
+                                              "UseControlAsM0": "Use Mean ASL Control as M0"}
                     self.cmb_m0_parms_proctype.setCurrentIndex(
                         self.cmb_m0_parms_proctype.findText(parms_source_translate[value]))
                 elif key == "M0_GMScaleFactor":
@@ -529,6 +547,7 @@ class xASL_ParmsMaker(QMainWindow):
     def closeEvent(self, a0) -> None:
         print("Closing")
         super(xASL_ParmsMaker, self).closeEvent(a0)
+
 
 class DirectoryDragDrop_ListWidget(QListWidget):
     alert_regex = pyqtSignal()  # This will be called in the ParmsMaker superclass to update its regex
