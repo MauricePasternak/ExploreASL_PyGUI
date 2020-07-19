@@ -12,6 +12,34 @@ import matlab.engine
 import matlab
 
 
+class ExploreASL_Worker(QRunnable):
+    """
+    Worker thread for running lauching an ExploreASL MATLAB session with the given arguments
+    """
+
+    def __init__(self, name, explore_asl_dir, par_path, process_data, skip_pause, iWorker, nWorkers, iModules):
+        self.name = name
+        self.explore_asl_dir = explore_asl_dir
+        self.par_path = par_path
+        self.process_datas = process_data
+        self.skip_pause = skip_pause
+        self.iWorker = iWorker
+        self.nWorkers = nWorkers
+        self.iModules = iModules
+        super().__init__()
+
+    def run(self):
+        print(f"Worker {self.name} on process {os.getpid()} is executing a script")
+        eng = matlab.engine.start_matlab()
+        eng.cd(self.explore_asl_dir)
+        eng.practice_python(self.par_path,
+                            self.process_datas,
+                            self.skip_pause,
+                            self.iWorker,
+                            self.nWorkers,
+                            self.iModules)
+
+
 class xASL_Executor(QMainWindow):
     def __init__(self, parent_win):
         # Parent window is fed into the constructor to allow for communication with parent window devices
@@ -31,6 +59,7 @@ class xASL_Executor(QMainWindow):
         self.setWindowTitle("Explore ASL - Executor")
         self.setWindowIcon(QIcon(QPixmap("media/ExploreASL_logo.jpg")))
         # Main run button must be defined early, since connections will be dynamically made to it
+        self.threadpool = QThreadPool()
         self.btn_runExploreASL = QPushButton("Run Explore ASL", self.cw, clicked=self.run_Explore_ASL)
         self.btn_runExploreASL.setEnabled(False)
 
@@ -114,7 +143,9 @@ class xASL_Executor(QMainWindow):
                 inner_cmb.currentTextChanged.connect(self.set_ncores_left)
                 inner_cmb.currentTextChanged.connect(self.set_ncores_selectable)
                 inner_cmb.currentTextChanged.connect(self.set_nstudies_selectable)
-                inner_le = QLineEdit(placeholderText="Select the analysis directory to your study")
+                # inner_le = QLineEdit(placeholderText="Select the analysis directory to your study")
+                inner_le = DirectoryDragDrop_LineEdit()
+                inner_le.setPlaceholderText("Select the analysis directory to your study")
                 inner_le.textChanged.connect(self.is_ready_to_run)
                 inner_btn = RowAwareQPushButton(self.formlay_nrows, "...")
                 inner_btn.row_idx_signal.connect(self.set_analysis_directory)
@@ -224,8 +255,10 @@ class xASL_Executor(QMainWindow):
         else:
             self.btn_runExploreASL.setEnabled(False)
 
-    # This is the main function
+    # This is the main function; prepares arguments; spawns workers; feeds in arguments to the workers during their
+    # initialization; then begins the programs
     def run_Explore_ASL(self):
+        # Prepare arguments
         iWorker_args = []
         nWorker_args = []
         DataParPath_args = []
@@ -239,7 +272,7 @@ class xASL_Executor(QMainWindow):
                     iWorker_args.append(ii + 1)
                     nWorker_args.append(int(box.currentText()))
                     DataParPath_args.append(glob(os.path.join(path.text(), "*Par*.json"))[0].replace('\\', '/'))
-                    iModules_args.append(translator[opts.currentText()])
+                    iModules_args.append(matlab.int8(translator[opts.currentText()]))
 
         print(f"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n"
               f"iWorker Args: {iWorker_args}\n"
@@ -247,34 +280,18 @@ class xASL_Executor(QMainWindow):
               f"DataParPath Args: {DataParPath_args}\n"
               f"iModules Args: {iModules_args}\n")
 
-        with cf.ThreadPoolExecutor(max_workers=len(iWorker_args)) as executor:
-            results = executor.map(self.f,  # function
-                                   DataParPath_args,  # paths to json parms file
-                                   [1] * len(iWorker_args),  # process data argument
-                                   [1] * len(iWorker_args),  # skip pause argument
-                                   iWorker_args,
-                                   nWorker_args,
-                                   iModules_args
-                                   )
-
-    def f(self, DataParPath, ProcessData, SkipPause, iWorker, nWorkers, iModules):
-        print(f"{os.getpid()} is executing a script with arguments as follows:\n"
-              f"DataParPath: {DataParPath}\n"
-              f"ProcessData: {ProcessData}\n"
-              f"SkipPause: {SkipPause}\n"
-              f"iWorker: {iWorker}\n"
-              f"nWorkers: {nWorkers}\n"
-              f"iModules: {iModules}\n")
-        print(f"Changing directory to {self.parent().config['ExploreASLRoot']}")
-        eng = matlab.engine.start_matlab()
-        eng.cd(self.parent().config["ExploreASLRoot"])
-        eng.ExploreASL_Master(DataParPath,
-                              ProcessData,
-                              SkipPause,
-                              iWorker,
-                              nWorkers,
-                              matlab.int8(iModules))
-        sleep(1)
+        # Create thread workers who are fed the appropriate arguments
+        for ii in range(len(iWorker_args)):
+            worker = ExploreASL_Worker(ii,
+                                       self.parent().config["ExploreASLRoot"],
+                                       DataParPath_args[ii],
+                                       1,
+                                       1,
+                                       iWorker_args[ii],
+                                       nWorker_args[ii],
+                                       matlab.int8(iModules_args[ii])
+                                       )
+            self.threadpool.start(worker)
 
 
 class RowAwareQPushButton(QPushButton):
@@ -286,6 +303,38 @@ class RowAwareQPushButton(QPushButton):
 
     def mousePressEvent(self, e):
         self.row_idx_signal.emit(self.row_idx)
+
+
+class DirectoryDragDrop_LineEdit(QLineEdit):
+    alert_runexplore = pyqtSignal()  # This will be called in the Executor superclass to update its
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.accept()
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    self.setText(str(url.toLocalFile()))
+                    # self.alert_regex.emit()
+                    return  # Only return the first local url instance if this was a from a multi-selection
+        else:
+            event.ignore()
 
 
 if __name__ == '__main__':
