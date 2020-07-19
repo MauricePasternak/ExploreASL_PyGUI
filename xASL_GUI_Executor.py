@@ -6,6 +6,10 @@ import sys
 import json
 from platform import platform
 from glob import glob
+import concurrent.futures as cf
+from time import sleep
+import matlab.engine
+import matlab
 
 
 class xASL_Executor(QMainWindow):
@@ -70,8 +74,8 @@ class xASL_Executor(QMainWindow):
         # Need python lists to keep track of row additions/removals; findChildren's ordering is incorrect
         self.formlay_lineedits_list = []
         self.formlay_buttons_list = []
-        self.formlay_comboboxes_list = []
-        self.formlay_comboboxes_proc_list = []
+        self.formlay_cmbs_ncores_list = []
+        self.formlay_cmbs_runopts_list = []
         self.formlay_nrows = 0
 
         self.vlay_taskschedule.addWidget(self.lab_coresinfo)
@@ -122,10 +126,10 @@ class xASL_Executor(QMainWindow):
                 inner_hbox.addWidget(inner_btn)
                 inner_hbox.addWidget(inner_cmb_procopts)
                 self.formlay_tasks.addRow(inner_cmb, inner_hbox)
-                self.formlay_comboboxes_list.append(inner_cmb)
+                self.formlay_cmbs_ncores_list.append(inner_cmb)
                 self.formlay_lineedits_list.append(inner_le)
                 self.formlay_buttons_list.append(inner_btn)
-                self.formlay_comboboxes_proc_list.append(inner_cmb_procopts)
+                self.formlay_cmbs_runopts_list.append(inner_cmb_procopts)
 
             # print(f"LE: {[le.text() for le in self.formlay_lineedits_list]}\n"
             #       f"BTNS: {[btn.text() for btn in self.formlay_buttons_list]}")
@@ -137,10 +141,10 @@ class xASL_Executor(QMainWindow):
                 row_to_remove = self.formlay_nrows - 1
                 # print(f"Removing row {row_to_remove}")
                 self.formlay_tasks.removeRow(row_to_remove)
-                self.formlay_comboboxes_list.pop()
+                self.formlay_cmbs_ncores_list.pop()
                 self.formlay_lineedits_list.pop()
                 self.formlay_buttons_list.pop()
-                self.formlay_comboboxes_proc_list.pop()
+                self.formlay_cmbs_runopts_list.pop()
                 self.formlay_nrows -= 1
             # print(f"LE: {[le.text() for le in self.formlay_lineedits_list]}\n"
             #       f"BTNS: {[btn.text() for btn in self.formlay_buttons_list]}")
@@ -150,10 +154,11 @@ class xASL_Executor(QMainWindow):
         self.set_ncores_left()
         self.set_ncores_selectable()
         self.set_nstudies_selectable()
+        self.is_ready_to_run()
 
     # Function responsible for adjusting the label of how many cores are still accessible
     def set_ncores_left(self):
-        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_comboboxes_list])
+        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
         if self.ncores_left > 0:
             self.lab_coresleft.setText(f"You are permitted to set up to {self.ncores_left} more core(s)")
         elif self.ncores_left == 0:
@@ -163,9 +168,9 @@ class xASL_Executor(QMainWindow):
 
     # Function responsible for adjusting the choices avaliable within each of the comboboxes of a given task row
     def set_ncores_selectable(self):
-        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_comboboxes_list])
+        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
         cores_left = self.ncores_left
-        for box in self.formlay_comboboxes_list:
+        for box in self.formlay_cmbs_ncores_list:
             current_selection = int(box.currentText())
             max_cores_allowed = current_selection + cores_left
             for idx in range(box.count()):
@@ -178,7 +183,7 @@ class xASL_Executor(QMainWindow):
     # Function responsible for adjusting the number of studies still permitted (assuming 1 core will be initially
     # allocated to it)
     def set_nstudies_selectable(self):
-        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_comboboxes_list])
+        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
         current_n_studies = int(self.cmb_nstudies.currentText())
         max_studies_allowed = current_n_studies + self.ncores_left
         for idx in range(self.cmb_nstudies.count()):
@@ -202,19 +207,74 @@ class xASL_Executor(QMainWindow):
 
     # Define whether the run Explore ASL button should be enabled
     def is_ready_to_run(self):
+        # print("Checking runnability integrity")
+        checks = []
         for le in self.formlay_lineedits_list:
             directory = le.text()
-            print(os.path.exists(directory))
-            print(os.path.isdir(directory))
             if os.path.exists(directory):
                 if all([os.path.isdir(directory), len(glob(os.path.join(directory, "*Par*.json")))]):
-                    self.btn_runExploreASL.setEnabled(True)
+                    checks.append(True)
                 else:
-                    self.btn_runExploreASL.setEnabled(False)
+                    checks.append(False)
+            else:
+                checks.append(False)
+
+        if all(checks):
+            self.btn_runExploreASL.setEnabled(True)
+        else:
+            self.btn_runExploreASL.setEnabled(False)
 
     # This is the main function
     def run_Explore_ASL(self):
-        pass
+        iWorker_args = []
+        nWorker_args = []
+        DataParPath_args = []
+        iModules_args = []
+        translator = {"Structural": [1], "ASL": [2], "Both": [1, 2]}
+        for box, path, opts in zip(self.formlay_cmbs_ncores_list,
+                                   self.formlay_lineedits_list,
+                                   self.formlay_cmbs_runopts_list):
+            for ii in range(box.count()):
+                if ii < int(box.currentText()):
+                    iWorker_args.append(ii + 1)
+                    nWorker_args.append(int(box.currentText()))
+                    DataParPath_args.append(glob(os.path.join(path.text(), "*Par*.json"))[0].replace('\\', '/'))
+                    iModules_args.append(translator[opts.currentText()])
+
+        print(f"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n"
+              f"iWorker Args: {iWorker_args}\n"
+              f"nWorker Args: {nWorker_args}\n"
+              f"DataParPath Args: {DataParPath_args}\n"
+              f"iModules Args: {iModules_args}\n")
+
+        with cf.ThreadPoolExecutor(max_workers=len(iWorker_args)) as executor:
+            results = executor.map(self.f,  # function
+                                   DataParPath_args,  # paths to json parms file
+                                   [1] * len(iWorker_args),  # process data argument
+                                   [1] * len(iWorker_args),  # skip pause argument
+                                   iWorker_args,
+                                   nWorker_args,
+                                   iModules_args
+                                   )
+
+    def f(self, DataParPath, ProcessData, SkipPause, iWorker, nWorkers, iModules):
+        print(f"{os.getpid()} is executing a script with arguments as follows:\n"
+              f"DataParPath: {DataParPath}\n"
+              f"ProcessData: {ProcessData}\n"
+              f"SkipPause: {SkipPause}\n"
+              f"iWorker: {iWorker}\n"
+              f"nWorkers: {nWorkers}\n"
+              f"iModules: {iModules}\n")
+        print(f"Changing directory to {self.parent().config['ExploreASLRoot']}")
+        eng = matlab.engine.start_matlab()
+        eng.cd(self.parent().config["ExploreASLRoot"])
+        eng.ExploreASL_Master(DataParPath,
+                              ProcessData,
+                              SkipPause,
+                              iWorker,
+                              nWorkers,
+                              matlab.int8(iModules))
+        sleep(1)
 
 
 class RowAwareQPushButton(QPushButton):

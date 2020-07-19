@@ -1,0 +1,4 @@
+# ignore macOS files:
+.DS_Store
+# ignore temporary Matlab files:
+*.json
