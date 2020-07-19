@@ -194,6 +194,7 @@ class xASL_MainWin(QMainWindow):
         else:
             self.config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
                            "DefaultRootDir": f"{os.getcwd()}",  # The default root for the navigator to watch from
+                           "DefaultAnalysisDir": None,  # The default analysis directory to assume
                            "DefaultNavigatorRoot": f"{os.getcwd()}",  # The default starting node for the file navigator
                            "DeveloperMode": False}  # Whether to launch the app in developer mode or not
             self.save_config()
