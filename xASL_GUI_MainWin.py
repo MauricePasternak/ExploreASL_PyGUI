@@ -7,8 +7,9 @@ import os
 import sys
 import json
 from platform import platform
+import subprocess
 import concurrent.futures as cf
-
+import itertools as it
 
 # Explore ASL Main Window
 # by Maurice Pasternak @ 2020
@@ -85,18 +86,23 @@ class xASL_MainWin(QMainWindow):
         self.hlay_exploreasl_dir.addWidget(self.le_exploreasl_dir)
         self.hlay_exploreasl_dir.addWidget(self.btn_exploreasl_dir)
         self.hlay_currentanalysis_dir = QHBoxLayout(self.cont_navigator)
-        self.le_currentanalysis_dir = QLineEdit(f"{os.getcwd()}", self.cont_navigator)
+        self.le_currentanalysis_dir = QLineEdit(
+            f"{os.getcwd() if self.config['DefaultRootDir'] is None else self.config['DefaultRootDir']}",
+            self.cont_navigator)
         self.btn_currentanalysis_dir = QPushButton("...", self.cont_navigator, clicked=self.set_analysis_dir)
         self.hlay_currentanalysis_dir.addWidget(self.le_currentanalysis_dir)
         self.hlay_currentanalysis_dir.addWidget(self.btn_currentanalysis_dir)
+        self.chk_makedefault_analysisdir = QCheckBox(self.cont_navigator)
+        self.chk_makedefault_analysisdir.setChecked(True)
         self.formlay_navigator.addRow("Explore ASL Directory", self.hlay_exploreasl_dir)
         self.formlay_navigator.addRow("Current Analysis Directory", self.hlay_currentanalysis_dir)
+        self.formlay_navigator.addRow("Set selected analysis directory as default?", self.chk_makedefault_analysisdir)
         # Next, the main player will be a treeview with a FileSystemModel
         self.treev_navigator = QTreeView(self.cont_navigator)
         self.filemodel_navigator = QFileSystemModel(self.cont_navigator)
         self.filemodel_navigator.setRootPath(self.config["DefaultRootDir"])
         self.treev_navigator.setModel(self.filemodel_navigator)
-        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(self.config["DefaultNavigatorRoot"]))
+        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(self.config["DefaultRootDir"]))
         self.treev_navigator.header().resizeSection(0, 250)
         self.treev_navigator.setDragEnabled(True)
         self.treev_navigator.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -105,7 +111,6 @@ class xASL_MainWin(QMainWindow):
         # Add all essential widgets to the dock's main layout
         self.vlay_navigator.addLayout(self.formlay_navigator)
         self.vlay_navigator.addWidget(self.treev_navigator)
-        # self.vlay_navigator.addWidget(QPushButton("Click Me", self.cont_navigator, clicked=self.change_dir))
 
     # Setup the standard Menu
     def UI_Setup_MenuBar(self):
@@ -195,8 +200,6 @@ class xASL_MainWin(QMainWindow):
         else:
             self.config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
                            "DefaultRootDir": f"{os.getcwd()}",  # The default root for the navigator to watch from
-                           "DefaultAnalysisDir": None,  # The default analysis directory to assume
-                           "DefaultNavigatorRoot": f"{os.getcwd()}",  # The default starting node for the file navigator
                            "DeveloperMode": False}  # Whether to launch the app in developer mode or not
             self.save_config()
 
@@ -208,8 +211,8 @@ class xASL_MainWin(QMainWindow):
     # Sets the analysis directory the user is interested in
     def set_analysis_dir(self):
         result = QFileDialog.getExistingDirectory(self,
-                                                  "Select the ExploreASL root directory",  # Window title
-                                                  os.getcwd(),  # Default dir
+                                                  "Select analysis directory to view",  # Window title
+                                                  self.config["DefaultRootDir"],  # Default dir
                                                   QFileDialog.ShowDirsOnly)  # Display options
         if result:
             if '/' in result and platform() == "Windows":
@@ -219,6 +222,11 @@ class xASL_MainWin(QMainWindow):
             self.filemodel_navigator.setRootPath(result)
             self.treev_navigator.setRootIndex(self.filemodel_navigator.index(result))
             self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
+
+            # Update user config to have a new default analysis dir to refer to in on future startups
+            if self.chk_makedefault_analysisdir.isChecked():
+                self.config["DefaultRootDir"] = result
+                self.save_config()
 
     # Sets the ExploreASL directory of the user and updates the config to reflect the change
     def set_exploreasl_dir(self):
@@ -233,8 +241,6 @@ class xASL_MainWin(QMainWindow):
             self.config["ExploreASLRoot"] = result
             self.save_config()
 
-    def change_dir(self):
-        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(self.config["DefaultNavigatorRoot"]))
 
 
 if __name__ == '__main__':

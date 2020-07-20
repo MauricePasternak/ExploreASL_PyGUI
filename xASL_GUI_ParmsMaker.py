@@ -114,7 +114,7 @@ class xASL_ParmsMaker(QMainWindow):
                                                            clicked=self.lst_study_parms_exclusions.clear)
         self.le_study_parms_sessions = QLineEdit("ASL_1", self.grp_study_parms)
         self.le_study_parms_session_opts = QLineEdit(self.grp_study_parms)
-        self.le_study_parms_session_opts.setPlaceholderText("Indicate option names separated by a comma and space")
+        self.le_study_parms_session_opts.setPlaceholderText("Indicate option names separated by a commas")
         self.frmlay_study_parms.addRow("ExploreASL Directory", self.hlay_study_parms_exploreasl)
         self.frmlay_study_parms.addRow("Name of Study", self.le_study_parms_name)
         self.frmlay_study_parms.addRow("Root Directory", self.hlay_study_parms_analysisdir)
@@ -138,8 +138,9 @@ class xASL_ParmsMaker(QMainWindow):
         self.spinbox_m0_parms_scale = QDoubleSpinBox(self.grp_m0_parms)
         self.spinbox_m0_parms_scale.setValue(1)
         self.cmb_m0_parms_pos = QComboBox(self.grp_m0_parms)
-        self.cmb_m0_parms_pos.addItems(["First Control-Label Pair", "First Image", "Second Image"])
-        self.cmb_m0_parms_pos.setCurrentIndex(1)
+        self.cmb_m0_parms_pos.addItems(["M0 is independent of ASL", "First Control-Label Pair",
+                                        "First Image", "Second Image"])
+        self.cmb_m0_parms_pos.setCurrentIndex(0)
         self.frmlay_m0_parms.addRow("M0 Processing Type", self.cmb_m0_parms_proctype)
         self.frmlay_m0_parms.addRow("M0 Source", self.cmb_m0_parms_source)
         self.frmlay_m0_parms.addRow("GM Scale Factor", self.spinbox_m0_parms_scale)
@@ -159,6 +160,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.cmb_seq_parms_vendor.setCurrentIndex(3)
         self.cmb_seq_parms_seqtype = QComboBox(self.grp_seq_parms)
         self.cmb_seq_parms_seqtype.addItems(["3D Spiral", "3D GRaSE", "2D EPI"])
+        self.cmb_seq_parms_seqtype.setCurrentIndex(1)
         self.cmb_seq_parms_labeltype = QComboBox(self.grp_seq_parms)
         self.cmb_seq_parms_labeltype.addItems(["Q2 TIPS PASL", "pCASL or CASL"])
         self.cmb_seq_parms_labeltype.setCurrentIndex(0)
@@ -356,7 +358,8 @@ class xASL_ParmsMaker(QMainWindow):
         json_parms["M0"] = parms_source_translate[self.cmb_m0_parms_source.currentText()]
         json_parms["M0_GMScaleFactor"] = float(self.spinbox_m0_parms_scale.value())
         parms_m0_pos_translate = {"First Control-Label Pair": "[1 2]", "First Image": 1, "Second Image": 2}
-        json_parms["M0PositionInASL4D"] = parms_m0_pos_translate[self.cmb_m0_parms_pos.currentText()]
+        if self.cmb_m0_parms_pos.currentText() != "M0 is independent of ASL":
+            json_parms["M0PositionInASL4D"] = parms_m0_pos_translate[self.cmb_m0_parms_pos.currentText()]
         json_parms["readout_dim"] = self.cmb_seq_parms_readdim.currentText()
         parms_vendor_translate = {"GE Product": "GE_Product", "GE WIP": "GE_WIP", "Philips": "Philips",
                                   "Siemens": "Siemens"}

@@ -4,40 +4,48 @@ from PyQt5.QtCore import *
 import os
 import sys
 import json
-from platform import platform
 from glob import glob
-import concurrent.futures as cf
-from time import sleep
 import matlab.engine
 import matlab
-
+import subprocess
+import concurrent.futures as cf
+import itertools as it
+import multiprocessing
 
 class ExploreASL_Worker(QRunnable):
     """
     Worker thread for running lauching an ExploreASL MATLAB session with the given arguments
     """
 
-    def __init__(self, name, explore_asl_dir, par_path, process_data, skip_pause, iWorker, nWorkers, iModules):
-        self.name = name
-        self.explore_asl_dir = explore_asl_dir
-        self.par_path = par_path
-        self.process_datas = process_data
-        self.skip_pause = skip_pause
-        self.iWorker = iWorker
-        self.nWorkers = nWorkers
-        self.iModules = iModules
+    def __init__(self, *args):
+        self.args = args
         super().__init__()
+        print(f"Initialized Worker")
 
     def run(self):
-        print(f"Worker {self.name} on process {os.getpid()} is executing a script")
-        eng = matlab.engine.start_matlab()
-        eng.cd(self.explore_asl_dir)
-        eng.practice_python(self.par_path,
-                            self.process_datas,
-                            self.skip_pause,
-                            self.iWorker,
-                            self.nWorkers,
-                            self.iModules)
+        processes = []
+        print("Inside run")
+        for arg_set in list(zip(*self.args)):
+            process = multiprocessing.Process(target=self.execute, args=arg_set)
+            process.start()
+
+
+    @staticmethod
+    def execute(*args):
+        print(f"{args} is printing inside execute")
+        exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = args
+        # subprocess.call(["matlab", "-nodesktop"])
+        func_line = f"('{par_path}', " \
+                    f"{process_data}, " \
+                    f"{skip_pause}, " \
+                    f"{iworker}, " \
+                    f"{nworkers}, " \
+                    f"[{' '.join([str(item) for item in imodules])}])"
+        result = subprocess.call(
+            ["matlab",
+             "-nodesktop",
+             "-r",
+             f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"])
 
 
 class xASL_Executor(QMainWindow):
@@ -232,7 +240,7 @@ class xASL_Executor(QMainWindow):
     def set_analysis_directory(self, row_idx):
         dir_path = QFileDialog.getExistingDirectory(self.cw,
                                                     "Select the analysis directory of your study",
-                                                    self.parent().config["DefaultAnalysisDir"],  # Default dir to start
+                                                    self.parent().config["DefaultRootDir"],  # Default dir to start
                                                     QFileDialog.ShowDirsOnly)
         self.formlay_lineedits_list[row_idx - 1].setText(dir_path)
 
@@ -259,9 +267,12 @@ class xASL_Executor(QMainWindow):
     # initialization; then begins the programs
     def run_Explore_ASL(self):
         # Prepare arguments
+        ExploreASL_dir_args = []
+        DataParPath_args = []
+        ProcessData_args = []
+        SkipPause_args = []
         iWorker_args = []
         nWorker_args = []
-        DataParPath_args = []
         iModules_args = []
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2]}
         for box, path, opts in zip(self.formlay_cmbs_ncores_list,
@@ -269,9 +280,12 @@ class xASL_Executor(QMainWindow):
                                    self.formlay_cmbs_runopts_list):
             for ii in range(box.count()):
                 if ii < int(box.currentText()):
+                    ExploreASL_dir_args.append(self.parent().config["ExploreASLRoot"])
+                    DataParPath_args.append(glob(os.path.join(path.text(), "*Par*.json"))[0].replace('\\', '/'))
+                    ProcessData_args.append(1)
+                    SkipPause_args.append(0)
                     iWorker_args.append(ii + 1)
                     nWorker_args.append(int(box.currentText()))
-                    DataParPath_args.append(glob(os.path.join(path.text(), "*Par*.json"))[0].replace('\\', '/'))
                     iModules_args.append(matlab.int8(translator[opts.currentText()]))
 
         print(f"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n"
@@ -281,17 +295,9 @@ class xASL_Executor(QMainWindow):
               f"iModules Args: {iModules_args}\n")
 
         # Create thread workers who are fed the appropriate arguments
-        for ii in range(len(iWorker_args)):
-            worker = ExploreASL_Worker(ii,
-                                       self.parent().config["ExploreASLRoot"],
-                                       DataParPath_args[ii],
-                                       1,
-                                       1,
-                                       iWorker_args[ii],
-                                       nWorker_args[ii],
-                                       matlab.int8(iModules_args[ii])
-                                       )
-            self.threadpool.start(worker)
+
+        worker = ExploreASL_Worker(ExploreASL_dir_args, DataParPath_args, ProcessData_args, SkipPause_args, iWorker_args, nWorker_args, iModules_args)
+        self.threadpool.start(worker)
 
 
 class RowAwareQPushButton(QPushButton):
@@ -306,7 +312,6 @@ class RowAwareQPushButton(QPushButton):
 
 
 class DirectoryDragDrop_LineEdit(QLineEdit):
-    alert_runexplore = pyqtSignal()  # This will be called in the Executor superclass to update its
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -331,7 +336,6 @@ class DirectoryDragDrop_LineEdit(QLineEdit):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     self.setText(str(url.toLocalFile()))
-                    # self.alert_regex.emit()
                     return  # Only return the first local url instance if this was a from a multi-selection
         else:
             event.ignore()
