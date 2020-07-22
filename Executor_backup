@@ -19,41 +19,33 @@ class ExploreASL_Worker(QRunnable):
 
     def __init__(self, *args):
         self.args = args
-        # self.process = multiprocessing.Process(target=self.execute, args=self.args)
         super().__init__()
         print(f"Initialized Worker with args {self.args}")
 
     # This is called by the threadpool during threadpool.start(worker)
     def run(self):
-        exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args
         print("Inside run")
-        eng = matlab.engine.start_matlab()
-        eng.cd(exploreasl_path)
-        imodules = matlab.int8(imodules)
-        eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
+        exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args
 
-    # @staticmethod
-    # def execute(exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules):
-    #     print(f"Inside execute on processor {os.getpid()}")
-    #
-    #     # Generate the string that the command line will feed into the complied MATLAB session
-    #     func_line = f"('{par_path}', " \
-    #                 f"{process_data}, " \
-    #                 f"{skip_pause}, " \
-    #                 f"{iworker}, " \
-    #                 f"{nworkers}, " \
-    #                 f"[{' '.join([str(item) for item in imodules])}])"
-    #
-    #     # For troubleshooting and visualization
-    #     print(f"Func line: {func_line}")
-    #
-    #     # Compile and run MATLAB session from command line
-    #     result = subprocess.call(
-    #         ["matlab",
-    #          "-nodesktop",
-    #          "-r",
-    #          f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"]
-    #     )
+        # Generate the string that the command line will feed into the complied MATLAB session
+        func_line = f"('{par_path}', " \
+                    f"{process_data}, " \
+                    f"{skip_pause}, " \
+                    f"{iworker}, " \
+                    f"{nworkers}, " \
+                    f"[{' '.join([str(item) for item in imodules])}])"
+
+        # For troubleshooting and visualization
+        print(f"Func line: {func_line}")
+
+        # Compile and run MATLAB session from command line
+        result = subprocess.call(
+            ["matlab",
+             "-nodesktop",
+             "-r",
+             f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"]
+        )
+
 
 class xASL_Executor(QMainWindow):
     def __init__(self, parent_win):
@@ -276,7 +268,7 @@ class xASL_Executor(QMainWindow):
                         self.parent().config["ExploreASLRoot"],  # The exploreasl filepath
                         glob(os.path.join(path.text(), "*Par*.json"))[0].replace('\\', '/'),  # The filepath to parms
                         1,  # Process the data
-                        1,  # Skip the pause
+                        0,  # Skip the pause
                         ii + 1,  # iWorker
                         int(box.currentText()),  # nWorkers
                         translator[opts.currentText()]  # Processing options
