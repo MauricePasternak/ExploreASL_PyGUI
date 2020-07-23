@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import *
-from PyQt5.QtCore import *
+from PySide2.QtWidgets import *
+from PySide2.QtGui import *
+from PySide2.QtCore import *
 from xASL_GUI_ParmsMaker import xASL_ParmsMaker, DirectoryDragDrop_ListWidget
 from xASL_GUI_Executor import xASL_Executor
 from xASL_GUI_PostProc import xASL_PostProc
@@ -9,8 +9,6 @@ import sys
 import json
 from platform import platform
 import subprocess
-import concurrent.futures as cf
-import itertools as it
 
 # Explore ASL Main Window
 # by Maurice Pasternak @ 2020
@@ -37,6 +35,7 @@ class xASL_MainWin(QMainWindow):
     def __init__(self, config=None):
         super().__init__()
         # Load in the master config file if it exists; otherwise, make it
+        print(platform())
         if config is None:
             self.load_config()
         else:
@@ -202,6 +201,7 @@ class xASL_MainWin(QMainWindow):
         else:
             self.config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
                            "DefaultRootDir": f"{os.getcwd()}",  # The default root for the navigator to watch from
+                           "Platform": f"{platform()}",
                            "DeveloperMode": False}  # Whether to launch the app in developer mode or not
             self.save_config()
 
@@ -217,7 +217,7 @@ class xASL_MainWin(QMainWindow):
                                                   self.config["DefaultRootDir"],  # Default dir
                                                   QFileDialog.ShowDirsOnly)  # Display options
         if result:
-            if '/' in result and platform() == "Windows":
+            if '/' in result and "windows" in platform().lower():
                 result = result.replace("/", "\\")
             # Change the display and have the navigator adjust according
             self.le_currentanalysis_dir.setText(result)
@@ -237,7 +237,7 @@ class xASL_MainWin(QMainWindow):
                                                        os.getcwd(),  # Default dir
                                                        QFileDialog.ShowDirsOnly)  # Display options
         if result:
-            if '/' in result and platform() == "Windows":
+            if '/' in result and "windows" in platform().lower():
                 result = result.replace("/", "\\")
             self.le_exploreasl_dir.setText(result)
             self.config["ExploreASLRoot"] = result
@@ -256,4 +256,4 @@ if __name__ == '__main__':
     else:
         main_win = xASL_MainWin(None)
     main_win.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())

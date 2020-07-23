@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import *
-from PyQt5.QtCore import *
+from PySide2.QtWidgets import *
+from PySide2.QtGui import *
+from PySide2.QtCore import *
 import os
 import sys
 import json
@@ -32,8 +32,6 @@ class ExploreASL_Worker(QRunnable):
         imodules = matlab.int8(imodules)
         eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
 
-    # @staticmethod
-    # def execute(exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules):
     #     print(f"Inside execute on processor {os.getpid()}")
     #
     #     # Generate the string that the command line will feed into the complied MATLAB session
@@ -55,8 +53,9 @@ class ExploreASL_Worker(QRunnable):
     #          f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"]
     #     )
 
+
 class xASL_Executor(QMainWindow):
-    def __init__(self, parent_win):
+    def __init__(self, parent_win=None):
         # Parent window is fed into the constructor to allow for communication with parent window devices
         super().__init__(parent=parent_win)
         if parent_win is not None:
@@ -77,6 +76,9 @@ class xASL_Executor(QMainWindow):
         self.threadpool = QThreadPool()
         self.btn_runExploreASL = QPushButton("Run Explore ASL", self.cw, clicked=self.run_Explore_ASL)
         self.btn_runExploreASL.setEnabled(False)
+        # Create a "debt" variable that will be used to reactivate the ExploreASL button; will decrement when a process
+        # begins, and increment back towards zero when said process ends. At zero, the button will be re-activated
+        self.process_debt = 0
 
         self.UI_Setup_Layouts_and_Groups()
         self.UI_Setup_TaskScheduler()
@@ -93,15 +95,16 @@ class xASL_Executor(QMainWindow):
     # Left side setup; define the number of studies
     def UI_Setup_TaskScheduler(self):
         self.vlay_taskschedule = QVBoxLayout(self.grp_taskschedule)
-        self.lab_coresinfo = QLabel(f"CPU Count: A total of {os.cpu_count()} processors are available on this machine",
-                                    self.grp_taskschedule)
-        self.ncores_left = os.cpu_count()
+        self.lab_coresinfo = QLabel(
+            f"CPU Count: A total of {os.cpu_count() // 2} processors are available on this machine",
+            self.grp_taskschedule)
+        self.ncores_left = os.cpu_count() // 2
         self.lab_coresleft = QLabel(f"You are permitted to set up to {self.ncores_left} more core(s)")
         self.cont_nstudies = QWidget(self.grp_taskschedule)
         self.hlay_nstudies = QHBoxLayout(self.cont_nstudies)
         self.lab_nstudies = QLabel(f"Indicate the number of studies you wish to process:", self.cont_nstudies)
         self.cmb_nstudies = QComboBox(self.cont_nstudies)
-        self.nstudies_options = ["Select"] + list(map(str, range(1, os.cpu_count() + 1)))
+        self.nstudies_options = ["Select"] + list(map(str, range(1, (os.cpu_count() // 2 + 1))))
         self.cmb_nstudies.addItems(self.nstudies_options)
         self.cmb_nstudies.currentTextChanged.connect(self.UI_Setup_TaskScheduler_FormUpdate)
         self.cmb_nstudies.currentTextChanged.connect(self.set_ncores_left)
@@ -154,7 +157,7 @@ class xASL_Executor(QMainWindow):
                 self.formlay_nrows += 1
                 inner_cmb = QComboBox()
                 inner_cmb.setMinimumWidth(140)
-                inner_cmb.addItems(list(map(str, range(1, os.cpu_count() + 1))))
+                inner_cmb.addItems(list(map(str, range(1, os.cpu_count() // 2 + 1))))
                 inner_cmb.currentTextChanged.connect(self.set_ncores_left)
                 inner_cmb.currentTextChanged.connect(self.set_ncores_selectable)
                 inner_cmb.currentTextChanged.connect(self.set_nstudies_selectable)
@@ -164,7 +167,7 @@ class xASL_Executor(QMainWindow):
                 inner_btn = RowAwareQPushButton(self.formlay_nrows, "...")
                 inner_btn.row_idx_signal.connect(self.set_analysis_directory)
                 inner_cmb_procopts = QComboBox()
-                inner_cmb_procopts.addItems(["Structural", "ASL", "Both"])
+                inner_cmb_procopts.addItems(["Structural", "ASL", "Both", "Population"])
                 inner_cmb_procopts.setCurrentIndex(2)
                 inner_hbox = QHBoxLayout()
                 inner_hbox.addWidget(inner_le)
@@ -196,7 +199,7 @@ class xASL_Executor(QMainWindow):
 
     # Function responsible for adjusting the label of how many cores are still accessible
     def set_ncores_left(self):
-        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
+        self.ncores_left = os.cpu_count() // 2 - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
         if self.ncores_left > 0:
             self.lab_coresleft.setText(f"You are permitted to set up to {self.ncores_left} more core(s)")
         elif self.ncores_left == 0:
@@ -206,7 +209,7 @@ class xASL_Executor(QMainWindow):
 
     # Function responsible for adjusting the choices avaliable within each of the comboboxes of a given task row
     def set_ncores_selectable(self):
-        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
+        self.ncores_left = os.cpu_count() // 2 - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
         cores_left = self.ncores_left
         for box in self.formlay_cmbs_ncores_list:
             current_selection = int(box.currentText())
@@ -221,7 +224,7 @@ class xASL_Executor(QMainWindow):
     # Function responsible for adjusting the number of studies still permitted (assuming 1 core will be initially
     # allocated to it)
     def set_nstudies_selectable(self):
-        self.ncores_left = os.cpu_count() - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
+        self.ncores_left = os.cpu_count() // 2 - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
         current_n_studies = int(self.cmb_nstudies.currentText())
         max_studies_allowed = current_n_studies + self.ncores_left
         for idx in range(self.cmb_nstudies.count()):
@@ -235,7 +238,7 @@ class xASL_Executor(QMainWindow):
                 self.cmb_nstudies.model().item(idx).setEnabled(False)
 
     # Sets the text within each of the lineedit widgets of the task scheduler rows
-    @pyqtSlot(int)
+    @Slot(int)
     def set_analysis_directory(self, row_idx):
         dir_path = QFileDialog.getExistingDirectory(self.cw,
                                                     "Select the analysis directory of your study",
@@ -266,7 +269,7 @@ class xASL_Executor(QMainWindow):
     # initialization; then begins the programs
     def run_Explore_ASL(self):
         print("%" * 40)
-        translator = {"Structural": [1], "ASL": [2], "Both": [1, 2]}
+        translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
         for box, path, opts in zip(self.formlay_cmbs_ncores_list,
                                    self.formlay_lineedits_list,
                                    self.formlay_cmbs_runopts_list):
@@ -282,6 +285,10 @@ class xASL_Executor(QMainWindow):
                         translator[opts.currentText()]  # Processing options
                     )
                     self.threadpool.start(worker)
+                    self.process_debt -= 1
+
+        # Disable for now after pressing; bad idea to accidentally allow a second click as it may cause system shutdown
+        self.btn_runExploreASL.setEnabled(False)
 
 
 class RowAwareQPushButton(QPushButton):
@@ -290,7 +297,7 @@ class RowAwareQPushButton(QPushButton):
     is a convenience measure for easily communicating to self.set_analysis_directory and knowing which lineedit to
     alter.
     """
-    row_idx_signal = pyqtSignal(int)
+    row_idx_signal = Signal(int)
 
     def __init__(self, row_idx, text, parent=None):
         super().__init__(text=text, parent=parent)

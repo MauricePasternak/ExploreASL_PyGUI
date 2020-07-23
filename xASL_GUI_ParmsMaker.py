@@ -1,9 +1,6 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLabel, \
-    QLineEdit, \
-    QComboBox, QListWidget, QSizePolicy, QGroupBox, QPushButton, QCheckBox, QListWidgetItem, QAbstractItemView, \
-    QDoubleSpinBox, QFileDialog, QMessageBox, QListView, QTreeView
-from PyQt5.QtCore import Qt, QUrl, pyqtSignal
-from PyQt5.QtGui import QDragMoveEvent, QDropEvent, QEnterEvent, QIcon, QPixmap, QFont
+from PySide2.QtWidgets import *
+from PySide2.QtCore import *
+from PySide2.QtGui import *
 from pprint import pprint
 from glob import glob
 from xASL_GUI_ParmsMaker_HelperFuncs import infer_regex
@@ -125,7 +122,8 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_study_parms.addRow("", self.btn_study_parms_clearexclusions)
         self.frmlay_study_parms.addRow("Session Names", self.le_study_parms_sessions)
         self.frmlay_study_parms.addRow("Session Options", self.le_study_parms_session_opts)
-        self.collection_study_parms = self.grp_study_parms.findChildren((QLineEdit, QListWidget))
+        self.collection_study_parms = self.grp_study_parms.findChildren(QLineEdit) + \
+                                      self.grp_study_parms.findChildren(QListWidget)
 
     def UI_Setup_M0ParmsSection(self):
         # Set up the M0 parameters group
@@ -145,7 +143,8 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_m0_parms.addRow("M0 Source", self.cmb_m0_parms_source)
         self.frmlay_m0_parms.addRow("GM Scale Factor", self.spinbox_m0_parms_scale)
         self.frmlay_m0_parms.addRow("M0 Position in ASL", self.cmb_m0_parms_pos)
-        self.collection_m0_parms = self.grp_m0_parms.findChildren((QComboBox, QDoubleSpinBox))
+        self.collection_m0_parms = self.grp_m0_parms.findChildren(QComboBox) + \
+                                   self.grp_m0_parms.findChildren(QDoubleSpinBox)
 
     def UI_Setup_SequenceParmsSection(self):
         # Set up the sequence parameters group
@@ -183,9 +182,9 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_seq_parms.addRow("Readout Dimension", self.cmb_seq_parms_readdim)
         self.frmlay_seq_parms.addRow("Vendor", self.cmb_seq_parms_vendor)
         self.frmlay_seq_parms.addRow("Sequence Type", self.cmb_seq_parms_seqtype)
-        self.frmlay_seq_parms.addRow("Labelling Type", self.cmb_seq_parms_labeltype)
-        self.frmlay_seq_parms.addRow("Initial Post-Labelling Delay", self.spinbox_seq_parms_iniPLD)
-        self.frmlay_seq_parms.addRow("Labelling Duration", self.spinbox_seq_parms_labdur)
+        self.frmlay_seq_parms.addRow("Labeling Type", self.cmb_seq_parms_labeltype)
+        self.frmlay_seq_parms.addRow("Initial Post-Labeling Delay", self.spinbox_seq_parms_iniPLD)
+        self.frmlay_seq_parms.addRow("Labeling Duration", self.spinbox_seq_parms_labdur)
         self.frmlay_seq_parms.addRow("Slice Readout Time", self.hbox_seq_parms_slicerdtime)
         self.collection_seq_parms = [self.cmb_seq_parms_npulses, self.cmb_seq_parms_readdim, self.cmb_seq_parms_vendor,
                                      self.cmb_seq_parms_seqtype, self.cmb_seq_parms_labeltype,
@@ -270,7 +269,9 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_proc_parms.addRow("Use Affine Registration", self.cmb_proc_parms_affinereg)
         self.frmlay_proc_parms.addRow("Register M0 to ASL", self.chk_proc_parms_m02aslreg)
         self.frmlay_proc_parms.addRow("Use MNI as a Dummy Template", self.chk_proc_parms_useMNIasdummy)
-        self.collection_proc_parms = self.grp_proc_parms.findChildren((QCheckBox, QComboBox, QDoubleSpinBox))
+        self.collection_proc_parms = self.grp_proc_parms.findChildren(QCheckBox) + \
+                                     self.grp_proc_parms.findChildren(QComboBox) + \
+                                     self.grp_proc_parms.findChildren(QDoubleSpinBox)
 
     # Setup of all inner signals here that are not included within constructors (ex. QPushButton 'clicked' arguments)
     def UI_Setup_Connections(self):
@@ -289,6 +290,8 @@ class xASL_ParmsMaker(QMainWindow):
     def set_exploreasl_dir(self):
         result = QFileDialog.getExistingDirectory(self, "Select the ExploreASL root directory", os.getcwd(),
                                                   QFileDialog.ShowDirsOnly)
+        if '/' in result and "windows" in self.parent().config["Platform"].lower():
+            result = result.replace('/', '\\')
         if result:
             self.le_study_parms_exploreasl.setText(result)
 
@@ -296,7 +299,7 @@ class xASL_ParmsMaker(QMainWindow):
     def set_currentanalysis_dir(self):
         result = QFileDialog.getExistingDirectory(self, "Select the study analysis directory", os.getcwd(),
                                                   QFileDialog.ShowDirsOnly)
-        if '/' in result:
+        if '/' in result and "windows" in self.parent().config["Platform"].lower():
             result = result.replace('/', '\\')
         if result:
             self.le_study_parms_analysisdir.setText(result)
@@ -397,9 +400,9 @@ class xASL_ParmsMaker(QMainWindow):
         json_parms["Q"] = {}
         json_parms["Q"]["BackGrSupprPulses"] = int(self.cmb_seq_parms_npulses.currentText())
         parms_labeltype_translate = {"Q2 TIPS PASL": "PASL", "pCASL or CASL": "CASL"}
-        json_parms["Q"]["LabellingType"] = parms_labeltype_translate[self.cmb_seq_parms_labeltype.currentText()]
+        json_parms["Q"]["LabelingType"] = parms_labeltype_translate[self.cmb_seq_parms_labeltype.currentText()]
         json_parms["Q"]["Initial_PLD"] = float(self.spinbox_seq_parms_iniPLD.value())
-        json_parms["Q"]["LabellingDuration"] = float(self.spinbox_seq_parms_labdur.value())
+        json_parms["Q"]["LabelingDuration"] = float(self.spinbox_seq_parms_labdur.value())
         parms_slicereadtime_translate = {"Use Shortest TR": "shortestTR",
                                          "Use Indicated Value": float(self.spinbox_seq_parms_slicerdtime.value())}
         json_parms["Q"]["SliceReadoutTime"] = parms_slicereadtime_translate[self.cmb_seq_parms_slicerdt.currentText()]
@@ -516,13 +519,13 @@ class xASL_ParmsMaker(QMainWindow):
                             if sub_key == "BackGrSupprPulses":
                                 self.cmb_seq_parms_npulses.setCurrentIndex(
                                     self.cmb_seq_parms_npulses.findText(str(sub_val)))
-                            elif sub_key == "LabellingType":
+                            elif sub_key == "LabelingType":
                                 parms_labeltype_translate = {"PASL": "Q2 TIPS PASL", "CASL": "pCASL or CASL"}
                                 self.cmb_seq_parms_labeltype.setCurrentIndex(
                                     self.cmb_seq_parms_labeltype.findText(parms_labeltype_translate[sub_val]))
                             elif sub_key == "Initial_PLD":
                                 self.spinbox_seq_parms_iniPLD.setValue(sub_val)
-                            elif sub_key == "LabellingDuration":
+                            elif sub_key == "LabelingDuration":
                                 self.spinbox_seq_parms_labdur.setValue(sub_val)
                             elif sub_key == "SliceReadoutTime":
                                 self.spinbox_seq_parms_slicerdtime.setValue(sub_val)
@@ -557,7 +560,10 @@ class xASL_ParmsMaker(QMainWindow):
 
 
 class DirectoryDragDrop_ListWidget(QListWidget):
-    alert_regex = pyqtSignal()  # This will be called in the ParmsMaker superclass to update its regex
+    """
+    Class meant to accept MULTIPLE directory inputs and add them to the underlying QListWidget
+    """
+    alert_regex = Signal()  # This will be called in the ParmsMaker superclass to update its regex
 
     def __init__(self, parent=None):
         super(DirectoryDragDrop_ListWidget, self).__init__(parent)
@@ -583,7 +589,10 @@ class DirectoryDragDrop_ListWidget(QListWidget):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     subject_directories.append(str(url.toLocalFile()))
-            basenames = [os.path.basename(directory) for directory in subject_directories if os.path.isdir(directory)]
+            # Only filter for the basenames of directories; also, avoid bringing in unnecessary directories like lock
+            basenames = [os.path.basename(directory) for directory in subject_directories if os.path.isdir(directory)
+                         and directory not in ['lock', "Population"]]
+            # Avoid double-dipping the names
             current_names = [self.item(idx).text() for idx in range(self.count())]
             filtered_basenames = [name for name in basenames if name not in current_names]
             self.addItems(filtered_basenames)
