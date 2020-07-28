@@ -28,7 +28,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.mainlay = QHBoxLayout(self.cw)
         self.setLayout(self.mainlay)
         self.setWindowTitle("Explore ASL - Parameter File Maker")
-        self.setWindowIcon(QIcon(QPixmap("media/ExploreASL_logo.jpg")))
+        self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.png")))
         # Buttons for executing the fundamental functions
         self.btn_make_parms = QPushButton("Run", self.cw, clicked=self.save_parms2json)
         self.btn_load_parms = QPushButton("Load from existing Json", self.cw, clicked=self.load_json2parms)

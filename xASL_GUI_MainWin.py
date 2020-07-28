@@ -46,7 +46,7 @@ class xASL_MainWin(QMainWindow):
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         # Main Icon setup
-        self.icon_main = QIcon(QPixmap("media/ExploreASL_logo.jpg"))
+        self.icon_main = QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.png"))
         self.setWindowIcon(self.icon_main)
         # Main Layout Setup
         self.mainlay = QHBoxLayout(self.cw)
@@ -201,6 +201,7 @@ class xASL_MainWin(QMainWindow):
         else:
             self.config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
                            "DefaultRootDir": f"{os.getcwd()}",  # The default root for the navigator to watch from
+                           "ScriptsDir": f"{os.getcwd()}", # The location of where this script is launched from
                            "Platform": f"{platform()}",
                            "DeveloperMode": False}  # Whether to launch the app in developer mode or not
             self.save_config()
@@ -248,6 +249,7 @@ class xASL_MainWin(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.jpg")))
     # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
     if os.path.exists(os.path.join(os.getcwd(), "ExploreASL_GUI_masterconfig.json")):
         with open("ExploreASL_GUI_masterconfig.json") as reader:
