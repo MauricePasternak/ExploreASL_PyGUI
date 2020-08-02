@@ -10,6 +10,7 @@ import json
 from platform import platform
 import subprocess
 
+
 # Explore ASL Main Window
 # by Maurice Pasternak @ 2020
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -31,6 +32,7 @@ import subprocess
 #  spinbox = DoubleSpinBox; vlay = vertical Layout
 
 
+# noinspection PyAttributeOutsideInit
 class xASL_MainWin(QMainWindow):
     def __init__(self, config=None):
         super().__init__()
@@ -69,6 +71,7 @@ class xASL_MainWin(QMainWindow):
         # Initialize the navigator and essential characteristics
         self.dock_navigator = QDockWidget("Explore ASL Navigator", self)
         self.dock_navigator.setFeatures(QDockWidget.AllDockWidgetFeatures)
+        self.dock_navigator.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.dock_navigator.setMinimumSize(480, 480)
         self.dock_navigator.setWindowIcon(self.icon_main)
         # The main container and the main layout of the dock
@@ -133,7 +136,8 @@ class xASL_MainWin(QMainWindow):
     def UI_Setup_MainSelections(self):
         self.vlay_left = QVBoxLayout(self)
         self.vlay_right = QVBoxLayout(self)
-        for layout in [self.vlay_left, self.vlay_right]: self.mainlay.addLayout(layout)
+        for layout in [self.vlay_left, self.vlay_right]:
+            self.mainlay.addLayout(layout)
         expanding_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         font_policy = QFont("Sans Serif", 24)
         font_policy.setBold(True)
@@ -201,7 +205,7 @@ class xASL_MainWin(QMainWindow):
         else:
             self.config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
                            "DefaultRootDir": f"{os.getcwd()}",  # The default root for the navigator to watch from
-                           "ScriptsDir": f"{os.getcwd()}", # The location of where this script is launched from
+                           "ScriptsDir": f"{os.getcwd()}",  # The location of where this script is launched from
                            "Platform": f"{platform()}",
                            "DeveloperMode": False}  # Whether to launch the app in developer mode or not
             self.save_config()
@@ -212,6 +216,7 @@ class xASL_MainWin(QMainWindow):
                 self.tooltips = json.load(f)
 
     # Sets the analysis directory the user is interested in
+    # noinspection PyCallByClass
     def set_analysis_dir(self):
         result = QFileDialog.getExistingDirectory(self,
                                                   "Select analysis directory to view",  # Window title
@@ -243,7 +248,6 @@ class xASL_MainWin(QMainWindow):
             self.le_exploreasl_dir.setText(result)
             self.config["ExploreASLRoot"] = result
             self.save_config()
-
 
 
 if __name__ == '__main__':

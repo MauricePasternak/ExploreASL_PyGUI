@@ -15,6 +15,14 @@ from time import sleep
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from itertools import chain
+
+class ExploreASL_WorkerSignals(QObject):
+    """
+    Class for handling the signals sent by an ExploreASL worker
+    """
+    finished_processing = Signal()  # Signal sent by worker to watcher to help indicate it when to stop watching
+    encountered_fatal_error = Signal(str)  # Signal sent by worker to raise a dialogue informing the user of an error
 
 
 class ExploreASL_Worker(QRunnable):
@@ -25,6 +33,7 @@ class ExploreASL_Worker(QRunnable):
     def __init__(self, *args):
         self.args = args
         super().__init__()
+        self.signals = ExploreASL_WorkerSignals()
         print(f"Initialized Worker with args {self.args}")
 
     # This is called by the threadpool during threadpool.start(worker)
@@ -35,10 +44,13 @@ class ExploreASL_Worker(QRunnable):
         eng.cd(exploreasl_path)
         imodules = matlab.int8(imodules)
         try:
-            eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
+            result = eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
         except matlab.engine.EngineError as e:
             print(e)
-            return
+            self.signals.encountered_fatal_error.emit(f"{e}")
+
+        self.signals.finished_processing.emit()
+        print("A worker has finished processing")
 
     #     print(f"Inside execute on processor {os.getpid()}")
     #
@@ -62,6 +74,7 @@ class ExploreASL_Worker(QRunnable):
     # )
 
 
+# noinspection PyCallingNonCallable,PyAttributeOutsideInit
 class xASL_Executor(QMainWindow):
     cont_nstudies: QWidget
 
@@ -266,6 +279,7 @@ class xASL_Executor(QMainWindow):
                 self.cmb_nstudies.model().item(idx).setEnabled(False)
 
     # Sets the text within each of the lineedit widgets of the task scheduler rows
+    # noinspection PyCallByClass
     @Slot(int)
     def set_analysis_directory(self, row_idx):
         dir_path = QFileDialog.getExistingDirectory(self.cw,
@@ -309,6 +323,14 @@ class xASL_Executor(QMainWindow):
                                        self.formlay_lineedits_list,
                                        self.formlay_cmbs_runopts_list):
 
+            #########################################
+            # INNER FOR LOOP - For a particular study
+            #########################################
+            # Create a container to keep a block of workers in for a particular study
+            # Also create a debt counter to be fed to the watcher so that it can eventually disengage
+            inner_worker_block = []
+            debt = 0
+
             # Prepare Workers block
             # Inner for loop: loops over the range of the num of cores within a study. Each core will be an iWorker
             for ii in range(box.count()):
@@ -322,17 +344,20 @@ class xASL_Executor(QMainWindow):
                         int(box.currentText()),  # nWorkers
                         translator[run_opts.currentText()]  # Processing options
                     )
-                    self.workers.append(worker)
-                    self.process_debt -= 1
+
+                    inner_worker_block.append(worker)
+                    debt -= 1
+
+            # Add the block to the main workers argument
+            self.workers.append(inner_worker_block)
 
             # Prepare Watchers block
-            # First, pre-prepare some givens; minimize as much overhead post-lauching threads as possible
+            # First, pre-prepare some givens; minimize as much overhead post-launching threads as possible
             parms_file = glob(os.path.join(path.text(), "*Par*.json"))[0]
             with open(parms_file) as f:
                 parms = json.load(f)
                 str_regex: str = parms["subject_regexp"]
                 regex = re.compile(str_regex)
-                quality = parms["Quality"]
                 sess_names = parms["SESSIONS"]
 
             # Create all lock directories in advance so that the assigned watcher may have full oversight into the
@@ -348,9 +373,24 @@ class xASL_Executor(QMainWindow):
             if str_regex.startswith("^") or str_regex.endswith('$'):
                 str_regex = str_regex.strip('^$')
             watcher = ExploreASL_Watcher(target=path.text(),  # the analysis directory
-                                         regex=str_regex)
+                                         regex=str_regex,  # the regex used to recognize subjects
+                                         watch_debt=debt  # the debt used to determine when to stop watching
+                                         )
             watcher.signals.update_text_output_signal.connect(self.update_text)
             self.watchers.append(watcher)
+
+            # For that study, make the necessary connections from each of the workers
+            for worker in inner_worker_block:
+                # Connect the finished signal to the watcher debt to help it understand when it should stop watching
+                worker.signals.finished_processing.connect(watcher.increment_debt)
+
+        ######################################
+        # THIS IS NOW OUTSIDE OF THE FOR LOOPS
+
+        # self.watchers is nested at this point; we need to flatten it
+        self.workers = list(chain(*self.workers))
+        print(self.workers)
+        print(self.watchers)
 
         # Launch all threads in one go
         for runnable in self.workers + self.watchers:
@@ -363,18 +403,18 @@ class xASL_Executor(QMainWindow):
     @staticmethod
     def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
 
-        def dirnames_for_asl(analysis_dir, sessions, session_names):
-            dirnames = [os.path.join(analysis_dir, "lock", f"xASL_module_ASL", sess, f"xASL_module_ASL_{name}")
+        def dirnames_for_asl(analysis_directory, sessions, session_names):
+            dirnames = [os.path.join(analysis_directory, "lock", f"xASL_module_ASL", sess, f"xASL_module_ASL_{name}")
                         for sess in sessions for name in session_names]
             return dirnames
 
-        def dirnames_for_structural(analysis_dir, sessions):
-            dirnames = [os.path.join(analysis_dir, "lock", f"xASL_module_Structural", sess, "xASL_module_Structural")
+        def dirnames_for_structural(analysis_directory, sessions):
+            dirnames = [os.path.join(analysis_directory, "lock", f"xASL_module_Structural", sess, "xASL_module_Structural")
                         for sess in sessions]
             return dirnames
 
-        def dirnames_for_population(analysis_dir):
-            return [os.path.join(analysis_dir, "lock", "xASL_module_Population", "xASL_module_Population")]
+        def dirnames_for_population(analysis_directory):
+            return [os.path.join(analysis_directory, "lock", "xASL_module_Population", "xASL_module_Population")]
 
         print(f"Generating the appropriate lock dirs for {analysis_dir}")
         sessions = [session for session in os.listdir(analysis_dir) if regex.search(session)]
@@ -409,6 +449,7 @@ class ExploreASL_WatcherSignals(QObject):
     update_debt_signal = Signal(int)
 
 
+# noinspection PyCallingNonCallable
 class ExploreASL_Watcher(QRunnable):
     """
     Modified file system watcher. Will monitor the appearance of STATUS files within the lock dirs of the analysis
@@ -418,12 +459,13 @@ class ExploreASL_Watcher(QRunnable):
     3) alter the process_debt variable such that the Run button may be re-enabled when the "run debt" is paid off
     """
 
-    def __init__(self, target, regex):
+    def __init__(self, target, regex, watch_debt):
         super().__init__()
         self.signals = ExploreASL_WatcherSignals()
         self.dir_to_watch = os.path.join(target, "lock")
         self.session_regex = re.compile(regex)
         self.module_regex = re.compile('module_(ASL|Structural|Population)')
+        self.watch_debt = watch_debt
 
         self.pop_mod_started = False
         self.struct_mod_started = False
@@ -477,17 +519,15 @@ class ExploreASL_Watcher(QRunnable):
         if msg:
             self.signals.update_text_output_signal.emit(msg)
 
-
     # Must use slots system, as it is thread-safe
     @Slot()
-    def completed(self):
-        self.is_done = True
-
+    def increment_debt(self):
+        self.watch_debt += 1
 
     def run(self):
         self.observer.start()
         print("\t" * 10 + "THE OBSERVER HAS STARTED")
-        while not self.is_done:
+        while self.watch_debt < 0:
             sleep(10)
         print("THE OBSERVER HAS STOPPED")
         self.observer.stop()

@@ -3,6 +3,7 @@ from PySide2.QtCore import Qt
 from platform import platform
 import os
 
+
 class DandD_ListWidget2LineEdit(QLineEdit):
     """
     Modified QLineEdit to support accepting text drops from a QListWidget or QAbstractItemModel derivatives
@@ -86,6 +87,7 @@ class DandD_FileExplorer2LineEdit(QLineEdit):
                     return  # Only return the first local url instance if this was a from a multi-selection
         else:
             event.ignore()
+
 
 class DandD_FileExplorerFile2LineEdit(QLineEdit):
     """

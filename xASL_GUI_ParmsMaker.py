@@ -3,7 +3,6 @@ from PySide2.QtCore import *
 from PySide2.QtGui import *
 from pprint import pprint
 from glob import glob
-from xASL_GUI_ParmsMaker_HelperFuncs import infer_regex
 import sys
 import json
 import os

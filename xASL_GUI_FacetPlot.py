@@ -34,7 +34,35 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
         self.all_dtypes = ["object", "category", "bool", "float", "float16", "float32", "float64", "int", "int8",
                            "int16", "int32", "int64"]
         self.numeric_dtypes = ["float", "float16", "float32", "float64", "int", "int8", "int16", "int32", "int64"]
-        self.palettenames = ["tab10", "Set1", "Set2", "Set3"]
+        self.palettenames = ["None", "Default Blue", "No Palette", 'Accent', 'Accent_r', 'Blues', 'Blues_r', 'BrBG',
+                             'BrBG_r', 'BuGn', 'BuGn_r', 'BuPu',
+                             'BuPu_r', 'CMRmap', 'CMRmap_r', 'Dark2', 'Dark2_r', 'GnBu', 'GnBu_r', 'Greens', 'Greens_r',
+                             'Greys', 'Greys_r', 'OrRd', 'OrRd_r', 'Oranges', 'Oranges_r', 'PRGn', 'PRGn_r', 'Paired',
+                             'Paired_r', 'Pastel1', 'Pastel1_r', 'Pastel2', 'Pastel2_r', 'PiYG', 'PiYG_r', 'PuBu',
+                             'PuBuGn', 'PuBuGn_r', 'PuBu_r', 'PuOr', 'PuOr_r', 'PuRd', 'PuRd_r', 'Purples', 'Purples_r',
+                             'RdBu', 'RdBu_r', 'RdGy', 'RdGy_r', 'RdPu', 'RdPu_r', 'RdYlBu', 'RdYlBu_r', 'RdYlGn',
+                             'RdYlGn_r', 'Reds', 'Reds_r', 'Set1', 'Set1_r', 'Set2', 'Set2_r', 'Set3', 'Set3_r',
+                             'Spectral', 'Spectral_r', 'Wistia', 'Wistia_r', 'YlGn', 'YlGnBu', 'YlGnBu_r', 'YlGn_r',
+                             'YlOrBr', 'YlOrBr_r', 'YlOrRd', 'YlOrRd_r', 'afmhot', 'afmhot_r', 'autumn', 'autumn_r',
+                             'binary', 'binary_r', 'bone', 'bone_r', 'brg', 'brg_r', 'bwr', 'bwr_r', 'cividis',
+                             'cividis_r', 'cool', 'cool_r', 'coolwarm', 'coolwarm_r', 'copper', 'copper_r', 'cubehelix',
+                             'cubehelix_r', 'flag', 'flag_r', 'gist_earth', 'gist_earth_r', 'gist_gray', 'gist_gray_r',
+                             'gist_heat', 'gist_heat_r', 'gist_ncar', 'gist_ncar_r', 'gist_rainbow', 'gist_rainbow_r',
+                             'gist_stern', 'gist_stern_r', 'gist_yarg', 'gist_yarg_r', 'gnuplot', 'gnuplot2',
+                             'gnuplot2_r', 'gnuplot_r', 'gray', 'gray_r', 'hot', 'hot_r', 'hsv', 'hsv_r', 'icefire',
+                             'icefire_r', 'inferno', 'inferno_r', 'jet', 'jet_r', 'magma', 'magma_r', 'mako', 'mako_r',
+                             'nipy_spectral', 'nipy_spectral_r', 'ocean', 'ocean_r', 'pink', 'pink_r', 'plasma',
+                             'plasma_r', 'prism', 'prism_r', 'rainbow', 'rainbow_r', 'rocket', 'rocket_r', 'seismic',
+                             'seismic_r', 'spring', 'spring_r', 'summer', 'summer_r', 'tab10', 'tab10_r', 'tab20',
+                             'tab20_r', 'tab20b', 'tab20b_r', 'tab20c', 'tab20c_r', 'terrain', 'terrain_r', 'twilight',
+                             'twilight_r', 'twilight_shifted', 'twilight_shifted_r', 'viridis', 'viridis_r', 'vlag',
+                             'vlag_r', 'winter', 'winter_r']
+        self.default_palette_idx = self.palettenames.index("Set1")
+
+        # Some default values for important variables
+        self.axes_arg_x = ''  # Set to '' instead of None because the latter is not supported by lineedits
+        self.axes_arg_y = ''
+        self.axes_arg_hue = ''
 
     def sendSignal_figparms_updateplot(self):
         self.change_figparms_updateplot.emit()
@@ -77,12 +105,9 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             self.formlay_figparms.addRow(description, widget)
             self.connect_widget_to_signal(widget, self.sendSignal_figparms_updateplot)
 
-
-
         self.cmb_axestype = QComboBox()
         self.cmb_axestype.addItems(["Select a plot type", "Point Plot", "Bar Plot", "Strip Plot", "Swarm Plot",
-                                    "Box Plot", "Violin Plot", "Boxen Plot", "Scatter Plot", "Line Plot",
-                                    "Regression Plot"])
+                                    "Box Plot", "Violin Plot", "Boxen Plot", "Scatter Plot", "Line Plot"])
         self.cmb_axestype.currentTextChanged.connect(self.UI_Setup_AxesParms)
         self.formlay_figparms.addRow(self.cmb_axestype)
 
@@ -124,12 +149,11 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
         if plot_type == "Point Plot":
             self.plotting_func = sns.pointplot
             self.ci = QDoubleSpinBox(maximum=100, minimum=0, value=95, singleStep=1)
-            self.dodge = QCheckBox(checked=False)
-            self.join = QCheckBox(checked=False)
-            self.errwidth = QDoubleSpinBox(maximum=2, minimum=0, value=0.5, singleStep=0.05)
-            self.capsize = QDoubleSpinBox(maximum=2, minimum=0, value=0.2, singleStep=0.05)
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
+            self.dodge = QCheckBox(checked=True)
+            self.join = QCheckBox(checked=True)
+            self.errwidth = QDoubleSpinBox(maximum=2, minimum=0, value=2, singleStep=0.05)
+            self.capsize = QDoubleSpinBox(maximum=1, minimum=0, value=0.05, singleStep=0.005)
+            self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.axes_kwargs = {"ci": self.ci.value,
                                 "dodge": self.dodge.isChecked,
                                 "join": self.join.isChecked,
@@ -153,9 +177,9 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
         elif plot_type == "Bar Plot":
             self.plotting_func = sns.barplot
             self.ci = QDoubleSpinBox(maximum=100, minimum=0, value=95, singleStep=1)
-            self.dodge = QCheckBox(checked=False)
-            self.errwidth = QDoubleSpinBox(maximum=2, minimum=0, value=0.2, singleStep=0.05)
-            self.capsize = QDoubleSpinBox(maximum=2, minimum=0, value=0.2, singleStep=0.05)
+            self.dodge = QCheckBox(checked=True)
+            self.errwidth = QDoubleSpinBox(maximum=3, minimum=0, value=1.55, singleStep=0.05)
+            self.capsize = QDoubleSpinBox(maximum=1, minimum=0, value=0.04, singleStep=0.01)
             self.cmb_palette = QComboBox()
             self.cmb_palette.addItems(self.palettenames)
             self.axes_kwargs = {"ci": self.ci.value,
@@ -182,11 +206,10 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                 self.plotting_func = sns.stripplot
             else:
                 self.plotting_func = sns.swarmplot
-            self.dodge = QCheckBox(checked=False)
-            self.size = QDoubleSpinBox(maximum=10, minimum=1, value=5, singleStep=0.1)
+            self.dodge = QCheckBox(checked=True)
+            self.size = QDoubleSpinBox(maximum=10, minimum=1, value=4.5, singleStep=0.1)
             self.linewidth = QDoubleSpinBox(maximum=2, minimum=0, value=0.1, singleStep=0.1)
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
+            self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.axes_kwargs = {"dodge": self.dodge.isChecked,
                                 "size": self.size.value,
                                 "linewidth": self.linewidth.value,
@@ -200,19 +223,19 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.dodge, self.size, self.linewidth,
                                             self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
+                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
 
         elif plot_type == "Box Plot":
             self.plotting_func = sns.boxplot
-            self.barwidth = QDoubleSpinBox(maximum=1, minimum=0, value=0.8, singleStep=0.05)
+            self.barwidth = QDoubleSpinBox(maximum=1, minimum=0, value=0.7, singleStep=0.05)
             self.dodge = QCheckBox(checked=True)
             self.fliersize = QDoubleSpinBox(maximum=10, minimum=0, value=5, singleStep=0.25)
-            self.linewidth = QDoubleSpinBox(maximum=5, minimum=0, value=1, singleStep=0.1)
+            self.linewidth = QDoubleSpinBox(maximum=5, minimum=0, value=1.55, singleStep=0.05)
             self.whis = QDoubleSpinBox(maximum=3, minimum=0, value=1.5, singleStep=0.1)
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
+            self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.axes_kwargs = {"width": self.barwidth.value,
                                 "dodge": self.dodge.isChecked,
                                 "fliersize": self.fliersize.value,
@@ -243,9 +266,8 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             self.scale.addItems(["area", "count", "width"])
             self.scale_hue = QCheckBox(checked=True)
             self.dodge = QCheckBox(checked=True)
-            self.linewidth = QDoubleSpinBox(maximum=5, minimum=0, value=1, singleStep=0.1)
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
+            self.linewidth = QDoubleSpinBox(maximum=5, minimum=0, value=1.8, singleStep=0.1)
+            self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.axes_kwargs = {"bw": self.kernalbwalgo.currentText,
                                 "scale": self.scale.currentText,
                                 "scale_hue": self.scale_hue.isChecked,
@@ -271,11 +293,10 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             self.plotting_func = sns.boxenplot
             self.barwidth = QDoubleSpinBox(maximum=1, minimum=0, value=0.8, singleStep=0.05)
             self.dodge = QCheckBox(checked=True)
-            self.linewidth = QDoubleSpinBox(maximum=5, minimum=0, value=1, singleStep=0.1)
+            self.linewidth = QDoubleSpinBox(maximum=5, minimum=0, value=0.7, singleStep=0.1)
             self.outlier_prop = QDoubleSpinBox(maximum=1, minimum=0, value=0.007, singleStep=0.001)
             self.show_outliers = QCheckBox(checked=True)
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
+            self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.axes_kwargs = {"width": self.barwidth.value,
                                 "dodge": self.dodge.isChecked,
                                 "linewidth": self.linewidth.value,
@@ -292,6 +313,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.barwidth, self.dodge,
                                             self.linewidth, self.outlier_prop, self.show_outliers, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
+                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -302,8 +324,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             self.size_grouper.setPlaceholderText("(Optional) Drag & Drop the Markersize-Grouping Variable")
             self.style_grouper = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
             self.style_grouper.setPlaceholderText("(Optional) Drag & Drop the Markerstyle-Grouping Variable")
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
+            self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.axes_kwargs = {"size": self.size_grouper.text,
                                 "style": self.style_grouper.text,
                                 "palette": self.cmb_palette.currentText
@@ -315,6 +336,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.size_grouper, self.style_grouper,
                                             self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
+                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -325,16 +347,13 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             self.size_grouper.setPlaceholderText("(Optional) Drag & Drop the Markersize-Grouping Variable")
             self.style_grouper = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
             self.style_grouper.setPlaceholderText("(Optional) Drag & Drop the Markerstyle-Grouping Variable")
-            self.ci = QDoubleSpinBox(maximum=100, minimum=0, value=95, singleStep=1)
-            self.sort = QCheckBox(checked=False)
+            self.sort = QCheckBox(checked=True)
             self.dashes = QCheckBox(checked=False)
             self.err_style = QComboBox()
             self.err_style.addItems(["band", "bars"])
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
+            self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.axes_kwargs = {"size": self.size_grouper.text,
                                 "style": self.style_grouper.text,
-                                "ci": self.ci.value,
                                 "sort": self.sort.isChecked,
                                 "dashes": self.dashes.isChecked,
                                 "err_style": self.err_style.currentText,
@@ -344,52 +363,36 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             self.formlay_axesparms = QFormLayout(self.cont_axesparms)
             for description, widget in zip(["X Axis Variable", "Y Axis variable", "Hue Grouping Variable",
                                             "Size Grouping Variable", "Marker Style Grouping Variable",
-                                            "Confidence Interval", "Pre-sort data first?",
+                                            "Pre-sort data first?",
                                             "Use dashes instead of solid lines?", "Style of errorbars", "Palette"],
                                            [self.le_x, self.le_y, self.le_hue, self.size_grouper, self.style_grouper,
-                                            self.ci, self.sort, self.dashes, self.err_style, self.cmb_palette]):
+                                            self.sort, self.dashes, self.err_style, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
+                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
 
-        elif plot_type == "Regression Plot":
-            self.plotting_func = sns.regplot
-            self.scatter = QCheckBox(checked=True)
-            self.fit_reg = QCheckBox(checked=True)
-            self.ci = QSpinBox(maximum=100, minimum=0, value=95, singleStep=1)
-            self.order = QSpinBox(maximum=5, minimum=1, value=1, singleStep=1)
-            self.logistic = QCheckBox(checked=False)
-            self.lowess = QCheckBox(checked=False)
-            self.robust = QCheckBox(checked=False)
-            self.truncate = QCheckBox(checked=False)
-            self.cmb_palette = QComboBox()
-            self.cmb_palette.addItems(self.palettenames)
-            self.axes_kwargs = {"scatter": self.scatter.isChecked,
-                                "fit_reg": self.fit_reg.isChecked,
-                                "ci": self.ci.value,
-                                "order": self.order.value,
-                                "logistic": self.logistic.isChecked,
-                                "lowess": self.lowess.isChecked,
-                                "robust": self.robust.isChecked,
-                                "truncate": self.truncate.isChecked,
-                                "palette": self.cmb_palette.currentText
-                                }
-            self.cont_axesparms = QWidget()
-            self.formlay_axesparms = QFormLayout(self.cont_axesparms)
-            for description, widget in zip(["X Axis Variable", "Y Axis variable", "Hue Grouping Variable",
-                                            "Plot underlying scatterplot?", "Show the regression model?",
-                                            "Confidence Interval", "Polynomial power of regression model",
-                                            "Fit logistic regression instead", "Use Lowess Regression?",
-                                            "Use Robust Regression?", "Limit the model to the data range?",
-                                            "Palette"],
-                                           [self.le_x, self.le_y, self.le_hue, self.scatter, self.fit_reg,
-                                            self.ci, self.order, self.logistic, self.lowess, self.robust,
-                                            self.truncate, self.cmb_palette]):
-                self.formlay_axesparms.addRow(description, widget)
+        else:
+            print("THIS SHOULD NEVER PRINT. AN IMPOSSIBLE AXES TYPE WAS SELECTED")
 
-            # Send the signal for this widget group to be added to the main Axes Parameters tab
-            self.change_axesparms_widget.emit()
+        # Regardless of what type of plot was selected, the current axes should be cleared
+        axes = self.parent.grid.axes
+        for ax in axes.flat:
+            ax.clear()
+        self.parent.canvas.draw()
+
+
+    # Convenience function to generate the combobox that will respond to palette changes
+    def UI_Setup_PaletteCombobox(self):
+        cmb_palette = QComboBox()
+        cmb_palette.addItems(self.palettenames)
+        cmb_palette.setMaxVisibleItems(10)
+        cmb_palette.setEditable(True)
+        cmb_palette.setCurrentIndex(self.default_palette_idx)
+        if len(self.parent.long_data) > 2000:
+            cmb_palette.setAutoCompletion(False)
+        return cmb_palette
 
     # Convenience Function for connecting the widgets to the appropriate signal, usually in a for loop
     def connect_widget_to_signal(self, widget, target_signal):
@@ -403,13 +406,3 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             widget.clicked.connect(target_signal)
         else:
             print(f'{widget} could not be connected')
-
-
-
-
-
-
-
-
-
-
