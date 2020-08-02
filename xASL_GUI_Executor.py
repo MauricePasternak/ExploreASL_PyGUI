@@ -1,21 +1,20 @@
-from PySide2.QtWidgets import *
-from PySide2.QtGui import *
-from PySide2.QtCore import *
-import os
-import shutil
-import sys
 import json
+import os
 import re
+import sys
 from glob import glob
-import matlab.engine
-import matlab
-from platform import platform
-import subprocess
-from time import sleep
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from itertools import chain
+from time import sleep
+
+import matlab
+import matlab.engine
+from PySide2.QtCore import *
+from PySide2.QtGui import *
+from PySide2.QtWidgets import *
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+
 
 class ExploreASL_WorkerSignals(QObject):
     """
@@ -101,7 +100,7 @@ class xASL_Executor(QMainWindow):
         self.btn_runExploreASL.setEnabled(False)
         # Create a "debt" variable that will be used to reactivate the ExploreASL button; will decrement when a process
         # begins, and increment back towards zero when said process ends. At zero, the button will be re-activated
-        self.process_debt = 0
+        self.total_process_dbt = 0
 
         self.UI_Setup_Layouts_and_Groups()
         self.UI_Setup_TaskScheduler()
@@ -307,9 +306,18 @@ class xASL_Executor(QMainWindow):
         else:
             self.btn_runExploreASL.setEnabled(False)
 
+    # Based on signal outout, this receives messages from watchers and outputs text feedback to the user
     @Slot(str)
     def update_text(self, msg):
         self.textedit_textoutput.append(msg)
+
+    @Slot()
+    def reactivate_runbtn(self):
+        self.total_process_dbt += 1
+        print(f"reactivate_runbtn received a signal and incremented the debt. "
+              f"The debt at this time is: {self.total_process_dbt}")
+        if self.total_process_dbt == 0:
+            self.btn_runExploreASL.setEnabled(True)
 
     # This is the main function; prepares arguments; spawns workers; feeds in arguments to the workers during their
     # initialization; then begins the programs
@@ -347,10 +355,11 @@ class xASL_Executor(QMainWindow):
 
                     inner_worker_block.append(worker)
                     debt -= 1
+                    self.total_process_dbt -= 1
 
             # Add the block to the main workers argument
             self.workers.append(inner_worker_block)
-
+            # %%%%%%%%%%%%%%%%%%%%%%
             # Prepare Watchers block
             # First, pre-prepare some givens; minimize as much overhead post-launching threads as possible
             parms_file = glob(os.path.join(path.text(), "*Par*.json"))[0]
@@ -378,11 +387,14 @@ class xASL_Executor(QMainWindow):
                                          )
             watcher.signals.update_text_output_signal.connect(self.update_text)
             self.watchers.append(watcher)
-
-            # For that study, make the necessary connections from each of the workers
+            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            # Worker connections setup within a study
             for worker in inner_worker_block:
                 # Connect the finished signal to the watcher debt to help it understand when it should stop watching
                 worker.signals.finished_processing.connect(watcher.increment_debt)
+                # Connect the finished signal to the run btn reactivator so that the run button may be reactivated
+                # via debt repayment counter
+                worker.signals.finished_processing.connect(self.reactivate_runbtn)
 
         ######################################
         # THIS IS NOW OUTSIDE OF THE FOR LOOPS
@@ -403,14 +415,15 @@ class xASL_Executor(QMainWindow):
     @staticmethod
     def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
 
-        def dirnames_for_asl(analysis_directory, sessions, session_names):
+        def dirnames_for_asl(analysis_directory, study_sessions, within_session_names):
             dirnames = [os.path.join(analysis_directory, "lock", f"xASL_module_ASL", sess, f"xASL_module_ASL_{name}")
-                        for sess in sessions for name in session_names]
+                        for sess in study_sessions for name in within_session_names]
             return dirnames
 
-        def dirnames_for_structural(analysis_directory, sessions):
-            dirnames = [os.path.join(analysis_directory, "lock", f"xASL_module_Structural", sess, "xASL_module_Structural")
-                        for sess in sessions]
+        def dirnames_for_structural(analysis_directory, study_sessions):
+            dirnames = [
+                os.path.join(analysis_directory, "lock", f"xASL_module_Structural", sess, "xASL_module_Structural")
+                for sess in study_sessions]
             return dirnames
 
         def dirnames_for_population(analysis_directory):
@@ -480,7 +493,25 @@ class ExploreASL_Watcher(QRunnable):
         self.observer.schedule(event_handler=self.event_handler,
                                path=self.dir_to_watch,
                                recursive=True)
-        self.is_done = False
+        self.stuct_status_file_translator = {
+            "010_LinearReg_T1w2MNI.status": "T1w-image rigid-body registration to MNI population center",
+            "060_Segment_T1w.status": "CAT12/SPM12 T1w-image segmentation",
+            "080_Resample2StandardSpace.status": "T1w-image reslicing into MNI/common space",
+            "090_GetVolumetrics.status": "GM, WM, & CSF volume calculation",
+            "100_VisualQC_Structural.status": "image quality-control",
+            "999_ready.status": "all submodules"
+        }
+        self.asl_status_file_translator = {
+            "020_RealignASL.status": "motion correction and spike removal",
+            "030_RegisterASL.status": "ASL series rigid-body registration to the T1w image",
+            "040_ResampleASL.status": "ASL series reslicing to MNI space and mean control image creation",
+            "050_PreparePV.status": "preparation of partial volume maps",
+            "060_ProcessM0.status": "M0 image processing",
+            "070_Quantification.status": "CBF quantification",
+            "080_CreateAnalysisMask.status": "CBF threshold mask creation",
+            "090_VisualQC_ASL.status": "image quality-control",
+            "999_ready.status": "all submodules"
+        }
         print(f"Initialized a watcher for the directory {self.dir_to_watch}")
 
     # Processes the information sent from the event hander and emits signals to update widgets in the main Executor
@@ -507,11 +538,11 @@ class ExploreASL_Watcher(QRunnable):
         elif os.path.isfile(created_path):  # Status file
             basename = os.path.basename(created_path)
             if detected_module.group(1) == "Structural" and detected_session:
-                msg = f"Completed {basename} in the Structural module for session: {detected_session.group()}"
+                msg = f"Completed {self.stuct_status_file_translator[basename]} in the Structural module for session: {detected_session.group()}"
             elif detected_module.group(1) == "ASL" and detected_session:
-                msg = f"Completed {basename} in the ASL module for session: {detected_session.group()}"
+                msg = f"Completed {self.asl_status_file_translator[basename]} in the ASL module for session: {detected_session.group()}"
             elif detected_module.group(1) == "Population":
-                msg = f"Completed {base} in the Population module"
+                msg = f"Completed {basename} in the Population module"
 
         else:
             print("Neither a file nor a directory was detected")
