@@ -263,8 +263,6 @@ if __name__ == '__main__':
         print("This program does not support your operating system")
         sys.exit()
 
-
-
     app.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.jpg")))
     # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
     if os.path.exists(os.path.join(os.getcwd(), "ExploreASL_GUI_masterconfig.json")):

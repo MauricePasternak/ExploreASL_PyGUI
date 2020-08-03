@@ -14,6 +14,7 @@ from PySide2.QtWidgets import *
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload
 from pprint import pprint
 
 
@@ -44,8 +45,7 @@ class ExploreASL_Worker(QRunnable):
         eng.cd(exploreasl_path)
         imodules = matlab.int8(imodules)
         try:
-            result = eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
-            print(result)
+            _ = eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
         except matlab.engine.EngineError as e:
             print(e)
             self.signals.encountered_fatal_error.emit(f"{e}")
@@ -89,7 +89,7 @@ class xASL_Executor(QMainWindow):
                 self.config = json.load(f)
 
         # Window Size and initial visual setup
-        self.setMinimumSize(1080, 480)
+        self.setMinimumSize(1080, 720)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QHBoxLayout(self.cw)
@@ -100,6 +100,13 @@ class xASL_Executor(QMainWindow):
         self.threadpool = QThreadPool()
         self.btn_runExploreASL = QPushButton("Run Explore ASL", self.cw, clicked=self.run_Explore_ASL)
         self.btn_runExploreASL.setEnabled(False)
+        run_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "run_icon.svg")
+        run_icon_font = QFont()
+        run_icon_font.setPointSize(24)
+        self.btn_runExploreASL.setIcon(QIcon(run_icon_path))
+        self.btn_runExploreASL.setIconSize(QSize(75, 75))
+        self.btn_runExploreASL.setMinimumHeight(50)
+        self.btn_runExploreASL.setFont(run_icon_font)
         # Create a "debt" variable that will be used to reactivate the ExploreASL button; will decrement when a process
         # begins, and increment back towards zero when said process ends. At zero, the button will be re-activated
         self.total_process_dbt = 0
@@ -191,6 +198,7 @@ class xASL_Executor(QMainWindow):
                 inner_cmb.currentTextChanged.connect(self.set_ncores_left)
                 inner_cmb.currentTextChanged.connect(self.set_ncores_selectable)
                 inner_cmb.currentTextChanged.connect(self.set_nstudies_selectable)
+                inner_cmb.currentTextChanged.connect(self.is_ready_to_run)
                 inner_le = DandD_FileExplorer2LineEdit()
                 inner_le.setPlaceholderText("Select the analysis directory to your study")
                 inner_le.textChanged.connect(self.is_ready_to_run)
@@ -199,6 +207,7 @@ class xASL_Executor(QMainWindow):
                 inner_cmb_procopts = QComboBox()
                 inner_cmb_procopts.addItems(["Structural", "ASL", "Both", "Population"])
                 inner_cmb_procopts.setCurrentIndex(2)
+                inner_cmb_procopts.currentTextChanged.connect(self.is_ready_to_run)
                 inner_hbox = QHBoxLayout()
                 inner_hbox.addWidget(inner_le)
                 inner_hbox.addWidget(inner_btn)
@@ -279,19 +288,9 @@ class xASL_Executor(QMainWindow):
             else:
                 self.cmb_nstudies.model().item(idx).setEnabled(False)
 
-    # Sets the text within each of the lineedit widgets of the task scheduler rows
-    # noinspection PyCallByClass
-    @Slot(int)
-    def set_analysis_directory(self, row_idx):
-        dir_path = QFileDialog.getExistingDirectory(self.cw,
-                                                    "Select the analysis directory of your study",
-                                                    self.parent().config["DefaultRootDir"],
-                                                    QFileDialog.ShowDirsOnly)
-        self.formlay_lineedits_list[row_idx - 1].setText(dir_path)
-
     # Define whether the run Explore ASL button should be enabled
     def is_ready_to_run(self):
-        # print("Checking runnability integrity")
+        # First check: all lineedits must have an appropriate analysis directory with a par file
         checks = []
         for le in self.formlay_lineedits_list:
             directory = le.text()
@@ -300,7 +299,13 @@ class xASL_Executor(QMainWindow):
                     checks.append(True)
                 else:
                     checks.append(False)
+                    print("is_ready_run_detected a false")
             else:
+                checks.append(False)
+
+        # Second check: for any study that has its module set as Population, the number of cores must be 1
+        for cmb_cores, cmb_runopt in zip(self.formlay_cmbs_ncores_list, self.formlay_cmbs_runopts_list):
+            if cmb_runopt.currentText() == "Population" and cmb_cores.currentText() != "1":
                 checks.append(False)
 
         if all(checks):
@@ -308,14 +313,31 @@ class xASL_Executor(QMainWindow):
         else:
             self.btn_runExploreASL.setEnabled(False)
 
+    # This slot is responsible for setting the correct analysis directory to a given task row's lineedit correcting
+    @Slot(int)
+    def set_analysis_directory(self, row_idx):
+        """
+        :param row_idx: The index of the row from the pushbutton calling this slot. It is a non-pythonic index, so it
+        must be reduced by 1 to index properly
+        """
+        dir_path = QFileDialog.getExistingDirectory(self.cw,
+                                                    "Select the analysis directory of your study",
+                                                    self.parent().config["DefaultRootDir"],
+                                                    QFileDialog.ShowDirsOnly)
+        self.formlay_lineedits_list[row_idx - 1].setText(dir_path)
+
     # Based on signal outout, this receives messages from watchers and outputs text feedback to the user
     @Slot(str)
     def update_text(self, msg):
         self.textedit_textoutput.append(msg)
 
-    # This slot receives a
+    # This slot is responsible for updating the progressbar based on signals set from the watcher
     @Slot(int, int)
     def update_progressbar(self, val_to_inc_by, study_idx):
+        """
+        :param val_to_inc_by: the value of the .STATUS file that was just completed
+        :param study_idx: the index of the progressbar contained within formlay_progbars_list to be selected
+        """
         print(f"update_progressbar received a signal from watcher {study_idx} to increase the progressbar value by"
               f"{val_to_inc_by}")
         selected_progbar: QProgressBar = self.formlay_progbars_list[study_idx]
@@ -327,6 +349,7 @@ class xASL_Executor(QMainWindow):
             f"The progressbar's value after update: {selected_progbar.value()} "
             f"out of maximum {selected_progbar.maximum()}")
 
+    # This slot is responsible for re-activating the Run ExploreASL button
     @Slot()
     def reactivate_runbtn(self):
         self.total_process_dbt += 1
@@ -342,6 +365,10 @@ class xASL_Executor(QMainWindow):
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
         self.workers = []
         self.watchers = []
+
+        # Clear the textoutput each time
+        self.textedit_textoutput.clear()
+
         # Outer for loop; loops over the studies
         for study_idx, (box, path, run_opts, progressbar) in enumerate(zip(self.formlay_cmbs_ncores_list,
                                                                            self.formlay_lineedits_list,
@@ -377,6 +404,7 @@ class xASL_Executor(QMainWindow):
 
             # Add the block to the main workers argument
             self.workers.append(inner_worker_block)
+
             # %%%%%%%%%%%%%%%%%%%%%%
             # Step 2 - Make preparations to feed the appropriate arguments to the watcher
             parms_file = glob(os.path.join(path.text(), "*Par*.json"))[0]
@@ -390,15 +418,15 @@ class xASL_Executor(QMainWindow):
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 3 - Create all lock directories in advance; this will give the watcher full oversight
-            self.initialize_all_lock_dirs(analysis_dir=path.text(),
-                                          regex=regex,
-                                          run_options=run_opts.currentText(),
-                                          session_names=sess_names)
+            initialize_all_lock_dirs(analysis_dir=path.text(),
+                                     regex=regex,
+                                     run_options=run_opts.currentText(),
+                                     session_names=sess_names)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
             # maxvalue from that
-            workload = self.calculate_anticipated_workload(parms, run_opts.currentText())
+            workload = calculate_anticipated_workload(parms, run_opts.currentText())
             if not workload:
                 return
             progressbar.reset()
@@ -448,192 +476,6 @@ class xASL_Executor(QMainWindow):
         # Disable for now after pressing; bad idea to accidentally allow a second click as it may cause system shutdown
         self.btn_runExploreASL.setEnabled(False)
 
-    # Creates lock dirs where necessary in anticipation for assigning a watcher to the root lock directory
-    @staticmethod
-    def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
-        """
-        Convenience function for creating the lock directories in advance of a run such that a file system watcher
-        could effectively be set at the root and detect any downstream changes
-        :param analysis_dir: the root analysis directory of the study ex. User\\Study_Name\\analysis
-        :param regex: the regex used to identify subjects
-        :param run_options: the type of run (ex. ASL, Structural, Both, Population)
-        :param session_names: the expected session names that should be encountered (ex. ASL_1, ASL_2, etc.)
-        :return: Does not return anything
-        """
-
-        def dirnames_for_asl(analysis_directory, study_sessions, within_session_names):
-            dirnames = [os.path.join(analysis_directory, "lock", f"xASL_module_ASL", sess, f"xASL_module_ASL_{name}")
-                        for sess in study_sessions for name in within_session_names]
-            return dirnames
-
-        def dirnames_for_structural(analysis_directory, study_sessions):
-            dirnames = [
-                os.path.join(analysis_directory, "lock", f"xASL_module_Structural", sess, "xASL_module_Structural")
-                for sess in study_sessions]
-            return dirnames
-
-        def dirnames_for_population(analysis_directory):
-            return [os.path.join(analysis_directory, "lock", "xASL_module_Population", "xASL_module_Population")]
-
-        print(f"Generating the appropriate lock dirs for {analysis_dir}")
-        sessions = [session for session in os.listdir(analysis_dir) if regex.search(session)]
-
-        # Prepare the list of names of lockdirs to expect to create based on the run options, session names and detected
-        # sessions in the analysis root directory
-        if run_options == "Both":
-            struc_dirs = dirnames_for_structural(analysis_dir, sessions)
-            asl_dirs = dirnames_for_asl(analysis_dir, sessions, session_names)
-            lock_dirs = struc_dirs + asl_dirs
-        elif run_options == "ASL":
-            lock_dirs = dirnames_for_asl(analysis_dir, sessions, session_names)
-        elif run_options == "Structural":
-            lock_dirs = dirnames_for_structural(analysis_dir, sessions)
-        elif run_options == "Population":
-            lock_dirs = dirnames_for_population(analysis_dir)
-        else:
-            raise ValueError("Impossible outcome in initialize_all_lock_dirs")
-
-        # Create empty directories where applicable
-        for lock_dir in lock_dirs:
-            if not os.path.exists(lock_dir):
-                os.makedirs(lock_dir)
-
-    # Must be called after the lock dirs have been created; this function will attempt to calculate all the status files
-    # that should be created in the run process
-    @staticmethod
-    def calculate_anticipated_workload(parmsdict, run_options):
-        """
-        Convenience function for calculating the anticipated workload
-        :param parmsdict: the parameter file of the study; given parameters such as the regex are used from this
-        :param run_options: "Structural", "ASL", "Both" or "Population"; which module is being run
-        :return: workload; a numerical representation of the cumulative value of all status files made; these will be
-        used to determine the appropriate maximum value for the progressbar
-        """
-
-        def get_structural_workload(analysis_directory, study_subjects, structuralmod_dict):
-            workload_translator = {
-                "010_LinearReg_T1w2MNI.status": 1, "020_LinearReg_FLAIR2T1w.status": 2,
-                "030_Resample_FLAIR2T1w.status": 1, "040_Segment_FLAIR.status": 3, "050_LesionFilling.status": 1,
-                "060_Segment_T1w.status": 10, "070_GetWMHvol.status": 1, "080_Resample2StandardSpace.status": 2,
-                "090_GetVolumetrics.status": 1, "100_VisualQC_Structural.status": 1, "999_ready.status": 0
-            }
-            default_workload = ["010_LinearReg_T1w2MNI.status", "060_Segment_T1w.status",
-                                "080_Resample2StandardSpace.status", "090_GetVolumetrics.status",
-                                "100_VisualQC_Structural.status", "999_ready.status"]
-            flair_workload = ["020_LinearReg_FLAIR2T1w.status", "030_Resample_FLAIR2T1w.status",
-                              "040_Segment_FLAIR.status", "050_LesionFilling.status", "070_GetWMHvol.status"]
-
-            for subject in study_subjects:
-                has_flair_img = os.path.exists(os.path.join(analysis_directory, subject, "FLAIR.nii"))
-                current_status_files = os.listdir(os.path.join(analysis_directory,
-                                                               "lock", "xASL_module_Structural", subject,
-                                                               "xASL_module_Structural"))
-                if has_flair_img:
-                    workload = default_workload + flair_workload
-                else:
-                    workload = default_workload
-
-                # Filter out any anticipated status files that are already present in the lock dirs
-                filtered_workload = set(workload).difference(set(current_status_files))
-                numerical_representation = sum([workload_translator[stat_file] for stat_file in filtered_workload])
-                structuralmod_dict[subject] = numerical_representation
-
-            return structuralmod_dict
-
-        def get_asl_workload(analysis_directory, study_subjects, session_names, aslmod_dict):
-            workload_translator = {
-                "020_RealignASL.status": 1, "030_RegisterASL.status": 2, "040_ResampleASL.status": 1,
-                "050_PreparePV.status": 1, "060_ProcessM0.status": 1, "070_Quantification.status": 2,
-                "080_CreateAnalysisMask.status": 1, "090_VisualQC_ASL.status": 1, "999_ready.status": 0
-            }
-            default_workload = ["020_RealignASL.status", "030_RegisterASL.status", "040_ResampleASL.status",
-                                "050_PreparePV.status", "060_ProcessM0.status", "070_Quantification.status",
-                                "080_CreateAnalysisMask.status", "090_VisualQC_ASL.status", "999_ready.status"]
-
-            # Must iterate through both the subject level listing AND the session level (ASL_1, ASL_2, etc.) listing
-            for subject in study_subjects:
-                for session in session_names:
-                    current_status_files = os.listdir(os.path.join(analysis_directory, "lock", "xASL_module_ASL",
-                                                                   subject, f"xASL_module_ASL_{session}"))
-                    workload = default_workload
-                    # Filter out any anticipated status files that are already present in the lock dirs
-                    filtered_workload = set(workload).difference(set(current_status_files))
-                    numerical_representation = sum([workload_translator[stat_file] for stat_file in filtered_workload])
-                    aslmod_dict[subject][session] = numerical_representation
-
-            return aslmod_dict
-
-        def get_population_workload(analysis_directory):
-            workload_translator = {
-                "010_CreatePopulationTemplates.status": 1, "020_CreateAnalysisMask.status": 1,
-                "030_CreateBiasfield.status": 1, "040_GetDICOMStatistics.status": 1,
-                "050_GetVolumeStatistics.status": 1, "060_GetMotionStatistics.status": 1,
-                "070_GetROIstatistics.status": 20, "080_SortBySpatialCoV.status": 1, "090_DeleteAndZip.status": 1,
-                "999_ready.status": 0
-            }
-            default_workload = ["010_CreatePopulationTemplates.status", "020_CreateAnalysisMask.status",
-                                "030_CreateBiasfield.status", "040_GetDICOMStatistics.status",
-                                "050_GetVolumeStatistics.status", "060_GetMotionStatistics.status",
-                                "070_GetROIstatistics.status", "080_SortBySpatialCoV.status",
-                                "090_DeleteAndZip.status", "999_ready.status"]
-            current_status_files = os.listdir(os.path.join(analysis_directory, "lock", "xASL_module_Population",
-                                                           "xASL_module_Population"))
-            workload = default_workload
-            filtered_workload = set(workload).difference(set(current_status_files))
-            numerical_representation = sum([workload_translator[stat_file] for stat_file in filtered_workload])
-            return numerical_representation
-
-        # First get all the subjects
-        analysis_dir: str = parmsdict["D"]["ROOT"]
-        regex = re.compile(parmsdict["subject_regexp"])
-        sess_names: list = parmsdict["SESSIONS"]
-        subjects = [subject for subject in os.listdir(analysis_dir) if
-                    all([regex.search(subject),  # regex must fit
-                         os.path.isdir(os.path.join(analysis_dir, subject)),  # must be a directory
-                         subject not in ["Population", "lock"]  # can't accidentally be the non-subject directories
-                         ])]
-
-        # Use a dict to keep track of everything
-        struct_dict = {subject: 0 for subject in subjects}
-        asl_dict = {subject: {} for subject in subjects}
-
-        # Update the dicts as appropriate
-        if run_options == "Both":
-            struct_dict = get_structural_workload(analysis_dir, subjects, struct_dict)
-            asl_dict = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
-            # pprint(struct_dict)
-            # pprint(asl_dict)
-
-            struct_totalworkload = sum(struct_dict.values())
-            asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
-            asl_totalworkload = sum(asl_totalworkload.values())
-            print(f"Structural Calculated Workload: {struct_totalworkload}")
-            print(f"ASL Calculated Workload: {asl_totalworkload}")
-            return struct_totalworkload + asl_totalworkload
-
-        elif run_options == "ASL":
-            asl_dict = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
-            # pprint(asl_dict)
-            asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
-            asl_totalworkload = sum(asl_totalworkload.values())
-            print(asl_totalworkload)
-            return asl_totalworkload
-
-        elif run_options == "Structural":
-            struct_dict = get_structural_workload(analysis_dir, subjects, struct_dict)
-            # pprint(struct_dict)
-            struct_totalworkload = sum(struct_dict.values())
-            print(struct_totalworkload)
-            return struct_totalworkload
-
-        elif run_options == "Population":
-            pop_totalworkload = get_population_workload(analysis_dir)
-            print(pop_totalworkload)
-            return pop_totalworkload
-
-        else:
-            print("THIS SHOULD NEVER PRINT AS YOU HAVE SELECTED AN IMPOSSIBLE WORKLOAD OPTION")
-
 
 class ExploreASL_WatcherSignals(QObject):
     """
@@ -648,10 +490,10 @@ class ExploreASL_WatcherSignals(QObject):
 class ExploreASL_Watcher(QRunnable):
     """
     Modified file system watcher. Will monitor the appearance of STATUS files within the lock dirs of the analysis
-    directory. If it detects a STATUS file, it will emit signals to
+    directory. If it detects a STATUS file, it will emit signals to:
     1) update the progress bars
     2) inform the text editor view of which STATUS file was made so as to give user feedback
-    3) alter the process_debt variable such that the Run button may be re-enabled when the "run debt" is paid off
+    3)
     """
 
     def __init__(self, target, regex, watch_debt, study_idx):
