@@ -90,6 +90,7 @@ class xASL_Executor(QMainWindow):
 
         # Window Size and initial visual setup
         self.setMinimumSize(1080, 720)
+        self.resize(1920/2, 720)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QHBoxLayout(self.cw)
@@ -98,15 +99,7 @@ class xASL_Executor(QMainWindow):
         self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.png")))
         # Main run button must be defined early, since connections will be dynamically made to it
         self.threadpool = QThreadPool()
-        self.btn_runExploreASL = QPushButton("Run Explore ASL", self.cw, clicked=self.run_Explore_ASL)
-        self.btn_runExploreASL.setEnabled(False)
-        run_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "run_icon.svg")
-        run_icon_font = QFont()
-        run_icon_font.setPointSize(24)
-        self.btn_runExploreASL.setIcon(QIcon(run_icon_path))
-        self.btn_runExploreASL.setIconSize(QSize(75, 75))
-        self.btn_runExploreASL.setMinimumHeight(50)
-        self.btn_runExploreASL.setFont(run_icon_font)
+
         # Create a "debt" variable that will be used to reactivate the ExploreASL button; will decrement when a process
         # begins, and increment back towards zero when said process ends. At zero, the button will be re-activated
         self.total_process_dbt = 0
@@ -114,21 +107,59 @@ class xASL_Executor(QMainWindow):
         self.UI_Setup_Layouts_and_Groups()
         self.UI_Setup_TaskScheduler()
         self.UI_Setup_TextFeedback_and_Executor()
+        self.UI_Setup_ProcessModification()
 
     def UI_Setup_Layouts_and_Groups(self):
+
+        self.splitter_leftside = QSplitter(Qt.Vertical, self.cw)
+        self.splitter_rightside = QSplitter(Qt.Vertical, self.cw)
         self.vlay_left, self.vlay_right = QVBoxLayout(self.cw), QVBoxLayout(self.cw)
-        self.grp_taskschedule, self.grp_textoutput = QGroupBox("Task Scheduler", self.cw), QGroupBox("Output", self.cw)
-        self.vlay_left.addWidget(self.grp_taskschedule)
-        self.vlay_right.addWidget(self.grp_textoutput)
-        self.mainlay.addLayout(self.vlay_left)
-        self.mainlay.addLayout(self.vlay_right)
+
+        # Group Boxes
+        self.grp_taskschedule = QGroupBox("Task Scheduler", self.cw)
+        self.grp_textoutput = QGroupBox("Output", self.cw)
+        self.grp_procmod = QGroupBox("Process Modifier", self.cw)
+        # self.vlay_left.addWidget(self.grp_taskschedule)
+        # self.vlay_right.addWidget(self.grp_textoutput)
+
+        # Run Button
+        self.btn_runExploreASL = QPushButton("Run Explore ASL", self.cw, clicked=self.run_Explore_ASL)
+        self.btn_runExploreASL.setEnabled(False)
+        run_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "run_icon.svg")
+        run_icon_font = QFont()
+        run_icon_font.setPointSize(24)
+        self.btn_runExploreASL.setFont(run_icon_font)
+        self.btn_runExploreASL.setIcon(QIcon(run_icon_path))
+        self.btn_runExploreASL.setIconSize(QSize(75, 75))
+        self.btn_runExploreASL.setMinimumHeight(75)
+
+        # Add main players to the appropriate splitters
+        self.splitter_leftside.addWidget(self.grp_taskschedule)
+        self.splitter_leftside.addWidget(self.grp_procmod)
+        self.splitter_rightside.addWidget(self.grp_textoutput)
+        self.splitter_rightside.addWidget(self.btn_runExploreASL)
+
+        # Adjust splitter spacing, handle width, and display
+        self.splitter_rightside.setSizes([620, 100])
+        self.splitter_leftside.setSizes([520, 200])
+        self.splitter_rightside.setHandleWidth(25)
+        self.splitter_leftside.setHandleWidth(25)
+        # handle_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "3_dots_horizontal.svg")
+        handle_style = 'QSplitter::handle {image: url(media/3_dots_horizontal.svg);}'
+        self.splitter_rightside.setStyleSheet(handle_style)
+        self.splitter_leftside.setStyleSheet(handle_style)
+
+        # self.mainlay.addLayout(self.vlay_left)
+        # self.mainlay.addLayout(self.vlay_right)
+        self.mainlay.addWidget(self.splitter_leftside)
+        self.mainlay.addWidget(self.splitter_rightside)
 
     # Left side setup; define the number of studies
     def UI_Setup_TaskScheduler(self):
         self.vlay_taskschedule = QVBoxLayout(self.grp_taskschedule)
-        self.lab_coresinfo = QLabel(
-            f"CPU Count: A total of {os.cpu_count() // 2} processors are available on this machine",
-            self.grp_taskschedule)
+        self.lab_coresinfo = QLabel(f"CPU Count: A total of {os.cpu_count() // 2} "
+                                    f"processors are available on this machine",
+                                    self.grp_taskschedule)
         self.ncores_left = os.cpu_count() // 2
         self.lab_coresleft = QLabel(f"You are permitted to set up to {self.ncores_left} more core(s)")
         self.cont_nstudies = QWidget(self.grp_taskschedule)
@@ -177,9 +208,8 @@ class xASL_Executor(QMainWindow):
         self.vlay_textoutput = QVBoxLayout(self.grp_textoutput)
         self.textedit_textoutput = QTextEdit(self.grp_textoutput)
         self.textedit_textoutput.setPlaceholderText("Processing Progress will appear within this window")
-
         self.vlay_textoutput.addWidget(self.textedit_textoutput)
-        self.vlay_right.addWidget(self.btn_runExploreASL)
+        # self.vlay_right.addWidget(self.btn_runExploreASL)
 
     # Rare exception of a UI function that is also technically a setter; this will dynamically alter the number of
     # rows present in the task scheduler form layout to allow for ExploreASL analysis of multiple studies at once
@@ -247,6 +277,32 @@ class xASL_Executor(QMainWindow):
         self.set_ncores_selectable()
         self.set_nstudies_selectable()
         self.is_ready_to_run()
+
+    # Left side setup; launches additional windows for specialized jobs such as modifying participants.tsv, preparing
+    # a study for re-run in certain subjects, etc.
+    def UI_Setup_ProcessModification(self):
+        self.vlay_procmod = QVBoxLayout(self.grp_procmod)
+        self.formlay_promod = QFormLayout()
+        # Set up the widgets in this section
+        self.cmb_modjob = QComboBox(self.grp_procmod)
+        self.cmb_modjob.addItems(["Alter participants.tsv for a study", "Prepare a study for a re-run"])
+        self.le_modjob = DandD_FileExplorer2LineEdit(self.grp_procmod)
+        self.le_modjob.setPlaceholderText("Drag & Drop analysis directory here")
+        self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod)
+        run_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "run_modjob_icon.svg")
+        modjob_icon_font = QFont()
+        modjob_icon_font.setPointSize(24)
+        self.btn_runmodjob.setFont(modjob_icon_font)
+        self.btn_runmodjob.setIcon(QIcon(run_icon_path))
+        self.btn_runmodjob.setIconSize(QSize(75, 75))
+        self.btn_runmodjob.setMinimumHeight(50)
+        self.btn_runmodjob.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
+        self.btn_runmodjob.setEnabled(False)
+        # Add the widgets to the form layout
+        self.formlay_promod.addRow("Which modification job to run", self.cmb_modjob)
+        self.formlay_promod.addRow("Path to analysis dir to modify", self.le_modjob)
+        self.vlay_procmod.addLayout(self.formlay_promod)
+        self.vlay_procmod.addWidget(self.btn_runmodjob)
 
     # Function responsible for adjusting the label of how many cores are still accessible
     def set_ncores_left(self):

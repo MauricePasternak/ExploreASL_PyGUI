@@ -1,7 +1,9 @@
 import os
 from glob import glob
 import re
-
+from PySide2.QtCore import *
+from PySide2.QtGui import *
+from PySide2.QtWidgets import *
 
 # Creates lock dirs where necessary in anticipation for assigning a watcher to the root lock directory
 def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
@@ -187,3 +189,12 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
     else:
         print("THIS SHOULD NEVER PRINT AS YOU HAVE SELECTED AN IMPOSSIBLE WORKLOAD OPTION")
+
+
+class xASL_GUI_RerunPrep(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.parent = parent
+        self.target_dir = self.parent.le_modjob.text()
+
+
