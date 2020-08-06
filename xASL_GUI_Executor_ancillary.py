@@ -4,6 +4,10 @@ import re
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
+from xASL_GUI_HelperClasses import DandD_FileExplorerFile2LineEdit
+import pandas as pd
+import shutil
+
 
 # Creates lock dirs where necessary in anticipation for assigning a watcher to the root lock directory
 def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
@@ -192,9 +196,162 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
 
 class xASL_GUI_RerunPrep(QWidget):
+    """
+    Class designated to delete STATUS and other files such that a re-run of a particular module may be possible
+    """
+
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.parent = parent
         self.target_dir = self.parent.le_modjob.text()
+        self.setWindowFlag(Qt.Window)
 
 
+class xASL_GUI_TSValter(QWidget):
+    """
+    Class designated to alter the contents of participants.tsv
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.parent = parent
+        self.target_dir = self.parent.le_modjob.text()
+        self.setWindowFlag(Qt.Window)
+        self.setWindowTitle("Alter participants.tsv contents")
+        self.mainlay = QVBoxLayout(self)
+        # First section, the loading of the covariate file
+        self.formlay_covfile = QFormLayout()
+        self.hlay_covfile = QHBoxLayout()
+        self.le_covfile = DandD_FileExplorerFile2LineEdit([".tsv", ".xlsx", ".csv"], self)
+        self.le_covfile.textChanged.connect(self.load_covariates_data)
+        self.btn_covfile = QPushButton("...", self)
+        self.hlay_covfile.addWidget(self.le_covfile)
+        self.hlay_covfile.addWidget(self.btn_covfile)
+        self.formlay_covfile.addRow("Covariates File", self.hlay_covfile)
+        # Second section, the Drag and Drop listviews
+        self.hlay_dandcols = QHBoxLayout()
+        self.vlay_covcols = QVBoxLayout()
+        self.lab_covcols = QLabel("Covariates", self)
+        self.list_covcols = ColnamesDragDrop_ListWidget(self)
+        self.vlay_covcols.addWidget(self.lab_covcols)
+        self.vlay_covcols.addWidget(self.list_covcols)
+
+        self.vlay_tsvcols = QVBoxLayout()
+        self.lab_tsvcols = QLabel("TSV Variables", self)
+        self.list_tsvcols = ColnamesDragDrop_ListWidget(self)
+        self.vlay_tsvcols.addWidget(self.lab_tsvcols)
+        self.vlay_tsvcols.addWidget(self.list_tsvcols)
+
+        self.hlay_dandcols.addLayout(self.vlay_covcols)
+        self.hlay_dandcols.addLayout(self.vlay_tsvcols)
+        # Third section, just the main button
+        self.btn_altertsv = QPushButton("Commit changes", self, clicked=self.commit_changes)
+
+        self.mainlay.addLayout(self.formlay_covfile)
+        self.mainlay.addLayout(self.hlay_dandcols)
+        self.mainlay.addWidget(self.btn_altertsv)
+
+        # Once the widget UI is set up, load in the tsv data
+        self.load_tsv_data()
+
+    def load_tsv_data(self):
+        tsv_file = os.path.join(self.target_dir, "participants.tsv")
+        tsv_df = pd.read_csv(tsv_file, sep='\t')
+        tsv_df.drop(labels=[col for col in tsv_df.columns if "Unnamed" in col], axis=1, inplace=True)
+        self.tsv_df = tsv_df
+
+        # Set the listwidget to contain the column names here
+        tsv_colnames = self.tsv_df.columns.tolist()
+        self.list_tsvcols.clear()
+        self.list_tsvcols.addItems(tsv_colnames)
+
+    def load_covariates_data(self, cov_filepath: str):
+        # First Set of checks: filepath integrity
+        try:
+            if any([cov_filepath == '',  # The provided text can't be blank (to avoid false execution post-clearing)
+                    not os.path.exists(cov_filepath),  # The provided filepath must exist
+                    cov_filepath[-4:] not in ['.tsv', '.csv', '.xlsx']
+                    ]):
+                return
+        except FileNotFoundError:
+            return
+
+        # Load in the data
+        if cov_filepath.endswith('.tsv'):
+            df = pd.read_csv(cov_filepath, sep='\t')
+        elif cov_filepath.endswith('.csv'):
+            df = pd.read_csv(cov_filepath)
+        else:
+            df = pd.read_excel(cov_filepath)
+
+        # Second set of checks: data integrity
+        if any([len(df) != len(self.tsv_df)  # Dataframe must be the same length for proper concatenation
+                ]):
+            return
+
+        self.cov_df = df
+
+        # Set the listwidget to contain the column names here
+        cov_colnames = self.cov_df.columns.tolist()
+        self.list_covcols.clear()
+        self.list_covcols.addItems(cov_colnames)
+
+        # Also reset the tsv columns
+        self.list_tsvcols.clear()
+        self.list_tsvcols.addItems(self.tsv_df.columns.tolist())
+
+    def commit_changes(self):
+        commit_df = pd.DataFrame()
+
+        for idx in range(self.list_tsvcols.count()):
+            colname = self.list_tsvcols.item(idx).text()
+            if colname not in self.tsv_df.columns:
+                commit_df[colname] = self.cov_df[colname].values
+            else:
+                commit_df[colname] = self.tsv_df[colname].values
+
+        os.replace(src=os.path.join(self.target_dir, "participants.tsv"),
+                   dst=os.path.join(self.target_dir, "participants_old.tsv"))
+
+        commit_df.to_csv(path_or_buf=os.path.join(self.target_dir, "participants.tsv"),
+                         sep='\t',
+                         na_rep='n/a',
+                         index=False)
+
+
+class ColnamesDragDrop_ListWidget(QListWidget):
+    """
+    Class meant to drag and drop items between themselves
+    """
+    alert_regex = Signal()  # This will be called in the ParmsMaker superclass to update its regex
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragDrop)
+        self.setDefaultDropAction(Qt.MoveAction)  # this was the magic line
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.addItems(["Foo", "Bar"])
+        self.colnames = []
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasFormat('application/x-qabstractitemmodeldatalist'):
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasFormat('application/x-qabstractitemmodeldatalist'):
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        if event.mimeData().hasFormat('application/x-qabstractitemmodeldatalist'):
+            event.accept()
+            for item in event.source().selectedItems():
+                self.addItem(item.text())
+        else:
+            event.ignore()

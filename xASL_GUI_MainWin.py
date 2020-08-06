@@ -44,6 +44,7 @@ class xASL_MainWin(QMainWindow):
             self.config = config
         self.load_tooltips()
         # Window Size and initial visual setup
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.setMinimumSize(1080, 480)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)

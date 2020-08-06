@@ -14,7 +14,7 @@ from PySide2.QtWidgets import *
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload
+from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter
 from pprint import pprint
 
 
@@ -90,7 +90,7 @@ class xASL_Executor(QMainWindow):
 
         # Window Size and initial visual setup
         self.setMinimumSize(1080, 720)
-        self.resize(1920/2, 720)
+        self.resize(1920 / 2, 720)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QHBoxLayout(self.cw)
@@ -285,10 +285,10 @@ class xASL_Executor(QMainWindow):
         self.formlay_promod = QFormLayout()
         # Set up the widgets in this section
         self.cmb_modjob = QComboBox(self.grp_procmod)
-        self.cmb_modjob.addItems(["Alter participants.tsv for a study", "Prepare a study for a re-run"])
+        self.cmb_modjob.addItems(["Alter participants.tsv", "Prepare a study for a re-run"])
         self.le_modjob = DandD_FileExplorer2LineEdit(self.grp_procmod)
         self.le_modjob.setPlaceholderText("Drag & Drop analysis directory here")
-        self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod)
+        self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod, clicked=self.run_modjob)
         run_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "run_modjob_icon.svg")
         modjob_icon_font = QFont()
         modjob_icon_font.setPointSize(24)
@@ -297,12 +297,42 @@ class xASL_Executor(QMainWindow):
         self.btn_runmodjob.setIconSize(QSize(75, 75))
         self.btn_runmodjob.setMinimumHeight(50)
         self.btn_runmodjob.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
-        self.btn_runmodjob.setEnabled(False)
+        # self.btn_runmodjob.setEnabled(False)
         # Add the widgets to the form layout
         self.formlay_promod.addRow("Which modification job to run", self.cmb_modjob)
         self.formlay_promod.addRow("Path to analysis dir to modify", self.le_modjob)
         self.vlay_procmod.addLayout(self.formlay_promod)
         self.vlay_procmod.addWidget(self.btn_runmodjob)
+
+    # Runs the selected modification widget
+    def run_modjob(self):
+        selected_job = self.cmb_modjob.currentText()
+        modjob_widget = None
+        if selected_job == "Alter participants.tsv":
+            # Requirements to launch the widget
+            try:
+                if any([self.le_modjob.text() == '',
+                        not "participants.tsv" in os.listdir(self.le_modjob.text())  # participants.tsv must be present
+                        ]):
+                    QMessageBox.warning(self,
+                                        "participants.tsv not found",
+                                        f"participants.tsv was not located in the study directory you provided:\n"
+                                        f"{self.le_modjob.text()}\n"
+                                        f"Please run the Population module for this study to generate the required file",
+                                        QMessageBox.Ok)
+                    return
+            except FileNotFoundError:
+                QMessageBox.warning(self,
+                                    "participants.tsv not found",
+                                    f"participants.tsv was not located in the study directory you provided:\n"
+                                    f"{self.le_modjob.text()}\n"
+                                    f"Please run the Population module for this study to generate the required file",
+                                    QMessageBox.Ok)
+                return
+            modjob_widget = xASL_GUI_TSValter(self)
+
+        if modjob_widget is not None:
+            modjob_widget.show()
 
     # Function responsible for adjusting the label of how many cores are still accessible
     def set_ncores_left(self):
