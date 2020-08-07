@@ -5,6 +5,7 @@ import sys
 from glob import glob
 from itertools import chain
 from time import sleep
+from datetime import date
 
 import matlab
 import matlab.engine
@@ -14,7 +15,8 @@ from PySide2.QtWidgets import *
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter
+from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter, \
+    calculate_missing_STATUS
 from pprint import pprint
 
 
@@ -312,13 +314,14 @@ class xASL_Executor(QMainWindow):
             # Requirements to launch the widget
             try:
                 if any([self.le_modjob.text() == '',
-                        not "participants.tsv" in os.listdir(self.le_modjob.text())  # participants.tsv must be present
+                        "participants.tsv" not in os.listdir(self.le_modjob.text())  # participants.tsv must be present
                         ]):
                     QMessageBox.warning(self,
                                         "participants.tsv not found",
                                         f"participants.tsv was not located in the study directory you provided:\n"
                                         f"{self.le_modjob.text()}\n"
-                                        f"Please run the Population module for this study to generate the required file",
+                                        f"Please run the Population module for this study "
+                                        f"to generate the required file",
                                         QMessageBox.Ok)
                     return
             except FileNotFoundError:
@@ -399,6 +402,44 @@ class xASL_Executor(QMainWindow):
         else:
             self.btn_runExploreASL.setEnabled(False)
 
+    # This function is responsible for comparing the produced STATUS files versus the expected STATUS files and create
+    # a report for each run
+    def assess_STATUS_completion(self):
+        postrun_diagnosis = {}
+        for study_dir, expected_files in self.expected_status_files.items():
+            all_completed, incomplete_status_files = calculate_missing_STATUS(study_dir, expected_files)
+            if all_completed:
+                continue
+            else:
+                postrun_diagnosis[study_dir] = incomplete_status_files
+
+        # If at least one study had an issue, print out a warning and generate a log file in that study directory
+        if len(postrun_diagnosis) > 0:
+
+            for study_dir, incomplete_files in postrun_diagnosis.items():
+                msg = ["The following .status files could not be completed during the run:\n"] + \
+                      [file + '\n' for file in incomplete_files]
+
+                with open(os.path.join(study_dir, f"{date.today()} run - incomplete STATUS files.txt"), 'w') as writer:
+                    writer.writelines(msg)
+
+            dirs_string = "\n".join(list(postrun_diagnosis.keys()))
+            QMessageBox.warning(self,
+                                f"Errors were encountered during ExploreASL run",
+                                f"The following study directories encountered at least 1 error during their run:\n"
+                                f"{dirs_string}\n"
+                                f"Please review the generated [Date of run] run - incomplete STATSUS files.txt\n"
+                                f"within each of the listed studies to see which .status files could not be generated.",
+                                QMessageBox.Ok)
+
+        else:
+            QMessageBox.information(self,
+                                    f"Successful ExploreASL run",
+                                    f"All expected operations successfully took place.\n"
+                                    f"Many thanks for using ExploreASL. If this has been helpful in your study "
+                                    f"please don't forget to cite this program in your manuscript.",
+                                    QMessageBox.Ok)
+
     # This slot is responsible for setting the correct analysis directory to a given task row's lineedit correcting
     @Slot(int)
     def set_analysis_directory(self, row_idx):
@@ -441,8 +482,13 @@ class xASL_Executor(QMainWindow):
         self.total_process_dbt += 1
         print(f"reactivate_runbtn received a signal and incremented the debt. "
               f"The debt at this time is: {self.total_process_dbt}")
+
+        # Re-activate all widgets associated with the Executor when the run is done
         if self.total_process_dbt == 0:
             self.btn_runExploreASL.setEnabled(True)
+
+            # Check if all expected operations took place
+            self.assess_STATUS_completion()
 
     # This is the main function; prepares arguments; spawns workers; feeds in arguments to the workers during their
     # initialization; then begins the programs
@@ -451,6 +497,7 @@ class xASL_Executor(QMainWindow):
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
         self.workers = []
         self.watchers = []
+        self.expected_status_files = {}
 
         # Clear the textoutput each time
         self.textedit_textoutput.clear()
@@ -502,6 +549,31 @@ class xASL_Executor(QMainWindow):
                 if str_regex.startswith("^") or str_regex.endswith('$'):
                     str_regex = str_regex.strip('^$')
 
+            # With the parms now loaded, additional checks can be made to prevent false runs
+            if any([not os.path.exists(parms["MyPath"]),  # ExploreASL dir must exist
+                    sum([bool(regex.search(file)) for file in os.listdir(path.text())
+                         if file not in ["lock", "Population"]]) == 0,  # The regex must match at least 1 subject
+                    str_regex == '',  # The string used to make the regex cannot be blank
+                    parms["D"]["ROOT"] != path.text()  # The study provided must match the one in the parms file
+                    ]):
+                # print(not os.path.exists(parms["MyPath"]))
+                # print(sum([bool(regex.search(file)) for file in os.listdir(path.text())
+                #            if file not in ["lock", "Population"]]) == 0)
+                # print(str_regex == '')
+                # print(parms["D"]["ROOT"] != path.text())
+
+                QMessageBox.warning(self,
+                                    f"Problem prior to starting ExploreASL",
+                                    f"An error was encountered while preparing study:\n{path.text()}\n"
+                                    f"Please ensure:\n"
+                                    f"1) That the filepath to the study exists\n"
+                                    f"2) That the filepath to the study in the parms file matches the one provided to "
+                                    f"the Task Scheduler\n"
+                                    f"3) That the ExploreASL filepath specified within the parms file exists\n"
+                                    f"4) The subjects within the study are the same as when the parms file was created",
+                                    QMessageBox.Ok)
+                return
+
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 3 - Create all lock directories in advance; this will give the watcher full oversight
             initialize_all_lock_dirs(analysis_dir=path.text(),
@@ -512,14 +584,16 @@ class xASL_Executor(QMainWindow):
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
             # maxvalue from that
-            workload = calculate_anticipated_workload(parms, run_opts.currentText())
-            if not workload:
+            workload, expected_status_files = calculate_anticipated_workload(parms, run_opts.currentText())
+            if not workload or len(expected_status_files) == 0:
                 return
             progressbar.reset()
             progressbar.setMaximum(workload)
             progressbar.setMinimum(0)
             progressbar.setValue(0)
             del workload
+            # Save the expected status files to the dict container; these will be iterated over after workers are done
+            self.expected_status_files[path.text()] = expected_status_files
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 5 - Create a Watcher for that study
@@ -559,7 +633,7 @@ class xASL_Executor(QMainWindow):
         for runnable in self.workers + self.watchers:
             self.threadpool.start(runnable)
 
-        # Disable for now after pressing; bad idea to accidentally allow a second click as it may cause system shutdown
+        # Disable after pressing; bad idea to accidentally allow a second click as it may cause system shutdown
         self.btn_runExploreASL.setEnabled(False)
 
 

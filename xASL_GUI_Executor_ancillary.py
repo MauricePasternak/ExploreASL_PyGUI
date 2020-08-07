@@ -7,7 +7,7 @@ from PySide2.QtWidgets import *
 from xASL_GUI_HelperClasses import DandD_FileExplorerFile2LineEdit
 import pandas as pd
 import shutil
-
+from itertools import chain
 
 # Creates lock dirs where necessary in anticipation for assigning a watcher to the root lock directory
 def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
@@ -82,12 +82,12 @@ def calculate_anticipated_workload(parmsdict, run_options):
                             "100_VisualQC_Structural.status", "999_ready.status"]
         flair_workload = ["020_LinearReg_FLAIR2T1w.status", "030_Resample_FLAIR2T1w.status",
                           "040_Segment_FLAIR.status", "050_LesionFilling.status", "070_GetWMHvol.status"]
-
+        status_files = []
         for subject in study_subjects:
             has_flair_img = os.path.exists(os.path.join(analysis_directory, subject, "FLAIR.nii"))
-            current_status_files = os.listdir(os.path.join(analysis_directory,
-                                                           "lock", "xASL_module_Structural", subject,
-                                                           "xASL_module_Structural"))
+            directory = os.path.join(analysis_directory, "lock", "xASL_module_Structural", subject,
+                                     "xASL_module_Structural")
+            current_status_files = os.listdir(directory)
             if has_flair_img:
                 workload = default_workload + flair_workload
             else:
@@ -95,10 +95,15 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
             # Filter out any anticipated status files that are already present in the lock dirs
             filtered_workload = set(workload).difference(set(current_status_files))
+            # Append the filepaths; these will be used after analysis to check for incompleted STATUS workloads
+            status_files.append([os.path.join(directory, status_file) for status_file in filtered_workload])
             numerical_representation = sum([workload_translator[stat_file] for stat_file in filtered_workload])
             structuralmod_dict[subject] = numerical_representation
 
-        return structuralmod_dict
+        # Flatten the nested list that is status_files
+        status_files = list(chain(*status_files))
+
+        return structuralmod_dict, status_files
 
     def get_asl_workload(analysis_directory, study_subjects, session_names, aslmod_dict):
         workload_translator = {
@@ -111,17 +116,25 @@ def calculate_anticipated_workload(parmsdict, run_options):
                             "080_CreateAnalysisMask.status", "090_VisualQC_ASL.status", "999_ready.status"]
 
         # Must iterate through both the subject level listing AND the session level (ASL_1, ASL_2, etc.) listing
+        status_files = []
         for subject in study_subjects:
             for session in session_names:
-                current_status_files = os.listdir(os.path.join(analysis_directory, "lock", "xASL_module_ASL",
-                                                               subject, f"xASL_module_ASL_{session}"))
+                directory = os.path.join(analysis_directory, "lock", "xASL_module_ASL", subject,
+                                         f"xASL_module_ASL_{session}")
+                current_status_files = os.listdir(directory)
                 workload = default_workload
                 # Filter out any anticipated status files that are already present in the lock dirs
                 filtered_workload = set(workload).difference(set(current_status_files))
+                # Append the filepaths; these will be used after analysis to check for incompleted STATUS workloads
+                status_files.append([os.path.join(directory, status_file) for status_file in filtered_workload])
+                # Calculate the numerical representation of the STATUS files workload
                 numerical_representation = sum([workload_translator[stat_file] for stat_file in filtered_workload])
                 aslmod_dict[subject][session] = numerical_representation
 
-        return aslmod_dict
+        # Flatten the nested list that is status_files
+        status_files = list(chain(*status_files))
+
+        return aslmod_dict, status_files
 
     def get_population_workload(analysis_directory):
         workload_translator = {
@@ -136,12 +149,16 @@ def calculate_anticipated_workload(parmsdict, run_options):
                             "050_GetVolumeStatistics.status", "060_GetMotionStatistics.status",
                             "070_GetROIstatistics.status", "080_SortBySpatialCoV.status",
                             "090_DeleteAndZip.status", "999_ready.status"]
-        current_status_files = os.listdir(os.path.join(analysis_directory, "lock", "xASL_module_Population",
-                                                       "xASL_module_Population"))
+
+        directory = os.path.join(analysis_directory, "lock", "xASL_module_Population", "xASL_module_Population")
+        current_status_files = os.listdir(directory)
+
         workload = default_workload
         filtered_workload = set(workload).difference(set(current_status_files))
+        status_files = [os.path.join(directory, status_file) for status_file in filtered_workload]
         numerical_representation = sum([workload_translator[stat_file] for stat_file in filtered_workload])
-        return numerical_representation
+        # No need for flattening the status_files for this one; not nested
+        return numerical_representation, status_files
 
     # First get all the subjects
     analysis_dir: str = parmsdict["D"]["ROOT"]
@@ -159,41 +176,51 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
     # Update the dicts as appropriate
     if run_options == "Both":
-        struct_dict = get_structural_workload(analysis_dir, subjects, struct_dict)
-        asl_dict = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
-        # pprint(struct_dict)
-        # pprint(asl_dict)
+        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict)
+        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
 
         struct_totalworkload = sum(struct_dict.values())
         asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
         asl_totalworkload = sum(asl_totalworkload.values())
         print(f"Structural Calculated Workload: {struct_totalworkload}")
         print(f"ASL Calculated Workload: {asl_totalworkload}")
-        return struct_totalworkload + asl_totalworkload
+        # Return the numerical sum of the workload and the combined list of the expected status files
+        return struct_totalworkload + asl_totalworkload, struct_status + asl_status
 
     elif run_options == "ASL":
-        asl_dict = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
+        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
         # pprint(asl_dict)
         asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
         asl_totalworkload = sum(asl_totalworkload.values())
-        print(asl_totalworkload)
-        return asl_totalworkload
+        print(f"ASL Calculated Workload: {asl_totalworkload}")
+        # Return the numerical sum of the workload and the list of expected status files
+        return asl_totalworkload, asl_status
 
     elif run_options == "Structural":
-        struct_dict = get_structural_workload(analysis_dir, subjects, struct_dict)
+        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict)
         # pprint(struct_dict)
         struct_totalworkload = sum(struct_dict.values())
-        print(struct_totalworkload)
-        return struct_totalworkload
+        print(f"Structural Calculated Workload: {struct_totalworkload}")
+        # Return the numerical sum of the workload and the list of expected status files
+        return struct_totalworkload, struct_status
 
     elif run_options == "Population":
-        pop_totalworkload = get_population_workload(analysis_dir)
-        print(pop_totalworkload)
-        return pop_totalworkload
+        pop_totalworkload, pop_status = get_population_workload(analysis_dir)
+        print(f"Population Calculated Workload: {pop_totalworkload}")
+        # Return the numerical sum of the workload and the list of expected status files
+        return pop_totalworkload, pop_status
 
     else:
         print("THIS SHOULD NEVER PRINT AS YOU HAVE SELECTED AN IMPOSSIBLE WORKLOAD OPTION")
 
+
+def calculate_missing_STATUS(analysis_dir, expected_status_files):
+    postrun_status_files = glob(os.path.join(analysis_dir, 'lock', "**", "*.status"), recursive=True)
+    incomplete = [file for file in expected_status_files if file not in postrun_status_files]
+    if len(incomplete) == 0:
+        return True, incomplete
+    else:
+        return False, incomplete
 
 class xASL_GUI_RerunPrep(QWidget):
     """
