@@ -16,7 +16,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter, \
-    calculate_missing_STATUS
+    calculate_missing_STATUS, xASL_GUI_RerunPrep
 from pprint import pprint
 
 
@@ -333,6 +333,28 @@ class xASL_Executor(QMainWindow):
                                     QMessageBox.Ok)
                 return
             modjob_widget = xASL_GUI_TSValter(self)
+        elif selected_job == "Prepare a study for a re-run":
+            # Requirements to launch the widget
+            try:
+                if any([self.le_modjob.text() == '',
+                        'lock' not in os.listdir(self.le_modjob.text())  # lock dirs must be initialized
+                        ]):
+                    QMessageBox.warning(self,
+                                        "lock directory system not found",
+                                        f"The study you provided does not have a lock directory system in play.\n"
+                                        f"This would be automatically created if a study was run. Please run your\n"
+                                        f"study first before trying to modify it for a re-run.",
+                                        QMessageBox.Ok)
+                    return
+            except FileNotFoundError:
+                QMessageBox.warning(self,
+                                    "lock directory system not found",
+                                    f"The study you provided does not have a lock directory system in play.\n"
+                                    f"This would be automatically created if a study was run. Please run your\n"
+                                    f"study first before trying to modify it for a re-run.",
+                                    QMessageBox.Ok)
+                return
+            modjob_widget = xASL_GUI_RerunPrep(self)
 
         if modjob_widget is not None:
             modjob_widget.show()
@@ -485,10 +507,24 @@ class xASL_Executor(QMainWindow):
 
         # Re-activate all widgets associated with the Executor when the run is done
         if self.total_process_dbt == 0:
-            self.btn_runExploreASL.setEnabled(True)
+            self.set_widgets_activation_states(True)
 
             # Check if all expected operations took place
             self.assess_STATUS_completion()
+
+    # Convenience function; deactivates all widgets associated with running exploreASL
+    def set_widgets_activation_states(self, state: bool):
+        self.btn_runExploreASL.setEnabled(state)
+        self.cmb_nstudies.setEnabled(state)
+        for core_cmb, le, btn, runopt_cmb in zip(self.formlay_cmbs_ncores_list,
+                                                 self.formlay_lineedits_list,
+                                                 self.formlay_buttons_list,
+                                                 self.formlay_cmbs_runopts_list):
+            core_cmb.setEnabled(state)
+            le.setEnabled(state)
+            btn.setEnabled(state)
+            runopt_cmb.setEnabled(state)
+
 
     # This is the main function; prepares arguments; spawns workers; feeds in arguments to the workers during their
     # initialization; then begins the programs
@@ -497,7 +533,11 @@ class xASL_Executor(QMainWindow):
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
         self.workers = []
         self.watchers = []
+        self.total_process_dbt = 0
         self.expected_status_files = {}
+
+        # Disable widgets
+        self.set_widgets_activation_states(False)
 
         # Clear the textoutput each time
         self.textedit_textoutput.clear()
@@ -572,6 +612,9 @@ class xASL_Executor(QMainWindow):
                                     f"3) That the ExploreASL filepath specified within the parms file exists\n"
                                     f"4) The subjects within the study are the same as when the parms file was created",
                                     QMessageBox.Ok)
+
+                # Remember to re-activate widgets
+                self.set_widgets_activation_states(True)
                 return
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -594,7 +637,7 @@ class xASL_Executor(QMainWindow):
             del workload
             # Save the expected status files to the dict container; these will be iterated over after workers are done
             self.expected_status_files[path.text()] = expected_status_files
-
+            pprint(expected_status_files)
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 5 - Create a Watcher for that study
             watcher = ExploreASL_Watcher(target=path.text(),  # the analysis directory
@@ -602,6 +645,7 @@ class xASL_Executor(QMainWindow):
                                          watch_debt=debt,  # the debt used to determine when to stop watching
                                          study_idx=study_idx  # the identifier used to know which progressbar to signal
                                          )
+            self.textedit_textoutput.append(f"Setting a Watcher thread on {path.text()}")
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 6 - Set up watcher connections
@@ -616,12 +660,15 @@ class xASL_Executor(QMainWindow):
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 7 - Set up worker connections
             # Worker connections setup within a study
-            for worker in inner_worker_block:
+            for idx, worker in enumerate(inner_worker_block):
                 # Connect the finished signal to the watcher debt to help it understand when it should stop watching
                 worker.signals.finished_processing.connect(watcher.increment_debt)
                 # Connect the finished signal to the run btn reactivator so that the run button may be reactivated
                 # via debt repayment counter
                 worker.signals.finished_processing.connect(self.reactivate_runbtn)
+
+                self.textedit_textoutput.append(f"Preparing Worker {idx+1} of {len(inner_worker_block)} for study: "
+                                                f"{path.text()}")
 
         ######################################
         # THIS IS NOW OUTSIDE OF THE FOR LOOPS
@@ -632,9 +679,6 @@ class xASL_Executor(QMainWindow):
         # Launch all threads in one go
         for runnable in self.workers + self.watchers:
             self.threadpool.start(runnable)
-
-        # Disable after pressing; bad idea to accidentally allow a second click as it may cause system shutdown
-        self.btn_runExploreASL.setEnabled(False)
 
 
 class ExploreASL_WatcherSignals(QObject):

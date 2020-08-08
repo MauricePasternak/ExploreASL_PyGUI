@@ -8,6 +8,9 @@ from xASL_GUI_HelperClasses import DandD_FileExplorerFile2LineEdit
 import pandas as pd
 import shutil
 from itertools import chain
+from pprint import pprint
+from functools import reduce
+
 
 # Creates lock dirs where necessary in anticipation for assigning a watcher to the root lock directory
 def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
@@ -214,6 +217,8 @@ def calculate_anticipated_workload(parmsdict, run_options):
         print("THIS SHOULD NEVER PRINT AS YOU HAVE SELECTED AN IMPOSSIBLE WORKLOAD OPTION")
 
 
+# Called after processing is done to compare the present status files against the files that were expected to be created
+# at the time the run was initialized
 def calculate_missing_STATUS(analysis_dir, expected_status_files):
     postrun_status_files = glob(os.path.join(analysis_dir, 'lock', "**", "*.status"), recursive=True)
     incomplete = [file for file in expected_status_files if file not in postrun_status_files]
@@ -221,6 +226,7 @@ def calculate_missing_STATUS(analysis_dir, expected_status_files):
         return True, incomplete
     else:
         return False, incomplete
+
 
 class xASL_GUI_RerunPrep(QWidget):
     """
@@ -232,6 +238,95 @@ class xASL_GUI_RerunPrep(QWidget):
         self.parent = parent
         self.target_dir = self.parent.le_modjob.text()
         self.setWindowFlag(Qt.Window)
+        self.setWindowTitle("Explore ASL - Re-run setup")
+        self.setMinimumSize(400, 720)
+        self.mainlay = QVBoxLayout(self)
+        self.dir_struct = self.get_directory_structure(os.path.join(self.target_dir, "lock"))
+
+        self.lock_tree = QTreeWidget(self)
+        self.fill_tree(self.lock_tree.invisibleRootItem(), self.dir_struct)
+        self.lock_tree.expandToDepth(2)
+        self.lock_tree.itemChanged.connect(self.change_check_state)
+        self.lock_tree.setHeaderLabel("Select the directories that should be redone")
+
+        self.btn = QPushButton("Remove selected .status files \nto allow for re-run in the main widget", self,
+                               clicked=self.remove_status_files)
+        self.btn.setMinimumHeight(50)
+        font = QFont()
+        font.setPointSize(12)
+        self.btn.setFont(font)
+
+        self.mainlay.addWidget(self.lock_tree)
+        self.mainlay.addWidget(self.btn)
+
+    @staticmethod
+    def get_directory_structure(rootdir):
+        """
+        Creates a nested dictionary that represents the folder structure of rootdir
+        """
+        dir = {}
+        rootdir = rootdir.rstrip(os.sep)
+        start = rootdir.rfind(os.sep) + 1
+        for path, dirs, files in os.walk(rootdir):
+            folders = path[start:].split(os.sep)
+            subdir = dict.fromkeys(files)
+            parent = reduce(dict.get, folders[:-1], dir)
+            parent[folders[-1]] = subdir
+        return dir
+
+    def fill_tree(self, parent, d):
+        if isinstance(d, dict):
+            for key, value in d.items():
+                it = QTreeWidgetItem()
+                it.setText(0, key)
+                if isinstance(value, dict):
+                    parent.addChild(it)
+                    it.setCheckState(0, Qt.Unchecked)
+                    self.fill_tree(it, value)
+                else:
+                    parent.addChild(it)
+                    it.setCheckState(0, Qt.Unchecked)
+
+    def change_check_state(self, item: QTreeWidgetItem, col: int):
+        if item.checkState(col):
+            for idx in range(item.childCount()):
+                item_child = item.child(idx)
+                item_child.setCheckState(0, Qt.Checked)
+        else:
+            for idx in range(item.childCount()):
+                item_child = item.child(idx)
+                item_child.setCheckState(0, Qt.Unchecked)
+
+    def return_filepaths(self):
+        all_status = self.lock_tree.findItems(".status", (Qt.MatchEndsWith | Qt.MatchRecursive), 0)
+        selected_status = [status for status in all_status if status.checkState(0)]
+        filepaths = []
+
+        for status in selected_status:
+            filepath = [status.text(0)]
+            parent = status.parent()
+            while parent.text(0) != "lock":
+                filepath.insert(0, parent.text(0))
+                parent = parent.parent()
+            filepath.insert(0, "lock")
+            filepaths.append(os.path.join(self.target_dir, *filepath))
+
+        return filepaths, selected_status
+
+    def remove_status_files(self):
+        filepaths, treewidgetitems = self.return_filepaths()
+        print(f"Removing: {filepaths}")
+        for filepath, widget in zip(filepaths, treewidgetitems):
+            os.remove(filepath)
+
+        # Clear the tree
+        self.lock_tree.clear()
+        # Refresh the file structure
+        self.dir_struct = self.get_directory_structure(os.path.join(self.target_dir, "lock"))
+        # Refresh the tree
+        self.fill_tree(self.lock_tree.invisibleRootItem(), self.dir_struct)
+        self.lock_tree.expandToDepth(2)
+        self.lock_tree.itemChanged.connect(self.change_check_state)
 
 
 class xASL_GUI_TSValter(QWidget):
