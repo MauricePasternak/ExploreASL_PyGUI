@@ -23,14 +23,24 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
     vs plotting and data loading separate
     """
     change_axesparms_widget = Signal()  # This signal is for updating the mainwidget to change the Axes Parameters tab
-    change_figparms_updateplot = Signal()  # This signal is for updating the plot due to a change in a figure parameter
-    change_axesparms_updateplot = Signal()  # This signal is for updating the plot due to a change in an axes parameter
+    change_figparms_updateplot = Signal()  # This signal is for updating the plot due to a change in a figure parms
+    change_axesparms_updateplot = Signal()  # This signal is for updating the plot due to a change in an axes parms
+    change_legendparms_updateplot = Signal()  # This signal is for updating the plot due to a change in legend parms
 
     def __init__(self, parent):
         super(xASL_GUI_FacetGridOrganizer, self).__init__(parent=parent)
         self.parent = parent  # Parent at the time of initialization, which will be the PostProc Widget
         self.manager_type = "Facet Grid"
+
+        # Prepare arguments for legend widget
+        self.legend_widget = xASL_GUI_FacetLegend(self)
+        self.legend_widget.process_legendkwargs.connect(self.legend_kwarg_change_updateplot)
+        self.legend_kwargs = {}
+
+        # Prepare the figure parameters
         self.UI_Setup_FigureParms()
+
+        # Prepare misc attributes and default arguments
         self.all_dtypes = ["object", "category", "bool", "float", "float16", "float32", "float64", "int", "int8",
                            "int16", "int32", "int64"]
         self.numeric_dtypes = ["float", "float16", "float32", "float64", "int", "int8", "int16", "int32", "int64"]
@@ -69,6 +79,22 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
 
     def sendSignal_axesparms_updateplot(self):
         self.change_axesparms_updateplot.emit()
+
+    @Slot(dict)
+    # Slot to process the legend_kwargs and then inform the main widget to update the canvas to reflect the change
+    def legend_kwarg_change_updateplot(self, legend_kwargs: dict):
+        print("legend_kwarg_change_updateplot received a signal")
+        self.legend_kwargs = {}
+        if "bbox_x" in legend_kwargs.keys():
+            bbox_x = legend_kwargs["bbox_x"]()
+            bbox_y = legend_kwargs["bbox_y"]()
+            del legend_kwargs["bbox_x"]
+            del legend_kwargs["bbox_y"]
+            self.legend_kwargs["bbox_to_anchor"] = (bbox_x, bbox_y)
+        for key, call in legend_kwargs.items():
+            self.legend_kwargs[key] = call()
+
+        self.change_legendparms_updateplot.emit()
 
     # Sets up the widgets that will be contained within the "Figure Parameters" Tab
     def UI_Setup_FigureParms(self):
@@ -376,12 +402,14 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
         else:
             print("THIS SHOULD NEVER PRINT. AN IMPOSSIBLE AXES TYPE WAS SELECTED")
 
+        # Setup the wigets associated with connecting to the legend parameters each time
+        self.UI_Setup_Btn2LegendParms()
+
         # Regardless of what type of plot was selected, the current axes should be cleared
         axes = self.parent.grid.axes
         for ax in axes.flat:
             ax.clear()
         self.parent.canvas.draw()
-
 
     # Convenience function to generate the combobox that will respond to palette changes
     def UI_Setup_PaletteCombobox(self):
@@ -394,8 +422,16 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             cmb_palette.setAutoCompletion(False)
         return cmb_palette
 
+    # Convenience function to generate the axes-level widgets that will grant access to legend parameters
+    def UI_Setup_Btn2LegendParms(self):
+        self.chk_showlegend = QCheckBox(clicked=self.legend_widget.sendSignal_legendparms_updateplot)
+        self.btn_legendparms = QPushButton("Change Legend Parameters", clicked=self.legend_widget.show)
+        self.formlay_axesparms.addRow("Show legend in figure?", self.chk_showlegend)
+        self.formlay_axesparms.addRow(self.btn_legendparms)
+
     # Convenience Function for connecting the widgets to the appropriate signal, usually in a for loop
-    def connect_widget_to_signal(self, widget, target_signal):
+    @staticmethod
+    def connect_widget_to_signal(widget, target_signal):
         if isinstance(widget, QComboBox):
             widget.currentTextChanged.connect(target_signal)
         elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
@@ -406,3 +442,58 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             widget.clicked.connect(target_signal)
         else:
             print(f'{widget} could not be connected')
+
+
+class xASL_GUI_FacetLegend(QWidget):
+    process_legendkwargs = Signal(dict)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent  # The Facet Grid Manager
+        self.setWindowFlag(Qt.Window)
+        self.setWindowTitle("FacetGrid Legend Settings")
+        self.setMinimumSize(300, 480)
+        self.legend_kwargs = {}
+        self.formlay_legend = QFormLayout(self)
+        self.cmb_location = QComboBox()
+        self.cmb_location.addItems(["best", "upper right", "upper left", "lower left", "lower right", "center left",
+                                    "center right", "lower center", "upper center"])
+        self.chk_manual_loc = QCheckBox(checked=False)
+        self.spinbox_legend_x = QDoubleSpinBox(maximum=2, minimum=0, value=1.05, singleStep=0.01)
+        self.spinbox_legend_y = QDoubleSpinBox(maximum=2, minimum=0, value=1, singleStep=0.01)
+        self.cmb_fontsize = QComboBox()
+        self.cmb_fontsize.addItems(["xx-small", "x-small", "small", "medium", "large", "x-large", "xx-large"])
+        self.cmb_fontsize.setCurrentIndex(3)
+        self.chk_frameon = QCheckBox(checked=False)
+        self.chk_fancybox = QCheckBox(checked=False)
+        self.chk_shadow = QCheckBox(checked=False)
+        self.spinbox_markersize = QDoubleSpinBox(maximum=2, minimum=0, value=1, singleStep=0.01)
+        self.chk_markerfirst = QCheckBox(checked=True)
+
+        for widget, description in zip([self.cmb_location, self.chk_manual_loc, self.spinbox_legend_x,
+                                        self.spinbox_legend_y, self.cmb_fontsize, self.chk_frameon, self.chk_fancybox,
+                                        self.chk_shadow, self.spinbox_markersize, self.chk_markerfirst],
+                                       ["Legend location", "Manually set location?", "Manual X position",
+                                        "Manual Y Position", "Legend fontsize", "Legend frame is on?",
+                                        "Legend frame has rounded corners?", "Legend frame has shadow?",
+                                        "Marker size", "Marker first before label?"]):
+            self.formlay_legend.addRow(description, widget)
+            self.parent.connect_widget_to_signal(widget, self.sendSignal_legendparms_updateplot)
+
+    def sendSignal_legendparms_updateplot(self):
+        self.prepare_legend_kwargs()
+        self.process_legendkwargs.emit(self.legend_kwargs)
+
+    def prepare_legend_kwargs(self):
+        self.legend_kwargs = {
+            "loc": self.cmb_location.currentText,
+            "fontsize": self.cmb_fontsize.currentText,
+            "frameon": self.chk_frameon.isChecked,
+            "fancybox": self.chk_fancybox.isChecked,
+            "shadow": self.chk_shadow.isChecked,
+            "markerscale": self.spinbox_markersize.value,
+            "markerfirst": self.chk_markerfirst.isChecked
+        }
+        if self.chk_manual_loc.isChecked():
+            self.legend_kwargs["bbox_x"] = self.spinbox_legend_x.value
+            self.legend_kwargs["bbox_y"] = self.spinbox_legend_y.value

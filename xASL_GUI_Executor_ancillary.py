@@ -264,15 +264,15 @@ class xASL_GUI_RerunPrep(QWidget):
         """
         Creates a nested dictionary that represents the folder structure of rootdir
         """
-        dir = {}
+        directory = {}
         rootdir = rootdir.rstrip(os.sep)
         start = rootdir.rfind(os.sep) + 1
         for path, dirs, files in os.walk(rootdir):
             folders = path[start:].split(os.sep)
             subdir = dict.fromkeys(files)
-            parent = reduce(dict.get, folders[:-1], dir)
+            parent = reduce(dict.get, folders[:-1], directory)
             parent[folders[-1]] = subdir
-        return dir
+        return directory
 
     def fill_tree(self, parent, d):
         if isinstance(d, dict):
@@ -287,7 +287,8 @@ class xASL_GUI_RerunPrep(QWidget):
                     parent.addChild(it)
                     it.setCheckState(0, Qt.Unchecked)
 
-    def change_check_state(self, item: QTreeWidgetItem, col: int):
+    @staticmethod
+    def change_check_state(item: QTreeWidgetItem, col: int):
         if item.checkState(col):
             for idx in range(item.childCount()):
                 item_child = item.child(idx)
@@ -329,6 +330,7 @@ class xASL_GUI_RerunPrep(QWidget):
         self.lock_tree.itemChanged.connect(self.change_check_state)
 
 
+# noinspection PyAttributeOutsideInit
 class xASL_GUI_TSValter(QWidget):
     """
     Class designated to alter the contents of participants.tsv

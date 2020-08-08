@@ -213,6 +213,7 @@ class xASL_PostProc(QMainWindow):
             self.fig_manager = xASL_GUI_FacetGridOrganizer(self)
             self.fig_manager.change_figparms_updateplot.connect(self.plotupdate_facetgrid_figurecall_plot)
             self.fig_manager.change_axesparms_updateplot.connect(self.plotupdate_facetgrid_axescall_plot)
+            self.fig_manager.change_legendparms_updateplot.connect(self.plotupdate_facetgrid_legend)
             self.fig_manager.change_axesparms_widget.connect(self.update_axesparms)
 
             # Clear and replace the figure parameters widget for the figure parameters tab. The new figure parameters
@@ -358,14 +359,32 @@ class xASL_PostProc(QMainWindow):
         if axes_constructor['palette'] in ['', "None", "Default Blue", "No Palette"]:
             axes_constructor['palette'] = None
 
+        print("AXES CONSTRUCTOR:")
         pprint(axes_constructor)
         if hue == '':
             self.grid = self.grid.map(func, x, y, data=self.long_data, **axes_constructor)
         else:
             self.grid = self.grid.map(func, x, y, hue, data=self.long_data, **axes_constructor)
 
-        # Tell the canvas to update
-        self.canvas.draw()
+        # Redraw the legend
+        self.plotupdate_facetgrid_legend()
+
+        # This contains the canvas.draw() call within it
+        self.plotupdate_padding()
+
+    # Called by updates to the legend parameters of an axes within a FacetGrid
+    def plotupdate_facetgrid_legend(self):
+        print(f"The checkbox for showing the legend is checked: {self.fig_manager.chk_showlegend.isChecked()}")
+        if all([len(self.fig_manager.legend_kwargs) > 0,  # kwargs for the legend function must exist
+                self.fig_manager.chk_showlegend.isChecked(),  # the option to show the legend must be there
+                self.fig_manager.axes_arg_hue() != ''  # the hue argument cannot be empty
+                ]):
+            plt.legend(**self.fig_manager.legend_kwargs)
+        else:
+            plt.legend("", frameon=False)
+
+        # This contains the canvas.draw() call within it
+        self.plotupdate_padding()
 
     # Loads in data as a pandas dataframe
     def load_exploreasl_data(self):
@@ -471,8 +490,6 @@ class xASL_PostProc(QMainWindow):
             # and setting it to zero has the benefit of clearing everything else already
             if self.cmb_figuretypeselection.currentIndex() != 0:
                 self.cmb_figuretypeselection.setCurrentIndex(0)
-
-
 
     def load_ancillary_data(self, exasl_df):
         # Load in the other dataframe, with flexibility for filetype
@@ -582,7 +599,3 @@ class xASL_GUI_Subsetter(QWidget):
                 long_df = long_df.loc[long_df[key] == call(), :]
 
         return long_df
-
-
-
-
