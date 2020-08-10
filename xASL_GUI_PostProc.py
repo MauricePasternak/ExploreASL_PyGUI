@@ -44,13 +44,9 @@ class xASL_PostProc(QMainWindow):
         self.axes_wid = None
         self.loaded_wide_data = pd.DataFrame()
         self.loaded_long_data = pd.DataFrame()
-        self.plotstylenames = ['Solarize_Light2', '_classic_test_patch', 'bmh', 'classic', 'dark_background', 'fast',
-                               'fivethirtyeight', 'ggplot', 'grayscale', 'seaborn', 'seaborn-bright',
-                               'seaborn-colorblind', 'seaborn-dark', 'seaborn-dark-palette', 'seaborn-darkgrid',
-                               'seaborn-deep', 'seaborn-muted', 'seaborn-notebook', 'seaborn-paper', 'seaborn-pastel',
-                               'seaborn-poster', 'seaborn-talk', 'seaborn-ticks', 'seaborn-white', 'seaborn-whitegrid',
-                               'tableau-colorblind10']
-
+        self.plotstylenames = ['seaborn-ticks', 'seaborn-white', 'seaborn-whitegrid', 'seaborn-dark',
+                               'seaborn-darkgrid', 'seaborn-paper', 'seaborn-poster', 'seaborn-talk',
+                               'bmh', 'classic', 'dark_background', 'fivethirtyeight', 'ggplot']
         # Main Widgets setup
         self.UI_Setup_Docker()
 
@@ -141,6 +137,7 @@ class xASL_PostProc(QMainWindow):
         # Set up the overall plot style
         self.cmb_plotstyle = QComboBox(self.cont_pltsettings_univlvlparms)
         self.cmb_plotstyle.addItems(self.plotstylenames)
+        self.cmb_plotstyle.currentTextChanged.connect(self.plotupdate_plotstyle)
         self.formlay_commonparms.addRow("Overall Plot Style", self.cmb_plotstyle)
 
         # Set up the padding
@@ -178,8 +175,16 @@ class xASL_PostProc(QMainWindow):
         self.subsetter.show()
         print("show_subsetter was executed")
 
-    def plotupdate_plotstyle(self):
-        pass
+    def plotupdate_plotstyle(self, style):
+        plt.style.use(self.cmb_plotstyle.currentText())
+        print(f"Using style: {self.cmb_plotstyle.currentText()}")
+        # First clear the canvas
+        self.canvas_full_clear()
+        # Then generate the new canvas with the updated facetgrid and figure
+        self.canvas_generate("Facet Grid Figure Call")
+        # Then see if the axes can be updated, and if so, update them
+        self.plotupdate_facetgrid_axes()
+        self.plotupdate_padding()
 
     # When called, this updates the major axes labels options
     def plotupdate_labels(self):
@@ -208,6 +213,8 @@ class xASL_PostProc(QMainWindow):
         if fig_type == "Facet Grid":
             # Must first clear the current canvas and set one in that is prepared with a facet grid
             self.canvas_full_clear()
+            plt.style.use(self.cmb_plotstyle.currentText())
+            print(f"Using style: {self.cmb_plotstyle.currentText()}")
             self.canvas_generate("Facet Grid Default")
             self.plotupdate_padding()
             self.fig_manager = xASL_GUI_FacetGridOrganizer(self)
@@ -269,12 +276,15 @@ class xASL_PostProc(QMainWindow):
         plt.close(self.mainfig)
         self.mainlay.removeWidget(self.canvas)
         self.mainlay.removeWidget(self.nav)
+        self.canvas.setParent(None)
+        self.nav.setParent(None)
         del self.nav
         del self.mainfig
         del self.canvas
 
     # Called after a clear to restore a blank/default canvas with the appropriate figure manager
     def canvas_generate(self, action):
+
         if action is None:
             self.mainfig = Figure()
         # In "Facet Grid Default" a simple placeholder canvas is set
@@ -283,6 +293,10 @@ class xASL_PostProc(QMainWindow):
             self.mainfig = self.grid.fig
         # In "Facet Grid Figure Call", a change in the figure parms is forcing an update
         elif action == "Facet Grid Figure Call":
+            # For false call with style change
+            if self.cmb_figuretypeselection == 'Select an option':
+                return
+
             # First create the constructor, then feed it into the Facetgrid class
             constructor = {}
             for kwarg, call in self.fig_manager.fig_kwargs.items():
@@ -317,12 +331,13 @@ class xASL_PostProc(QMainWindow):
         self.canvas_generate("Facet Grid Figure Call")
         # Then see if the axes can be updated, and if so, update them
         self.plotupdate_facetgrid_axes()
-        self.plotupdate_padding()
+
 
     # Called by updates from the Axes Parameters
     @Slot()
     def plotupdate_facetgrid_axescall_plot(self):
         self.plotupdate_facetgrid_axes()
+
 
     # Convenience function
     def plotupdate_facetgrid_axes(self):
@@ -368,9 +383,6 @@ class xASL_PostProc(QMainWindow):
 
         # Redraw the legend
         self.plotupdate_facetgrid_legend()
-
-        # This contains the canvas.draw() call within it
-        self.plotupdate_padding()
 
     # Called by updates to the legend parameters of an axes within a FacetGrid
     def plotupdate_facetgrid_legend(self):

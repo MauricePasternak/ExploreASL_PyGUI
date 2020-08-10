@@ -4,6 +4,7 @@ from PySide2.QtCore import *
 from xASL_GUI_ParmsMaker import xASL_ParmsMaker, DirectoryDragDrop_ListWidget
 from xASL_GUI_Executor import xASL_Executor
 from xASL_GUI_PostProc import xASL_PostProc
+from xASL_GUI_Importer import xASL_GUI_Importer
 import os
 import sys
 import json
@@ -65,6 +66,7 @@ class xASL_MainWin(QMainWindow):
         self.parmsmaker = xASL_ParmsMaker(self)
         self.executor = xASL_Executor(self)
         self.postproc = xASL_PostProc(self)
+        self.importer = xASL_GUI_Importer(self)
 
     # This dockable navigator will contain the most essential parameters and will be repeatedly accessed by other
     # subwidgets within the program; should also be dockable within any of them.
@@ -181,7 +183,7 @@ class xASL_MainWin(QMainWindow):
 
     # Launch the Importer window
     def show_Importer(self):
-        pass
+        self.importer.show()
 
     # Launch the Post-Analysis window
     def show_PostAnalysis(self):

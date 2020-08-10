@@ -351,16 +351,19 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
             self.style_grouper = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
             self.style_grouper.setPlaceholderText("(Optional) Drag & Drop the Markerstyle-Grouping Variable")
             self.cmb_palette = self.UI_Setup_PaletteCombobox()
+            self.spinbox_markersize = QDoubleSpinBox(maximum=100, minimum=0, value=40, singleStep=1)
             self.axes_kwargs = {"size": self.size_grouper.text,
                                 "style": self.style_grouper.text,
-                                "palette": self.cmb_palette.currentText
+                                "palette": self.cmb_palette.currentText,
+                                "s": self.spinbox_markersize.value
                                 }
             self.cont_axesparms = QWidget()
             self.formlay_axesparms = QFormLayout(self.cont_axesparms)
             for description, widget in zip(["X Axis Variable", "Y Axis variable", "Hue Grouping Variable",
-                                            "Size Grouping Variable", "Marker Style Grouping Variable", "Palette"],
+                                            "Size Grouping Variable", "Marker Style Grouping Variable", "Marker size",
+                                            "Palette"],
                                            [self.le_x, self.le_y, self.le_hue, self.size_grouper, self.style_grouper,
-                                            self.cmb_palette]):
+                                            self.spinbox_markersize, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
                 self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
@@ -460,7 +463,7 @@ class xASL_GUI_FacetLegend(QWidget):
                                     "center right", "lower center", "upper center"])
         self.chk_manual_loc = QCheckBox(checked=False)
         self.spinbox_legend_x = QDoubleSpinBox(maximum=2, minimum=0, value=1.05, singleStep=0.01)
-        self.spinbox_legend_y = QDoubleSpinBox(maximum=2, minimum=0, value=1, singleStep=0.01)
+        self.spinbox_legend_y = QDoubleSpinBox(maximum=20, minimum=0, value=1, singleStep=0.01)
         self.cmb_fontsize = QComboBox()
         self.cmb_fontsize.addItems(["xx-small", "x-small", "small", "medium", "large", "x-large", "xx-large"])
         self.cmb_fontsize.setCurrentIndex(3)
