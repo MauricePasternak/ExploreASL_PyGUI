@@ -36,7 +36,6 @@ class xASL_GUI_Importer(QMainWindow):
         self.session_aliases = {}
         self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
 
-
         # Window Size and initial visual setup
         self.setMinimumSize(540, 720)
         self.resize(540, 720)
@@ -50,7 +49,13 @@ class xASL_GUI_Importer(QMainWindow):
         self.Setup_UI_UserSpecifyDirStuct()
         self.Setup_UI_UserSpecifyScanAliases()
         self.Setup_UI_UserSpecifySessionAliases()
-        self.mainsplit.setSizes([150, 250, 300])
+
+        self.btn_run_importer = QPushButton("Run ASL2BIDS", self.cw, clicked=self.run_importer)
+        self.btn_run_importer.setFont(self.labfont)
+        self.btn_run_importer.setFixedHeight(50)
+        self.mainsplit.addWidget(self.btn_run_importer)
+
+        self.mainsplit.setSizes([150, 250, 300, 50])
 
     def Setup_UI_UserSpecifyDirStuct(self):
         self.grp_dirstruct = QGroupBox("Specify Directory Structure", self.cw)
@@ -62,6 +67,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.hlay_rootdir = QHBoxLayout()
         self.le_rootdir = DandD_FileExplorer2LineEdit(self.grp_dirstruct)
         self.le_rootdir.setPlaceholderText("Drag and drop your study's raw directory here")
+        self.le_rootdir.setReadOnly(True)
         self.le_rootdir.textChanged.connect(self.set_rootdir_variable)
         self.btn_rootdir = QPushButton("...", self.grp_dirstruct, clicked=self.set_import_root_directory)
         self.hlay_rootdir.addWidget(self.le_rootdir)
@@ -80,12 +86,14 @@ class xASL_GUI_Importer(QMainWindow):
         self.hlay_receivers = QHBoxLayout()
         self.lab_rootlabel = QLabel("raw", self)
         self.lab_rootlabel.setFont(self.labfont)
-        self.levels = {"Level1": DandD_Label2LineEdit(self.grp_dirstruct),
-                       "Level2": DandD_Label2LineEdit(self.grp_dirstruct),
-                       "Level3": DandD_Label2LineEdit(self.grp_dirstruct)}
+        self.levels = {"Level1": DandD_Label2LineEdit(self, self.grp_dirstruct),
+                       "Level2": DandD_Label2LineEdit(self, self.grp_dirstruct),
+                       "Level3": DandD_Label2LineEdit(self, self.grp_dirstruct)}
         self.levels["Level1"].textChanged.connect(self.get_firstlevel_dirs)
         self.levels["Level2"].textChanged.connect(self.get_secondlevel_dirs)
         self.levels["Level3"].textChanged.connect(self.get_thirdlevel_dirs)
+        for le in self.levels.values():
+            le.textChanged.connect(self.update_sibling_awareness)
 
         self.hlay_receivers.addWidget(self.lab_rootlabel)
         if platform.system() == "Windows":
@@ -131,9 +139,23 @@ class xASL_GUI_Importer(QMainWindow):
         self.mainsplit.addWidget(self.grp_scanaliases)
 
     def Setup_UI_UserSpecifySessionAliases(self):
+        # Define the groupbox and its main layout
         self.grp_sessionaliases = QGroupBox("Specify Session Aliases", self.cw)
-        self.formlay_sessionaliases = QFormLayout(self.grp_sessionaliases)
+        self.vlay_sessionaliases = QVBoxLayout(self.grp_sessionaliases)
+        self.scroll_sessionaliases = QScrollArea(self.grp_sessionaliases)
+        self.cont_sessionaliases = QWidget()
+        self.scroll_sessionaliases.setWidget(self.cont_sessionaliases)
+        self.scroll_sessionaliases.setWidgetResizable(True)
+
+        # Arrange widgets and layouts
+        self.le_sessionaliases_dict = dict()
+        self.formlay_sessionaliases = QFormLayout(self.cont_sessionaliases)
+        self.vlay_sessionaliases.addWidget(self.scroll_sessionaliases)
         self.mainsplit.addWidget(self.grp_sessionaliases)
+
+        # for ii in range(10):
+        #     self.formlay_sessionaliases.addRow(str(ii), QLabel(str(ii)))
+
 
     def clear_receivers(self):
         for le in self.levels.values():
@@ -142,7 +164,7 @@ class xASL_GUI_Importer(QMainWindow):
     # Purpose of this function is to set the directory of the root path lineedit based on the adjacent pushbutton
     @Slot()
     def set_import_root_directory(self):
-        dir_path = QFileDialog.getExistingDirectory(self.cw,
+        dir_path = QFileDialog.getExistingDirectory(QFileDialog(),
                                                     "Select the raw directory of your study",
                                                     self.parent().config["DefaultRootDir"],
                                                     QFileDialog.ShowDirsOnly)
@@ -215,18 +237,24 @@ class xASL_GUI_Importer(QMainWindow):
     def get_nlevel_dirs(self, dir_type, directories):
         """
         :param dir_type: whether this is a subject, session, or scan
+        :param directories: the list of directories produced from globbing a certain depth depending on which drag and
+        drop QLabel was performed
         """
         basenames = set([os.path.basename(path) for path in directories])
-        pprint(directories)
         print(f"Dir type: {dir_type}")
         if dir_type == "Subject":
             self.subject_regex = self.inferregex(list(basenames))
             print(f"Subject regex: {self.subject_regex}")
+
         elif dir_type == "Session":
-            self.session_regex = self.inferregex(self.inferregex(list(basenames)))
+            self.session_regex = self.inferregex(list(basenames))
+            print(f"Session regex: {self.session_regex}")
+            self.update_session_aliases(basenames=list(basenames))
+
         elif dir_type == "Scan":
-            self.scan_regex = self.inferregex(self.inferregex(list(basenames)))
+            self.scan_regex = self.inferregex(list(basenames))
             self.reset_scan_alias_cmbs(basenames=list(basenames))
+
         else:
             print("Error. This should never print")
             return
@@ -248,7 +276,26 @@ class xASL_GUI_Importer(QMainWindow):
             else:
                 self.scan_aliases[key] = None
 
+    # Purpose of this function is to update the lineedits of the sessions section and repopulate
+    def update_session_aliases(self, basenames):
+        # If this is an update, remove the previous widgets and clear the dict
+        if len(self.le_sessionaliases_dict) > 0:
+            self.reset_session_alias_cmbs()
+            self.le_sessionaliases_dict.clear()
 
+        # Generate the new dict, populate the format layout, and add the lineedits to the dict
+        self.le_sessionaliases_dict = dict.fromkeys(basenames)
+
+        for key in self.le_sessionaliases_dict:
+            print(key)
+            le = QLineEdit(self.grp_sessionaliases)
+            le.setPlaceholderText("Specify the alias for this session")
+            self.formlay_sessionaliases.addRow(key, le)
+            self.le_sessionaliases_dict[key] = le
+
+    def reset_session_alias_cmbs(self):
+        for idx in range(self.formlay_sessionaliases.rowCount()):
+            self.formlay_sessionaliases.removeRow(0)
 
     # Convenience function for returning the regex string, provided a list of directories
     @staticmethod
@@ -257,6 +304,27 @@ class xASL_GUI_Importer(QMainWindow):
         extractor.extract()
         regex = extractor.results.rex[0]
         return regex
+
+    def set_token_ordering(self):
+        for token_idx, lineedit in enumerate(self.levels.values()):
+            self.tokenordering[token_idx] = lineedit.text()
+
+    # Convenience function for updating
+    @Slot()
+    def update_sibling_awareness(self):
+        current_texts = [le.text() for le in self.levels.values()]
+        for le in self.levels.values():
+            le.sibling_awareness = current_texts
+
+
+    def run_importer(self):
+        print(f"Regex for Subjects: {self.subject_regex}")
+        print(f"Regex for Sessions: {self.session_regex}")
+        print(f"Regex for Scans: {self.scan_regex}")
+        print(f"Session Dict: {self.session_aliases}")
+        print(f"Scan Dict: {self.scan_aliases}")
+        self.set_token_ordering()
+        print(f"Token Ordering: {self.tokenordering}")
 
 
 class DraggableLabel(QLabel):
@@ -301,27 +369,33 @@ class DandD_Label2LineEdit(QLineEdit):
     Modified QLineEdit to support accepting text drops from a QLabel with Drag enabled
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, superparent, parent=None):
         super().__init__(parent)
 
         self.setAcceptDrops(True)
+        self.setReadOnly(True)
+        self.superparent = superparent  # This is the Importer Widget itself
+        self.sibling_awareness = ['', '', '']
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasText():
-            event.accept()
+            if event.mimeData().text() not in self.sibling_awareness and self.superparent.le_rootdir.text() != '':
+                event.accept()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         if event.mimeData().hasText():
-            event.accept()
-            event.setDropAction(Qt.CopyAction)
+            if event.mimeData().text() not in self.sibling_awareness and self.superparent.le_rootdir.text() != '':
+                event.accept()
+                event.setDropAction(Qt.CopyAction)
         else:
             event.ignore()
 
     def dropEvent(self, event: QDropEvent) -> None:
         if event.mimeData().hasText():
-            event.accept()
-            self.setText(event.mimeData().text())
+            if event.mimeData().text() not in self.sibling_awareness and self.superparent.le_rootdir.text() != '':
+                event.accept()
+                self.setText(event.mimeData().text())
         else:
             event.ignore()
