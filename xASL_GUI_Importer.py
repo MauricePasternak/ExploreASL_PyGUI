@@ -30,15 +30,16 @@ class xASL_GUI_Importer(QMainWindow):
         self.rawdir = ''
         self.folderhierarchy = ['', '', '']
         self.tokenordering = ['', '', '']
-        self.subject_regex = ''
-        self.session_regex = ''
-        self.scan_regex = ''
+        self.subject_regex = None
+        self.session_regex = None
+        self.scan_regex = None
         self.session_aliases = {}
         self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
 
         # Window Size and initial visual setup
         self.setMinimumSize(540, 720)
         self.resize(540, 720)
+        self.setWindowTitle("ExploreASL ASL2BIDS Importer")
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
@@ -140,7 +141,7 @@ class xASL_GUI_Importer(QMainWindow):
 
     def Setup_UI_UserSpecifySessionAliases(self):
         # Define the groupbox and its main layout
-        self.grp_sessionaliases = QGroupBox("Specify Session Aliases", self.cw)
+        self.grp_sessionaliases = QGroupBox("Specify Session Aliases and Ordering", self.cw)
         self.vlay_sessionaliases = QVBoxLayout(self.grp_sessionaliases)
         self.scroll_sessionaliases = QScrollArea(self.grp_sessionaliases)
         self.cont_sessionaliases = QWidget()
@@ -155,7 +156,6 @@ class xASL_GUI_Importer(QMainWindow):
 
         # for ii in range(10):
         #     self.formlay_sessionaliases.addRow(str(ii), QLabel(str(ii)))
-
 
     def clear_receivers(self):
         for le in self.levels.values():
@@ -176,6 +176,24 @@ class xASL_GUI_Importer(QMainWindow):
     def set_rootdir_variable(self):
         self.rawdir = self.le_rootdir.text()
 
+    # Checks if any of subjects, sessions, or scans needs resetting
+    def check_if_reset_needed(self):
+        used_directories = [le.text() for le in self.levels.values()]
+        # If subjects is not in the currently-specified structure and the regex has been already set
+        if "Subject" not in used_directories and self.subject_regex is not None:
+            self.subject_regex = None
+
+        # If sessions is not in the currently-specified structure and the regex has been already set
+        if "Session" not in used_directories and self.session_regex is not None:
+            self.session_regex = None
+            self.session_aliases.clear()
+            self.reset_session_alias_cmbs()  # This clears the sessionaliases dict and the widgets
+
+        if "Scan" not in used_directories and self.scan_regex is not None:
+            self.scan_regex = None
+            self.scan_aliases.clear()
+            self.reset_scan_alias_cmbs(basenames=[])
+
     # Purpose of this function is to return a list of the first level directories immediately succeeding raw
     def get_firstlevel_dirs(self, dir_type: str):
         """
@@ -185,15 +203,21 @@ class xASL_GUI_Importer(QMainWindow):
         if any([self.rawdir == '',  # the attribute cannot be blank
                 not os.path.exists(self.rawdir),  # the attribute must be a path that exists
                 os.path.basename(self.rawdir) != 'raw',  # avoid other directories
-                dir_type == self.levels["Level2"].text(),  # Can't overlap dir types
-                dir_type == self.levels["Level3"].text()  # Can't overlap dir types
                 ]):
             return
-        directories = [directory for directory in glob(os.path.join(self.rawdir, '*'))
-                       if os.path.isdir(directory)]
+
+        # First check if a reset is needed anywhere
+        self.check_if_reset_needed()
+
+        # Then glob the full paths
+        directories = [directory for directory in glob(os.path.join(self.rawdir, '*')) if os.path.isdir(directory)]
+
+        # If the search is fruitless, do not proceed and immediately clear the lineedit the label was dropped into
         if len(directories) == 0:
             self.levels["Level1"].clear()
             return
+
+        # Otherwise, proceed
         self.get_nlevel_dirs(dir_type=dir_type, directories=directories)
 
     def get_secondlevel_dirs(self, dir_type: str):
@@ -204,15 +228,21 @@ class xASL_GUI_Importer(QMainWindow):
         if any([self.rawdir == '',  # the attribute cannot be blank
                 not os.path.exists(self.rawdir),  # the attribute must be a path that exists
                 os.path.basename(self.rawdir) != 'raw',  # avoid other directories
-                dir_type == self.levels["Level1"].text(),  # Can't overlap dir types
-                dir_type == self.levels["Level3"].text()  # Can't overlap dir types
                 ]):
             return
-        directories = [directory for directory in glob(os.path.join(self.rawdir, '*', "*"))
-                       if os.path.isdir(directory)]
+
+        # First check if a reset is needed anywhere
+        self.check_if_reset_needed()
+
+        # Then glob the full paths
+        directories = [directory for directory in glob(os.path.join(self.rawdir, '*', "*")) if os.path.isdir(directory)]
+
+        # If the search is fruitless, do not proceed and immediately clear the lineedit the label was dropped into
         if len(directories) == 0:
             self.levels["Level2"].clear()
             return
+
+        # Otherwise, proceed
         self.get_nlevel_dirs(dir_type=dir_type, directories=directories)
 
     def get_thirdlevel_dirs(self, dir_type: str):
@@ -223,15 +253,22 @@ class xASL_GUI_Importer(QMainWindow):
         if any([self.rawdir == '',  # the attribute cannot be blank
                 not os.path.exists(self.rawdir),  # the attribute must be a path that exists
                 os.path.basename(self.rawdir) != 'raw',  # avoid other directories
-                dir_type == self.levels["Level1"].text(),  # Can't overlap dir types
-                dir_type == self.levels["Level2"].text()  # Can't overlap dir types
                 ]):
             return
+
+        # First check if a reset is needed anywhere
+        self.check_if_reset_needed()
+
+        # Then glob the full paths
         directories = [directory for directory in glob(os.path.join(self.rawdir, '*', "*", "*")) if
                        os.path.isdir(directory)]
+
+        # If the search is fruitless, do not proceed and immediately clear the lineedit the label was dropped into
         if len(directories) == 0:
             self.levels["Level3"].clear()
             return
+
+        # Otherwise, proceed
         self.get_nlevel_dirs(dir_type=dir_type, directories=directories)
 
     def get_nlevel_dirs(self, dir_type, directories):
@@ -241,7 +278,6 @@ class xASL_GUI_Importer(QMainWindow):
         drop QLabel was performed
         """
         basenames = set([os.path.basename(path) for path in directories])
-        print(f"Dir type: {dir_type}")
         if dir_type == "Subject":
             self.subject_regex = self.inferregex(list(basenames))
             print(f"Subject regex: {self.subject_regex}")
@@ -261,12 +297,17 @@ class xASL_GUI_Importer(QMainWindow):
 
     # Purpose of this function is to reset all the comboboxes of the scans section and repopulate them with new options
     def reset_scan_alias_cmbs(self, basenames):
-        # First clear all the old options
         for cmb in self.cmb_scanaliases_dict.values():
             cmb.clear()
             cmb.currentTextChanged.disconnect(self.update_scan_aliases)
             cmb.addItems(["Select an alias"] + basenames)
             cmb.currentTextChanged.connect(self.update_scan_aliases)
+
+    # Convenience function for resetting all the lineedits for the session aliases
+    def reset_session_alias_cmbs(self):
+        for idx in range(self.formlay_sessionaliases.rowCount()):
+            self.formlay_sessionaliases.removeRow(0)
+        self.le_sessionaliases_dict.clear()
 
     # Purpose of this function is to update the global attribute for the scan aliases as the comboboxes are selected
     def update_scan_aliases(self):
@@ -281,21 +322,23 @@ class xASL_GUI_Importer(QMainWindow):
         # If this is an update, remove the previous widgets and clear the dict
         if len(self.le_sessionaliases_dict) > 0:
             self.reset_session_alias_cmbs()
-            self.le_sessionaliases_dict.clear()
 
         # Generate the new dict, populate the format layout, and add the lineedits to the dict
         self.le_sessionaliases_dict = dict.fromkeys(basenames)
 
-        for key in self.le_sessionaliases_dict:
-            print(key)
-            le = QLineEdit(self.grp_sessionaliases)
-            le.setPlaceholderText("Specify the alias for this session")
-            self.formlay_sessionaliases.addRow(key, le)
-            self.le_sessionaliases_dict[key] = le
+        for ii, key in enumerate(self.le_sessionaliases_dict):
+            hlay = QHBoxLayout()
+            cmb = QComboBox()
+            nums_to_add = [str(num) for num in range(1, len(self.le_sessionaliases_dict)+1)]
+            cmb.addItems(nums_to_add)
+            cmb.setCurrentIndex(ii)
+            le = QLineEdit()
+            le.setPlaceholderText("(Optional) Specify the alias for this session")
+            hlay.addWidget(le)
+            hlay.addWidget(cmb)
 
-    def reset_session_alias_cmbs(self):
-        for idx in range(self.formlay_sessionaliases.rowCount()):
-            self.formlay_sessionaliases.removeRow(0)
+            self.formlay_sessionaliases.addRow(key, hlay)
+            self.le_sessionaliases_dict[key] = le
 
     # Convenience function for returning the regex string, provided a list of directories
     @staticmethod
@@ -315,7 +358,6 @@ class xASL_GUI_Importer(QMainWindow):
         current_texts = [le.text() for le in self.levels.values()]
         for le in self.levels.values():
             le.sibling_awareness = current_texts
-
 
     def run_importer(self):
         print(f"Regex for Subjects: {self.subject_regex}")
