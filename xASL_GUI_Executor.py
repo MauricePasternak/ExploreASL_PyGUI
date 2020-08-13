@@ -17,6 +17,7 @@ from watchdog.observers import Observer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter, \
     calculate_missing_STATUS, xASL_GUI_RerunPrep
+from xASL_GUI_HelperFuncs import set_widget_icon
 from pprint import pprint
 
 
@@ -98,7 +99,7 @@ class xASL_Executor(QMainWindow):
         self.mainlay = QHBoxLayout(self.cw)
         self.setLayout(self.mainlay)
         self.setWindowTitle("Explore ASL - Executor")
-        self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.png")))
+        self.setWindowIcon(QIcon(os.path.join(self.config["ScriptsDir"], "media", "ExploreASL_logo.png")))
         # Main run button must be defined early, since connections will be dynamically made to it
         self.threadpool = QThreadPool()
 
@@ -121,18 +122,14 @@ class xASL_Executor(QMainWindow):
         self.grp_taskschedule = QGroupBox("Task Scheduler", self.cw)
         self.grp_textoutput = QGroupBox("Output", self.cw)
         self.grp_procmod = QGroupBox("Process Modifier", self.cw)
-        # self.vlay_left.addWidget(self.grp_taskschedule)
-        # self.vlay_right.addWidget(self.grp_textoutput)
 
         # Run Button
         self.btn_runExploreASL = QPushButton("Run Explore ASL", self.cw, clicked=self.run_Explore_ASL)
         self.btn_runExploreASL.setEnabled(False)
-        run_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "run_icon.svg")
         run_icon_font = QFont()
         run_icon_font.setPointSize(24)
         self.btn_runExploreASL.setFont(run_icon_font)
-        self.btn_runExploreASL.setIcon(QIcon(run_icon_path))
-        self.btn_runExploreASL.setIconSize(QSize(75, 75))
+        set_widget_icon(self.btn_runExploreASL, self.config, "run_icon.svg", (75, 75))
         self.btn_runExploreASL.setMinimumHeight(75)
 
         # Add main players to the appropriate splitters
@@ -146,13 +143,10 @@ class xASL_Executor(QMainWindow):
         self.splitter_leftside.setSizes([520, 200])
         self.splitter_rightside.setHandleWidth(25)
         self.splitter_leftside.setHandleWidth(25)
-        # handle_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "3_dots_horizontal.svg")
         handle_style = 'QSplitter::handle {image: url(media/3_dots_horizontal.svg);}'
         self.splitter_rightside.setStyleSheet(handle_style)
         self.splitter_leftside.setStyleSheet(handle_style)
 
-        # self.mainlay.addLayout(self.vlay_left)
-        # self.mainlay.addLayout(self.vlay_right)
         self.mainlay.addWidget(self.splitter_leftside)
         self.mainlay.addWidget(self.splitter_rightside)
 
@@ -291,12 +285,11 @@ class xASL_Executor(QMainWindow):
         self.le_modjob = DandD_FileExplorer2LineEdit(self.grp_procmod)
         self.le_modjob.setPlaceholderText("Drag & Drop analysis directory here")
         self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod, clicked=self.run_modjob)
-        run_icon_path = os.path.join(self.parent().config["ScriptsDir"], "media", "run_modjob_icon.svg")
+
         modjob_icon_font = QFont()
         modjob_icon_font.setPointSize(24)
         self.btn_runmodjob.setFont(modjob_icon_font)
-        self.btn_runmodjob.setIcon(QIcon(run_icon_path))
-        self.btn_runmodjob.setIconSize(QSize(75, 75))
+        set_widget_icon(self.btn_runmodjob, self.config, "run_modjob_icon.svg", (75, 75))
         self.btn_runmodjob.setMinimumHeight(50)
         self.btn_runmodjob.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
         # self.btn_runmodjob.setEnabled(False)

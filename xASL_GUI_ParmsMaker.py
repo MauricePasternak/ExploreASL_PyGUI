@@ -1,6 +1,8 @@
 from PySide2.QtWidgets import *
 from PySide2.QtCore import *
 from PySide2.QtGui import *
+from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from xASL_GUI_HelperFuncs import set_widget_icon
 from pprint import pprint
 from glob import glob
 import sys
@@ -92,22 +94,29 @@ class xASL_ParmsMaker(QMainWindow):
     def UI_Setup_StudyParmsSection(self):
         # Set up the study parameters group
         self.hlay_study_parms_exploreasl = QHBoxLayout(self.grp_study_parms)
-        self.le_study_parms_exploreasl = QLineEdit(f"{self.config['ExploreASLRoot']}", self.grp_study_parms)
-        self.btn_study_parms_exploreasl = QPushButton("...", self.grp_study_parms, clicked=self.set_exploreasl_dir)
+        self.le_study_parms_exploreasl = DandD_FileExplorer2LineEdit(self.grp_study_parms)
+        self.le_study_parms_exploreasl.setText(self.config['ExploreASLRoot'])
+        self.btn_study_parms_exploreasl = QPushButton("...", self.grp_study_parms,
+                                                      clicked=self.set_exploreasl_dir)
         self.hlay_study_parms_exploreasl.addWidget(self.le_study_parms_exploreasl)
         self.hlay_study_parms_exploreasl.addWidget(self.btn_study_parms_exploreasl)
         self.le_study_parms_name = QLineEdit("My Study", self.grp_study_parms)
         self.hlay_study_parms_analysisdir = QHBoxLayout(self.grp_study_parms)
-        self.le_study_parms_analysisdir = QLineEdit(self.parent().le_currentanalysis_dir.text(), self.grp_study_parms)
+        self.le_study_parms_analysisdir = DandD_FileExplorer2LineEdit(self.grp_study_parms)
+        self.le_study_parms_analysisdir.setText(self.parent().le_currentanalysis_dir.text())
         self.btn_study_parms_analysisdir = QPushButton("...", self.grp_study_parms,
                                                        clicked=self.set_currentanalysis_dir)
         self.hlay_study_parms_analysisdir.addWidget(self.le_study_parms_analysisdir, 6)
         self.hlay_study_parms_analysisdir.addWidget(self.btn_study_parms_analysisdir, 1)
         self.le_study_parms_subregexp = QLineEdit(r"\d+", self.grp_study_parms)
         self.lst_study_parms_includedsubjects = DirectoryDragDrop_ListWidget(self.grp_study_parms)
+        self.btn_study_parms_clearincluded = QPushButton("Clear Subjects",
+                                                         self.grp_study_parms,
+                                                         clicked=self.clear_included)
         self.lst_study_parms_exclusions = DirectoryDragDrop_ListWidget(self.grp_study_parms)
-        self.btn_study_parms_clearexclusions = QPushButton("Clear Exclusions", self.grp_study_parms,
-                                                           clicked=self.lst_study_parms_exclusions.clear)
+        self.btn_study_parms_clearexclusions = QPushButton("Clear Exclusions",
+                                                           self.grp_study_parms,
+                                                           clicked=self.clear_exclusions)
         self.le_study_parms_sessions = QLineEdit("ASL_1", self.grp_study_parms)
         self.le_study_parms_session_opts = QLineEdit(self.grp_study_parms)
         self.le_study_parms_session_opts.setPlaceholderText("Indicate option names separated by a commas")
@@ -117,6 +126,7 @@ class xASL_ParmsMaker(QMainWindow):
         self.frmlay_study_parms.addRow("Subject Regexp", self.le_study_parms_subregexp)
         self.frmlay_study_parms.addRow("Subjects to Assess\n(Drag and Drop\nDirectories)",
                                        self.lst_study_parms_includedsubjects)
+        self.frmlay_study_parms.addRow("", self.btn_study_parms_clearincluded)
         self.frmlay_study_parms.addRow("Exclusions\n(Drag and Drop\nDirectories)", self.lst_study_parms_exclusions)
         self.frmlay_study_parms.addRow("", self.btn_study_parms_clearexclusions)
         self.frmlay_study_parms.addRow("Session Names", self.le_study_parms_sessions)
@@ -285,9 +295,20 @@ class xASL_ParmsMaker(QMainWindow):
             for widget, tip in zip(widget_group, self.parent().tooltips["ParmsMaker"][section]):
                 widget.setToolTip(tip)
 
+    # Clears the currently-included subjects list and resets the regex
+    def clear_included(self):
+        self.lst_study_parms_includedsubjects.clear()
+        self.le_study_parms_subregexp.clear()
+
+    # Clears the currently-excluded subjects list
+    def clear_exclusions(self):
+        self.lst_study_parms_exclusions.clear()
+
     # Retrieve the directory ExploreASL with user interaction; set the appropriate field and save to config file
     def set_exploreasl_dir(self):
-        result = QFileDialog.getExistingDirectory(self, "Select the ExploreASL root directory", os.getcwd(),
+        result = QFileDialog.getExistingDirectory(QFileDialog(),
+                                                  "Select the ExploreASL root directory",
+                                                  os.getcwd(),
                                                   QFileDialog.ShowDirsOnly)
         if '/' in result and "windows" in self.parent().config["Platform"].lower():
             result = result.replace('/', '\\')
@@ -296,7 +317,9 @@ class xASL_ParmsMaker(QMainWindow):
 
     # Retrieve the analysis directory with user interaction; set the appropriate field
     def set_currentanalysis_dir(self):
-        result = QFileDialog.getExistingDirectory(self, "Select the study analysis directory", os.getcwd(),
+        result = QFileDialog.getExistingDirectory(QFileDialog(),
+                                                  "Select the study analysis directory",
+                                                  os.getcwd(),
                                                   QFileDialog.ShowDirsOnly)
         if '/' in result and "windows" in self.parent().config["Platform"].lower():
             result = result.replace('/', '\\')
@@ -316,9 +339,6 @@ class xASL_ParmsMaker(QMainWindow):
         if inferred_regex:
             self.le_study_parms_subregexp.setText(inferred_regex)
 
-    def clear_exclusions(self):
-        self.lst_study_parms_exclusions.clear()
-
     def on_off_slicereadtime_box(self, text):
         if text == "Use Shortest TR":
             self.spinbox_seq_parms_slicerdtime.setEnabled(False)
@@ -329,8 +349,10 @@ class xASL_ParmsMaker(QMainWindow):
         json_parms = {}
         # Only export if the analysis study directory is known
         if not os.path.exists(self.le_study_parms_analysisdir.text()):
-            QMessageBox.warning(self, "The Study Root does not exist",
-                                "Please select the correct directory", QMessageBox.Ok)
+            QMessageBox.warning(QMessageBox(),
+                                "The Study Root does not exist",
+                                "Please select the correct directory",
+                                QMessageBox.Ok)
             return
 
         json_parms["MyPath"] = self.le_study_parms_exploreasl.text()
@@ -392,7 +414,8 @@ class xASL_ParmsMaker(QMainWindow):
                 all([x in ['1', '0'] for x in parms_logvec])]):  # Check that all are 1s or 0s
             json_parms["ApplyQuantification"] = [int(option) for option in parms_logvec]
         else:
-            QMessageBox.warning(self, "Incorrect Input for Quantification Settings",
+            QMessageBox.warning(QMessageBox(),
+                                "Incorrect Input for Quantification Settings",
                                 "Must be a series of five 1s or 0s separated by single spaces",
                                 QMessageBox.Ok)
             return
@@ -412,19 +435,24 @@ class xASL_ParmsMaker(QMainWindow):
 
         with open(os.path.join(self.le_study_parms_analysisdir.text(), "DataPar.json"), 'w') as w:
             json.dump(json_parms, w, indent=1)
-        QMessageBox.information(self, "DataPar.json successfully saved",
+        QMessageBox.information(QMessageBox(),
+                                "DataPar.json successfully saved",
                                 f"The parameter file was successfully saved to:\n"
                                 f"{self.le_study_parms_analysisdir.text()}",
                                 QMessageBox.Ok)
 
     def load_json2parms(self):
         errors_log = {}
-        json_filepath, _ = QFileDialog.getOpenFileName(self, "Select the JSON parameters file", os.getcwd(),
+        json_filepath, _ = QFileDialog.getOpenFileName(QFileDialog(),
+                                                       "Select the JSON parameters file",
+                                                       os.getcwd(),
                                                        "Json files (*.json)")
         if json_filepath == '': return
         if not os.path.exists(json_filepath) and json_filepath != '':
-            QMessageBox.warning(self, "Incorrect File Selected", "The file selected was either not a json file or did"
-                                                                 " not contain the essential parameters",
+            QMessageBox.warning(QMessageBox(),
+                                "Incorrect File Selected",
+                                "The file selected was either not a json file "
+                                "or did not contain the essential parameters",
                                 QMessageBox.Ok)
             return
 
@@ -547,7 +575,8 @@ class xASL_ParmsMaker(QMainWindow):
 
         if len(errors_log) > 0:
             warning_string = "\n".join([f"{key}: {value}" for key, value in errors_log.items()])
-            QMessageBox.warning(self, "Errors Occured at certain fields",
+            QMessageBox.warning(QMessageBox(),
+                                "Errors Occured at certain fields",
                                 f"The following parameters did not load correctly:\n{warning_string}\n"
                                 f"Please ascertain the validity of the values and/or labels for these parameters",
                                 QMessageBox.Ok)

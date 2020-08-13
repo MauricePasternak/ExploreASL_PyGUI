@@ -1,10 +1,11 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from xASL_GUI_ParmsMaker import xASL_ParmsMaker, DirectoryDragDrop_ListWidget
+from xASL_GUI_ParmsMaker import xASL_ParmsMaker
 from xASL_GUI_Executor import xASL_Executor
 from xASL_GUI_PostProc import xASL_PostProc
 from xASL_GUI_Importer import xASL_GUI_Importer
+from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 import os
 import sys
 import json
@@ -45,12 +46,12 @@ class xASL_MainWin(QMainWindow):
             self.config = config
         self.load_tooltips()
         # Window Size and initial visual setup
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.setMinimumSize(1080, 480)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         # Main Icon setup
-        self.icon_main = QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.png"))
+        self.icon_main = QIcon(os.path.join(self.config["ScriptsDir"], "media", "ExploreASL_logo.png"))
         self.setWindowIcon(self.icon_main)
         # Main Layout Setup
         self.mainlay = QHBoxLayout(self.cw)
@@ -88,19 +89,26 @@ class xASL_MainWin(QMainWindow):
         # First, form layout for most important fields such as the ExploreASL directory
         self.formlay_navigator = QFormLayout(self.cont_navigator)
         self.hlay_exploreasl_dir = QHBoxLayout(self.cont_navigator)
-        self.le_exploreasl_dir = QLineEdit(self.config["ExploreASLRoot"], self.cont_navigator)
-        self.btn_exploreasl_dir = QPushButton("...", self.cont_navigator, clicked=self.set_exploreasl_dir)
+        self.le_exploreasl_dir = DandD_FileExplorer2LineEdit(self.cont_navigator)
+        self.le_exploreasl_dir.setText(self.config["ExploreASLRoot"])
+        self.le_exploreasl_dir.textChanged.connect(self.set_exploreasl_dir)
+        self.le_exploreasl_dir.setReadOnly(True)
+        self.btn_exploreasl_dir = QPushButton("...", self.cont_navigator, clicked=self.set_exploreasl_dir_frombtn)
         self.hlay_exploreasl_dir.addWidget(self.le_exploreasl_dir)
         self.hlay_exploreasl_dir.addWidget(self.btn_exploreasl_dir)
+
         self.hlay_currentanalysis_dir = QHBoxLayout(self.cont_navigator)
-        self.le_currentanalysis_dir = QLineEdit(
-            f"{os.getcwd() if self.config['DefaultRootDir'] is None else self.config['DefaultRootDir']}",
-            self.cont_navigator)
-        self.btn_currentanalysis_dir = QPushButton("...", self.cont_navigator, clicked=self.set_analysis_dir)
+        self.le_currentanalysis_dir = DandD_FileExplorer2LineEdit(self.cont_navigator)
+        self.le_currentanalysis_dir.setText(self.config["DefaultRootDir"])
+        self.le_currentanalysis_dir.textChanged.connect(self.set_analysis_dir)
+        self.le_exploreasl_dir.setReadOnly(True)
+        self.btn_currentanalysis_dir = QPushButton("...", self.cont_navigator, clicked=self.set_analysis_dir_frombtn)
         self.hlay_currentanalysis_dir.addWidget(self.le_currentanalysis_dir)
         self.hlay_currentanalysis_dir.addWidget(self.btn_currentanalysis_dir)
+
         self.chk_makedefault_analysisdir = QCheckBox(self.cont_navigator)
         self.chk_makedefault_analysisdir.setChecked(True)
+
         self.formlay_navigator.addRow("Explore ASL Directory", self.hlay_exploreasl_dir)
         self.formlay_navigator.addRow("Current Analysis Directory", self.hlay_currentanalysis_dir)
         self.formlay_navigator.addRow("Set selected analysis directory as default?", self.chk_makedefault_analysisdir)
@@ -129,7 +137,7 @@ class xASL_MainWin(QMainWindow):
         # Setup the actions of the File menu
         self.menu_file.addAction("Show Navigator", self.dock_navigator.show)
         self.menu_file.addAction("Save Master Config", self.save_config)
-        self.menu_file.addAction("Select Analysis Directory", self.set_analysis_dir)
+        self.menu_file.addAction("Select Analysis Directory", self.set_analysis_dir_frombtn)
         self.menu_file.addAction("About ExploreASL", self.show_AboutExploreASL)
         # Setup the actions of the Edit menu
         # Setup the actions of the Settings menu
@@ -142,7 +150,8 @@ class xASL_MainWin(QMainWindow):
         for layout in [self.vlay_left, self.vlay_right]:
             self.mainlay.addLayout(layout)
         expanding_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        font_policy = QFont("Sans Serif", 24)
+        font_policy = QFont()
+        font_policy.setPointSize(16)
         font_policy.setBold(True)
         self.btn_open_runexploreasl = QToolButton(self.cw)
         self.btn_open_parmsmaker = QToolButton(self.cw)
@@ -218,39 +227,55 @@ class xASL_MainWin(QMainWindow):
             with open("xASL_GUI_Tooltips.json") as f:
                 self.tooltips = json.load(f)
 
-    # Sets the analysis directory the user is interested in
-    # noinspection PyCallByClass
-    def set_analysis_dir(self):
-        result = QFileDialog.getExistingDirectory(self,
-                                                  "Select analysis directory to view",  # Window title
-                                                  self.config["DefaultRootDir"],  # Default dir
-                                                  QFileDialog.ShowDirsOnly)  # Display options
-        if result:
-            if '/' in result and platform.system() == "Windows":
-                result = result.replace("/", "\\")
-            # Change the display and have the navigator adjust according
-            self.le_currentanalysis_dir.setText(result)
-            self.filemodel_navigator.setRootPath(result)
-            self.treev_navigator.setRootIndex(self.filemodel_navigator.index(result))
-            self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
+    # Sets the analysis directory the user is interested in from the push button
+    def set_analysis_dir_frombtn(self):
+        directory: str = QFileDialog.getExistingDirectory(QFileDialog(),
+                                                          "Select analysis directory to view",  # Window title
+                                                          self.config["DefaultRootDir"],  # Default dir
+                                                          QFileDialog.ShowDirsOnly)  # Display options
+        self.set_analysis_dir(directory)
 
-            # Update user config to have a new default analysis dir to refer to in on future startups
-            if self.chk_makedefault_analysisdir.isChecked():
-                self.config["DefaultRootDir"] = result
-                self.save_config()
+    # The actual function that sets the analysis directory
+    def set_analysis_dir(self, directory):
+        # Abort if the provided directory is not a filepath
+        if not os.path.exists(directory): return
+        # Abort if the provided directory is actually not a directory
+        if not os.path.isdir(directory): return
+        # Alter filepath display in accordance with operating system
+        if '/' in directory and platform.system() == "Windows":
+            directory = directory.replace("/", "\\")
+        # Change the display and have the navigator adjust according
+        self.le_currentanalysis_dir.setText(directory)
+        self.filemodel_navigator.setRootPath(directory)
+        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(directory))
+        self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
 
-    # Sets the ExploreASL directory of the user and updates the config to reflect the change
-    def set_exploreasl_dir(self):
-        result: str = QFileDialog.getExistingDirectory(self,
-                                                       "Select the study analysis directory",  # Window title
-                                                       os.getcwd(),  # Default dir
-                                                       QFileDialog.ShowDirsOnly)  # Display options
-        if result:
-            if '/' in result and platform.system() == "Windows":
-                result = result.replace("/", "\\")
-            self.le_exploreasl_dir.setText(result)
-            self.config["ExploreASLRoot"] = result
+        # Update user config to have a new default analysis dir to refer to in on future startups
+        if self.chk_makedefault_analysisdir.isChecked():
+            self.config["DefaultRootDir"] = directory
             self.save_config()
+
+    # Sets the ExploreASL directory of the user from the push button
+    def set_exploreasl_dir_frombtn(self):
+        directory: str = QFileDialog.getExistingDirectory(QFileDialog(),
+                                                          "Select the path to ExploreASL",  # Window title
+                                                          os.getcwd(),  # Default dir
+                                                          QFileDialog.ShowDirsOnly)  # Display options
+        self.set_exploreasl_dir(directory)
+
+    def set_exploreasl_dir(self, directory):
+        # Abort if the provided directory is not a filepath
+        if not os.path.exists(directory): return
+        # Abort if the provided directory is actually not a directory
+        if not os.path.isdir(directory): return
+        # Alter filepath display in accordance with operating system
+        if '/' in directory and platform.system() == "Windows":
+            directory = directory.replace("/", "\\")
+
+        # Update the lineedit text and the config directory
+        self.le_exploreasl_dir.setText(directory)
+        self.config["ExploreASLRoot"] = directory
+        self.save_config()
 
 
 if __name__ == '__main__':
