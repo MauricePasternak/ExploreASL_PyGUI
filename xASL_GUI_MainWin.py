@@ -1,7 +1,7 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from xASL_GUI_ParmsMaker import xASL_ParmsMaker
+from xASL_GUI_Parms import xASL_Parms
 from xASL_GUI_Executor import xASL_Executor
 from xASL_GUI_PostProc import xASL_PostProc
 from xASL_GUI_Importer import xASL_GUI_Importer
@@ -46,7 +46,7 @@ class xASL_MainWin(QMainWindow):
             self.config = config
         self.load_tooltips()
         # Window Size and initial visual setup
-        # self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.setMinimumSize(1080, 480)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
@@ -64,7 +64,7 @@ class xASL_MainWin(QMainWindow):
         self.UI_Setup_Connections()
 
         # Pre-initialize the main players
-        self.parmsmaker = xASL_ParmsMaker(self)
+        self.parmsmaker = xASL_Parms(self)
         self.executor = xASL_Executor(self)
         self.postproc = xASL_PostProc(self)
         self.importer = xASL_GUI_Importer(self)

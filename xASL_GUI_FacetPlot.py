@@ -9,13 +9,14 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 import seaborn as sns
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_ListWidget2LineEdit
+from xASL_GUI_HelperFuncs import connect_widget_to_signal
 import json
 import sys
 import os
 from pprint import pprint
 
 
-# noinspection PyAttributeOutsideInit
+# noinspection PyCallingNonCallable
 class xASL_GUI_FacetGridOrganizer(QWidget):
     """
     Class for generating the widgets that will go into the Figure Parms and Axes Parms of the main PostProc.
@@ -129,7 +130,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                         self.spinbox_facetheight, self.spinbox_aspect,
                                         self.chk_legend_out, self.chk_despine, self.chk_margin_titles]):
             self.formlay_figparms.addRow(description, widget)
-            self.connect_widget_to_signal(widget, self.sendSignal_figparms_updateplot)
+            connect_widget_to_signal(widget, self.sendSignal_figparms_updateplot)
 
         self.cmb_axestype = QComboBox()
         self.cmb_axestype.addItems(["Select a plot type", "Point Plot", "Bar Plot", "Strip Plot", "Swarm Plot",
@@ -195,7 +196,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.ci, self.dodge, self.join,
                                             self.errwidth, self.capsize, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -222,7 +223,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.ci, self.dodge,
                                             self.errwidth, self.capsize, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -249,7 +250,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.dodge, self.size, self.linewidth,
                                             self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -279,7 +280,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.barwidth, self.dodge,
                                             self.fliersize, self.linewidth, self.cmb_palette, self.whis]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -310,7 +311,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.kernalbwalgo, self.scale,
                                             self.scale_hue, self.dodge, self.linewidth, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -339,7 +340,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.barwidth, self.dodge,
                                             self.linewidth, self.outlier_prop, self.show_outliers, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -365,7 +366,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.size_grouper, self.style_grouper,
                                             self.spinbox_markersize, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -397,7 +398,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
                                            [self.le_x, self.le_y, self.le_hue, self.size_grouper, self.style_grouper,
                                             self.sort, self.dashes, self.err_style, self.cmb_palette]):
                 self.formlay_axesparms.addRow(description, widget)
-                self.connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
+                connect_widget_to_signal(widget, self.sendSignal_axesparms_updateplot)
 
             # Send the signal for this widget group to be added to the main Axes Parameters tab
             self.change_axesparms_widget.emit()
@@ -431,20 +432,6 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
         self.btn_legendparms = QPushButton("Change Legend Parameters", clicked=self.legend_widget.show)
         self.formlay_axesparms.addRow("Show legend in figure?", self.chk_showlegend)
         self.formlay_axesparms.addRow(self.btn_legendparms)
-
-    # Convenience Function for connecting the widgets to the appropriate signal, usually in a for loop
-    @staticmethod
-    def connect_widget_to_signal(widget, target_signal):
-        if isinstance(widget, QComboBox):
-            widget.currentTextChanged.connect(target_signal)
-        elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
-            widget.valueChanged.connect(target_signal)
-        elif isinstance(widget, (DandD_ListWidget2LineEdit, QLineEdit)):
-            widget.textChanged.connect(target_signal)
-        elif isinstance(widget, QCheckBox):
-            widget.clicked.connect(target_signal)
-        else:
-            print(f'{widget} could not be connected')
 
 
 class xASL_GUI_FacetLegend(QWidget):

@@ -1,5 +1,5 @@
-from PySide2.QtWidgets import QLineEdit, QAbstractItemView
-from PySide2.QtCore import Qt
+from PySide2.QtWidgets import QLineEdit, QAbstractItemView, QListWidget
+from PySide2.QtCore import Qt, Signal
 from platform import platform
 import os
 
@@ -58,9 +58,10 @@ class DandD_FileExplorer2LineEdit(QLineEdit):
     Modified QLineEdit to support accepting text drops from a file explorer
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, id=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.id = id
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
@@ -95,10 +96,11 @@ class DandD_FileExplorerFile2LineEdit(QLineEdit):
     Has a required field to specify the filetypes it allows (specify a list of extensions, period included).
     """
 
-    def __init__(self, supported_extensions, parent=None):
+    def __init__(self, supported_extensions, parent=None, id=None):
         super().__init__(parent)
         self.supported_extensions: list = supported_extensions
         self.setAcceptDrops(True)
+        self.id = id
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
@@ -134,5 +136,47 @@ class DandD_FileExplorerFile2LineEdit(QLineEdit):
                             ]):
                         self.setText(path_string)
                         return  # Only return the first local url instance if this was a from a multi-selection
+        else:
+            event.ignore()
+
+
+class DandD_FileExplorer2ListWidget(QListWidget):
+    """
+    Class meant to accept MULTIPLE directory inputs and add them to the underlying QListWidget
+    """
+    alert_regex = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.accept()
+            subject_directories = []
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    subject_directories.append(str(url.toLocalFile()))
+            # Only filter for the basenames of directories; also, avoid bringing in unnecessary directories like lock
+            basenames = [os.path.basename(directory) for directory in subject_directories if os.path.isdir(directory)
+                         and directory not in ['lock', "Population"]]
+            # Avoid double-dipping the names
+            current_names = [self.item(idx).text() for idx in range(self.count())]
+            filtered_basenames = [name for name in basenames if name not in current_names]
+            self.addItems(filtered_basenames)
+            self.alert_regex.emit()
         else:
             event.ignore()

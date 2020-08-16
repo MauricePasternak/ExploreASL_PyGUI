@@ -4,6 +4,7 @@ from PySide2.QtCore import *
 from xASL_GUI_HelperClasses import DandD_ListWidget2LineEdit, DandD_FileExplorer2LineEdit, \
     DandD_FileExplorerFile2LineEdit
 from xASL_GUI_FacetPlot import xASL_GUI_FacetGridOrganizer
+from xASL_GUI_PlotLabels import xASL_GUI_PlotLabels
 import os
 import sys
 import json
@@ -37,6 +38,10 @@ class xASL_PostProc(QMainWindow):
         self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.png")))
 
         self.canvas_generate(None)
+
+        # Central Classes
+        self.subsetter = xASL_GUI_Subsetter(self)
+        self.plotlabels = xASL_GUI_PlotLabels(self)
 
         # Initialize blank givens
         self.fig_manager = None
@@ -83,8 +88,7 @@ class xASL_PostProc(QMainWindow):
         self.formlay_directories.addRow(self.btn_subset_data)
         self.formlay_directories.addRow(self.btn_load_in_data)
 
-        # Setup the subsetter and have it remain sensitive to changes in directory
-        self.subsetter = xASL_GUI_Subsetter(self)
+        # Connect the appropriate lineedits to the subsetter class
         self.le_analysis_dir.textChanged.connect(self.subsetter.clear_contents)
         self.le_demographics_file.textChanged.connect(self.subsetter.clear_contents)
 
@@ -159,23 +163,24 @@ class xASL_PostProc(QMainWindow):
             widget.valueChanged.connect(self.plotupdate_padding)
             self.formlay_commonparms.addRow(description, widget)
 
-        # Set up the text options
-        self.le_xlab_override = QLineEdit(self.cont_pltsettings_univlvlparms)
-        self.le_ylab_override = QLineEdit(self.cont_pltsettings_univlvlparms)
-        self.le_title_override = QLineEdit(self.cont_pltsettings_univlvlparms)
-        self.le_xlab_override.setPlaceholderText("Overwrite existing X-axis label")
-        self.le_ylab_override.setPlaceholderText("Overwrite existing Y-axis label")
-        self.le_title_override.setPlaceholderText("Overwrite existing Title")
-        for description, widget in zip(["X-Axis Label", "Y-Axis Label", "Title"],
-                                       [self.le_xlab_override, self.le_ylab_override, self.le_title_override]):
-            widget.textChanged.connect(self.plotupdate_labels)
-            self.formlay_commonparms.addRow(description, widget)
+        # Set up the text options and connect the plotlabels signals to the appropriate function
+        self.btn_showplotlabels = QPushButton("Show Plot Label Settings", self.cont_pltsettings_univlvlparms,
+                                              clicked=self.show_plotlabels)
+        self.formlay_commonparms.addRow(self.btn_showplotlabels)
+        self.plotlabels.signal_xaxislabel_changed.connect(self.plotupdate_xlabel)
+        self.plotlabels.signal_yaxislabel_changed.connect(self.plotupdate_ylabel)
+        self.plotlabels.signal_title_changed.connect(self.plotupdate_title)
+
+
+    def show_plotlabels(self):
+        self.plotlabels.show()
 
     def show_subsetter(self):
         self.subsetter.show()
         print("show_subsetter was executed")
 
-    def plotupdate_plotstyle(self, style):
+    # When called, this updates the general plot style occuring for figures
+    def plotupdate_plotstyle(self):
         plt.style.use(self.cmb_plotstyle.currentText())
         print(f"Using style: {self.cmb_plotstyle.currentText()}")
         # First clear the canvas
@@ -186,14 +191,24 @@ class xASL_PostProc(QMainWindow):
         self.plotupdate_facetgrid_axes()
         self.plotupdate_padding()
 
-    # When called, this updates the major axes labels options
-    def plotupdate_labels(self):
-        if self.le_xlab_override != '':
-            plt.xlabel(self.le_xlab_override.text())
-        if self.le_ylab_override.text() != '':
-            plt.ylabel(self.le_ylab_override.text())
-        if self.le_title_override.text() != '':
-            plt.suptitle(self.le_title_override.text())
+
+    @Slot(dict)
+    def plotupdate_xlabel(self, xlabel_kwargs):
+        for ax in self.mainfig.axes:
+            plt.sca(ax)
+            plt.xlabel(**xlabel_kwargs)
+        self.canvas.draw()
+
+    @Slot(dict)
+    def plotupdate_ylabel(self, ylabel_kwargs):
+        for ax in self.mainfig.axes:
+            plt.sca(ax)
+            plt.ylabel(**ylabel_kwargs)
+        self.canvas.draw()
+
+    @Slot(dict)
+    def plotupdate_title(self, title_kwargs):
+        plt.title(**title_kwargs)
         self.canvas.draw()
 
     # When called, this updates the padding to whatever is the current value in the padding doublespinboxes
