@@ -441,14 +441,15 @@ class xASL_GUI_Importer(QMainWindow):
         # print(f"Scan Dict: {self.scan_aliases}")
         # print(f"Token Ordering: {self.tokenordering}")
         sessionalias_status, session_aliases = self.get_session_aliases()
+        output["RawDir"] = self.le_rootdir.text()
         output["Regex"] = [self.subject_regex, self.session_regex, self.scan_regex]
         output["Directory Structure"] = valid_directories
         output["Scan Aliases"] = self.scan_aliases
         output["Ordered Session Aliases"] = session_aliases
         print(output)
 
-        with open(os.path.join(self.le_rootdir.text(), "text.json"), 'w') as w:
-            json.dump(output, w, indent=1)
+        with open(os.path.join(self.le_rootdir.text(), "ImportConfig.json"), 'w') as w:
+            json.dump(output, w, indent=3)
 
 
 class DraggableLabel(QLabel):
