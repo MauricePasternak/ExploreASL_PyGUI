@@ -6,12 +6,12 @@ from xASL_GUI_Executor import xASL_Executor
 from xASL_GUI_PostProc import xASL_PostProc
 from xASL_GUI_Importer import xASL_GUI_Importer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from collections import deque
 import os
 import sys
 import json
 import platform
 import subprocess
-
 
 # Explore ASL Main Window
 # by Maurice Pasternak @ 2020
@@ -47,7 +47,7 @@ class xASL_MainWin(QMainWindow):
         self.load_tooltips()
         # Window Size and initial visual setup
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
-        self.setMinimumSize(1080, 480)
+        self.setMinimumSize(800, 480)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         # Main Icon setup
@@ -56,6 +56,9 @@ class xASL_MainWin(QMainWindow):
         # Main Layout Setup
         self.mainlay = QHBoxLayout(self.cw)
         self.setWindowTitle("Explore ASL GUI")
+
+        # Misc Players
+        self.file_history = deque(maxlen=10)
 
         # Set up each of the subcomponents of the main window program
         self.UI_Setup_Navigator()
@@ -76,7 +79,7 @@ class xASL_MainWin(QMainWindow):
         self.dock_navigator = QDockWidget("Explore ASL Navigator", self)
         self.dock_navigator.setFeatures(QDockWidget.AllDockWidgetFeatures)
         self.dock_navigator.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_navigator.setMinimumSize(480, 480)
+        self.dock_navigator.setMinimumSize(360, 480)
         self.dock_navigator.setWindowIcon(self.icon_main)
         # The main container and the main layout of the dock
         self.cont_navigator = QWidget(self.dock_navigator)
@@ -111,7 +114,7 @@ class xASL_MainWin(QMainWindow):
 
         self.formlay_navigator.addRow("Explore ASL Directory", self.hlay_exploreasl_dir)
         self.formlay_navigator.addRow("Current Analysis Directory", self.hlay_currentanalysis_dir)
-        self.formlay_navigator.addRow("Set selected analysis directory as default?", self.chk_makedefault_analysisdir)
+        self.formlay_navigator.addRow("Set selected directory as default?", self.chk_makedefault_analysisdir)
         # Next, the main player will be a treeview with a FileSystemModel
         self.treev_navigator = QTreeView(self.cont_navigator)
         self.filemodel_navigator = QFileSystemModel(self.cont_navigator)
@@ -291,7 +294,7 @@ if __name__ == '__main__':
         print("This program does not support your operating system")
         sys.exit()
 
-    app.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.jpg")))
+    # app.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.jpg")))
     # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
     if os.path.exists(os.path.join(os.getcwd(), "ExploreASL_GUI_masterconfig.json")):
         with open("ExploreASL_GUI_masterconfig.json") as reader:

@@ -2,16 +2,55 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from glob import glob
+from xASL_GUI_ASL2BIDS import get_dicom_directories, asl2bids_onedir, create_import_summary
+from glob import iglob
 from tdda import rexpy
 from pprint import pprint
 from collections import OrderedDict
+from more_itertools import divide
 import json
 import os
 import shutil
 import re
 import sys
 import platform
+import subprocess
+
+
+class Importer_WorkerSignals(QObject):
+    """
+    Class for handling the signals sent by an ExploreASL worker
+    """
+    signal_send_summaries = Signal(list)  # Signal sent by worker to process the summaries of imported files
+    signal_send_errors = Signal(list)  # Signal sent by worker to indicate the file where something has failed
+
+
+class Importer_Worker(QRunnable):
+    """
+    Worker thread for running the import for a particular group.
+    """
+
+    def __init__(self, dcm_dirs, config):
+        self.dcm_dirs = dcm_dirs
+        self.import_config = config
+        super().__init__()
+        self.signals = Importer_WorkerSignals()
+        print(f"Initialized Worker with args {self.dcm_dirs}\n{self.import_config}")
+        self.import_summaries = []
+        self.failed_runs = []
+
+    # This is called by the threadpool during threadpool.start(worker)
+    def run(self):
+        for dicom_dir in self.dcm_dirs:
+            result, last_job, import_summary = asl2bids_onedir(dcm_dir=dicom_dir, config=self.import_config)
+            if result:
+                self.import_summaries.append(import_summary)
+            else:
+                self.failed_runs.append((dicom_dir, last_job))
+
+        self.signals.signal_send_summaries.emit(self.import_summaries)
+        if len(self.failed_runs) > 0:
+            self.signals.signal_send_errors.emit(self.failed_runs)
 
 
 # noinspection PyCallingNonCallable
@@ -22,8 +61,8 @@ class xASL_GUI_Importer(QMainWindow):
         if parent_win is not None:
             self.config = self.parent().config
         else:
-            with open("ExploreASL_GUI_masterconfig.json") as f:
-                self.config = json.load(f)
+            with open("ExploreASL_GUI_masterconfig.json") as config_reader:
+                self.config = json.load(config_reader)
 
         # Misc and Default Attributes
         self.labfont = QFont()
@@ -37,6 +76,9 @@ class xASL_GUI_Importer(QMainWindow):
         self.session_aliases = OrderedDict()
         self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
         self.cmb_sessionaliases_dict = {}
+        self.threadpool = QThreadPool()
+        self.import_summaries = []
+        self.failed_runs = []
 
         # Window Size and initial visual setup
         self.setMinimumSize(600, 720)
@@ -218,7 +260,7 @@ class xASL_GUI_Importer(QMainWindow):
         dir_tuple = ["*"] * (level + 1)
         path = os.path.join(self.rawdir, *dir_tuple)
         try:
-            directories, basenames = zip(*[(directory, os.path.basename(directory)) for directory in glob(path)
+            directories, basenames = zip(*[(directory, os.path.basename(directory)) for directory in iglob(path)
                                            if os.path.isdir(directory)])
         except ValueError:
             QMessageBox.warning(self,
@@ -325,7 +367,6 @@ class xASL_GUI_Importer(QMainWindow):
         regex = extractor.results.rex[0]
         return regex
 
-
     # Convenience function for updating
     @Slot()
     def update_sibling_awareness(self):
@@ -335,6 +376,12 @@ class xASL_GUI_Importer(QMainWindow):
 
     def is_ready_import(self):
         pass
+
+    def set_widgets_on_or_off(self, state):
+        self.btn_run_importer.setEnabled(state)
+        for le in self.levels.values():
+            le.setEnabled(state)
+
 
     # Returns the directory structure in preparation of running the import
     def get_directory_structure(self):
@@ -380,11 +427,15 @@ class xASL_GUI_Importer(QMainWindow):
                                     "At minimum, the aliases corresponding to the ASL and T1-weighted scans "
                                     "should be specified",
                                     QMessageBox.Ok)
-                return False
+                return False, None
         except KeyError as e:
             print(f'ENCOUNTERED KEYERROR: {e}')
-            return False
-        return True
+            return False, None
+
+        # Filter out scans that have None to avoid problems down the line
+        scan_aliases = {key: value for key, value in self.scan_aliases.items() if value is not None}
+
+        return True, scan_aliases
 
     # Returns the dictionary
     def get_session_aliases(self):
@@ -411,7 +462,7 @@ class xASL_GUI_Importer(QMainWindow):
         print(f"aliases: {aliases}")
         print(f"orders: {orders}")
 
-        for num in range(1, len(orders)+1):
+        for num in range(1, len(orders) + 1):
             idx = orders.index(str(num))
             current_alias = aliases[idx]
             current_basename = basename_keys[idx]
@@ -422,34 +473,91 @@ class xASL_GUI_Importer(QMainWindow):
 
         return True, session_aliases
 
+    def get_import_parms(self):
+        import_parms = {}.fromkeys(["Regex", "Directory Structure", "Scan Aliases", "Ordered Session Aliases"])
+        # Get the directory structure, the scan aliases, and the session aliases
+        directory_status, valid_directories = self.get_directory_structure()
+        scanalias_status, scan_aliases = self.get_scan_aliases()
+        sessionalias_status, session_aliases = self.get_session_aliases()
+        if any([self.subject_regex == '',  # Subject regex must be established
+                self.scan_regex == '',  # Scan regex must be established
+                not directory_status,  # Getting the directory structure must have been successful
+                not scanalias_status,  # Getting the scan aliases must have been successful
+                not sessionalias_status  # Getting the session aliases must have been successful
+                ]): return None
+
+        # Otherwise, green light to create the import parameters
+        import_parms["RawDir"] = self.le_rootdir.text()
+        import_parms["Regex"] = [self.subject_regex, self.session_regex, self.scan_regex]
+        import_parms["Directory Structure"] = valid_directories
+        import_parms["Scan Aliases"] = scan_aliases
+        import_parms["Ordered Session Aliases"] = session_aliases
+
+        # Save a copy of the import parms to the raw directory in question
+        with open(os.path.join(self.le_rootdir.text(), "ImportConfig.json"), 'w') as w:
+            json.dump(import_parms, w, indent=3)
+
+        return import_parms
+
+    @Slot(list)
+    def create_import_summary_file(self, signalled_summaries):
+
+        self.import_summaries.extend(signalled_summaries)
+        self.n_import_workers -= 1
+
+        if self.n_import_workers > 0 or self.import_parms is None:
+            return
+
+        # Re-enable widgets
+        self.set_widgets_on_or_off(state=True)
+
+        # Create the import summary
+        create_import_summary(import_summaries=self.import_summaries, config=self.import_parms)
+
+    @Slot(list)
+    def create_failed_runs_summary_file(self, failed_runs):
+        self.failed_runs.extend(failed_runs)
+
+        if self.n_import_workers > 0 or self.import_parms is None:
+            return
+
+        analysis_dir = os.path.join(os.path.dirname(self.import_parms["RawDir"]), "analysis")
+        with open(os.path.join(analysis_dir, "import_summary_failed.json")) as failed_writer:
+            json.dump(dict(failed_runs), failed_writer, indent=3)
+
 
     def run_importer(self):
-        output = {}.fromkeys(["Regex", "Directory Structure", "Scan Aliases", "Ordered Session Aliases"])
-        # Get regexes, directory structure, and scan aliases
-        directory_status, valid_directories = self.get_directory_structure()
-        scanalias_status = self.get_scan_aliases()
-        if any([self.subject_regex == '',
-                self.scan_regex == '',
-                not directory_status,
-                not scanalias_status
-                ]): return
+        # Set (or reset if this is another run) the essential variables
+        self.n_import_workers = 0
+        self.import_parms = None
+        workers = []
 
-        # print(f"Regex for Subjects: {self.subject_regex}")
-        # print(f"Regex for Sessions: {self.session_regex}")
-        # print(f"Regex for Scans: {self.scan_regex}")
-        # print(f"Session Dict: {self.session_aliases}")
-        # print(f"Scan Dict: {self.scan_aliases}")
-        # print(f"Token Ordering: {self.tokenordering}")
-        sessionalias_status, session_aliases = self.get_session_aliases()
-        output["RawDir"] = self.le_rootdir.text()
-        output["Regex"] = [self.subject_regex, self.session_regex, self.scan_regex]
-        output["Directory Structure"] = valid_directories
-        output["Scan Aliases"] = self.scan_aliases
-        output["Ordered Session Aliases"] = session_aliases
-        print(output)
+        # Disable the run button to prevent accidental re-runs
+        self.set_widgets_on_or_off(state=False)
 
-        with open(os.path.join(self.le_rootdir.text(), "ImportConfig.json"), 'w') as w:
-            json.dump(output, w, indent=3)
+        # Ensure the dcm2niix path is visible
+        os.chdir(os.path.join(self.config["ScriptsDir"], f"DCM2NIIX_{platform.system()}"))
+
+        # Get the import parameters
+        self.import_parms = self.get_import_parms()
+        if self.import_parms is None:
+            return
+
+        # Get the dicom directories
+        dicom_dirs = get_dicom_directories(config=self.import_parms)
+
+        # Create workers
+        dicom_dirs = list(divide(4, dicom_dirs))
+        for ddirs in dicom_dirs:
+            worker = Importer_Worker(ddirs, self.import_parms)
+            worker.signals.signal_send_summaries.connect(self.create_import_summary_file)
+            worker.signals.signal_send_errors.connect(self.create_failed_runs_summary_file)
+            workers.append(worker)
+            self.n_import_workers += 1
+
+        # Launch them
+        for worker in workers:
+            self.threadpool.start(worker)
 
 
 class DraggableLabel(QLabel):
