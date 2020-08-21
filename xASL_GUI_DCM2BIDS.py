@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import shutil
 import subprocess
 from glob import glob, iglob
@@ -10,6 +11,7 @@ import pandas as pd
 from more_itertools import peekable
 import struct
 from ast import literal_eval
+from nilearn import image
 
 pd.set_option("display.width", 600)
 pd.set_option("display.max_columns", 15)
@@ -125,6 +127,7 @@ def get_additional_dicom_parms(dcm_dir: str):
     dcm_data = pydicom.read_file(next(dcm_files))
     tags_dict = {
         "AcquisitionMatrix": [(0x0018, 0x1310)],
+        "SoftwareVersions": [(0x0018, 0x1020)],
         "NumberOfAverages": [(0x0018, 0x0083)],
         "RescaleSlope": [(0x0028, 0x1053), (0x2005, 0x110A)],
         "RescaleIntercept": [(0x0028, 0x1052)],
@@ -133,7 +136,9 @@ def get_additional_dicom_parms(dcm_dir: str):
         "SpectrallySelectedSuppression": [(0x2005, 0x110F, 0x0018, 0x9025)]
     }
     additional_dcm_info = {}.fromkeys(tags_dict.keys())
-    for (key, value), default in zip(tags_dict.items(), [None, 1, 1, 0, 1, None, None]):
+    for (key, value), default in zip(tags_dict.items(),
+                                     [None, 1, 1, 0, 1, None, None]  # Default values
+                                     ):
         result = get_dicom_value(dcm_data, value, default)
 
         # Additional processing for specific keys
@@ -141,6 +146,7 @@ def get_additional_dicom_parms(dcm_dir: str):
             result = result.strip('[]').split(", ")
             result = [int(number) for number in result]
 
+        # Convert any lingering strings to float
         if key in ["NumberOfAverages", "RescaleIntercept", "RescaleSlope", "MRScaleSlope", "RealWorldValueSlope"]:
             if result is not None:
                 try:
@@ -164,7 +170,8 @@ def get_additional_dicom_parms(dcm_dir: str):
             additional_dcm_info["RealWorldValueSlope"] = min([additional_dcm_info["RescaleSlope"],
                                                               additional_dcm_info["RealWorldValueSlope"]])
 
-        # Second correction -
+        # Second correction - just to ease things on the side of ExploreASL; if RescaleSlope could not be determined
+        # while "RealWorldValueSlope" could be, copy over the latter's value for the former
         if all([additional_dcm_info["RealWorldValueSlope"] is not None,
                 additional_dcm_info["RealWorldValueSlope"] != 1,
                 additional_dcm_info["RescaleSlope"] == 1]):
@@ -301,10 +308,12 @@ def run_dcm2niix(temp_dir: str, dcm_dir: str, subject: str, session, scan: str):
         return False
 
 
-def clean_niftis_in_temp(temp_dir: str, subject: str, session: str, scan: str):
+def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, session: str, scan: str):
     """
     Concatenates the niftis, deletes the previous ones, and moves the concatenated one out of the temp dir
     :param temp_dir: the absolute filepath to the TEMP directory where the niftis are present
+    :param add_parms: additional parameters retrieved such as Acquisition Matrix used to deal with mosaics that did
+    not get converted correctly
     :param subject: the string representing the current subject
     :param session: the string representing the current session alias
     :param scan: the string representing the scan. It is either ASL4D, T1, M0, FLAIR, or WMH_SEGM
@@ -346,6 +355,15 @@ def clean_niftis_in_temp(temp_dir: str, subject: str, session: str, scan: str):
     import_summary = dict.fromkeys(["subject", "session", "scan", "filename",
                                     "dx", "dy", "dz", "nx", "ny", "nz", "nt"])
 
+    # Get the acquisition matrix
+    acq_matrix = add_parms["AcquisitionMatrix"]
+    if acq_matrix[0] == 0:
+        acq_rows = int(acq_matrix[1])
+        acq_cols = int(acq_matrix[2])
+    else:
+        acq_rows = int(acq_matrix[0])
+        acq_cols = int(acq_matrix[3])
+
     ########################################
     # PART 2 PROCESSING THE ORGANIZED NIFTIS
     ########################################
@@ -355,12 +373,20 @@ def clean_niftis_in_temp(temp_dir: str, subject: str, session: str, scan: str):
         nii_objs = []
         for nifti in reorganized_niftis:
             nii_obj: nib.Nifti1Image = nib.load(nifti)
-            # ASL series that are processed into a 4D volume by dcm2niix must first be split then concatenated
+
+            # dcm2niix error: imports a 4D NIFTI instead of a 3D one. Solution: must be split first and concatenated
+            # with the others at a later step
             if len(nii_obj.shape) == 4:
                 volumes = nib.funcs.four_to_three(nii_obj)
                 for volume in volumes:
                     nii_objs.append(volume)
+
+            # Otherwise, correct 3D import
             elif len(nii_obj.shape) == 3:
+
+                # dcm2niix error: imports a 3D mosaic. Solution: reformat as a 3D stack
+                if nii_obj.shape[2] == 1:
+                    nii_obj = fix_mosaic(mosaic_nifti=nii_obj, acq_dims=(acq_rows, acq_cols))
                 nii_objs.append(nii_obj)
             else:
                 return False, import_summary, None, None
@@ -410,19 +436,15 @@ def clean_niftis_in_temp(temp_dir: str, subject: str, session: str, scan: str):
     else:
         session = f"ses-{session}_"
 
-    if len(set(json_data["AcquisitionNumber"].values())) == 1:
-        acq_num = f'acq-{list(json_data["AcquisitionNumber"].values())[0]}_'
-    else:
-        acq_num = ""
-
-    final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{acq_num}scan-{scan}.nii")
-    final_json_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{acq_num}scan-{scan}.json")
+    final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.nii")
+    final_json_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.json")
 
     nib.save(final_nifti_obj, final_nifti_filename)
 
     jsons = iglob(os.path.join(temp_dir, "*.json"))
     json_file = next(jsons)
 
+    # Json can bring up errors; os.replace should handle the rename if os.rename fails
     try:
         os.rename(json_file, final_json_filename)
     except FileExistsError:
@@ -433,7 +455,7 @@ def clean_niftis_in_temp(temp_dir: str, subject: str, session: str, scan: str):
 
 def update_json_sidecar(json_file: str, dcm_parms: dict):
     """
-    Updates the json sidecar for ASL4D and M0 scans to include additional DICOM parameters not extracted by dcm2niix
+    Updates the json sidecar to include additional DICOM parameters not extracted by dcm2niix
     :param json_file: the absolute filepath to the json sidecar
     :param dcm_parms: a dict of the additional extracted DICOM headers that should be added to the json
     :return: 2 items: whether the operation was a success; the updated parameters of the json file (to be used in the
@@ -453,7 +475,7 @@ def update_json_sidecar(json_file: str, dcm_parms: dict):
     return True, parms
 
 
-def asl2bids_onedir(dcm_dir: str, config: dict):
+def asldcm2bids_onedir(dcm_dir: str, config: dict):
     """
     The main function for most ASL-processing steps centered around processing a single dicom directory immediately
     preceding the dicom files.
@@ -480,29 +502,41 @@ def asl2bids_onedir(dcm_dir: str, config: dict):
                                                    scan=scan)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT THE DCM2NIIX STEP")
-        return False, "Failed at Temp folder generation", None
+        return False, f"SUBJECT: {subject}; " \
+                      f"SCAN: {scan}; " \
+                      f"ERROR: Failed at Temp folder generation", None
 
     # Run the main program
     successful_run = run_dcm2niix(temp_dir=temp_dst_dir, dcm_dir=dcm_dir,
                                   subject=subject, session=session, scan=scan)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT THE DCM2NIIX STEP")
-        return False, "Failed at DCM2NIIX conversion", None
+        return False, f"SUBJECT: {subject}; " \
+                      f"SCAN: {scan}; " \
+                      f"ERROR: Failed at DCM2NIIX conversion", None
 
     # Clean the niftis in the TEMP directory
-    successful_run, nifti_parmameters, nifti_filepath, json_filepath = clean_niftis_in_temp(temp_dir=temp_dst_dir,
-                                                                                            subject=subject,
-                                                                                            session=session,
-                                                                                            scan=scan)
+    successful_run, \
+    nifti_parmameters, \
+    nifti_filepath, \
+    json_filepath = clean_niftis_in_temp(temp_dir=temp_dst_dir,
+                                         add_parms=addtional_dcm_parameters,
+                                         subject=subject,
+                                         session=session,
+                                         scan=scan)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT CLEANING THE NIFTIs IN THE TEMP FOLDER")
-        return False, "Failed at post-conversion nifti cleanup", None
+        return False, f"SUBJECT: {subject}; " \
+                      f"SCAN: {scan}; " \
+                      f"ERROR: Failed at post-conversion nifti cleanup", None
 
     # For ASL4D and M0 scans, the JSON sidecar from dcm2niix must include additional parameters
     successful_run, json_parameters = update_json_sidecar(json_file=json_filepath, dcm_parms=addtional_dcm_parameters)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT CORRECTION THE JSON SIDECAR STEP")
-        return False, "Failed at updating json sidecar with additional parms", None
+        return False, f"SUBJECT: {subject}; " \
+                      f"SCAN: {scan}; " \
+                      f"ERROR: Failed at updating json sidecar with additional parms", None
 
     # If everything was a success, prepare the dict for creating the import summary
     import_summary = {}
@@ -513,9 +547,13 @@ def asl2bids_onedir(dcm_dir: str, config: dict):
     # Finally, delete the TEMP folder
     try:
         shutil.rmtree(temp_dst_dir, ignore_errors=True)
-        return True, "SUCCESS", import_summary
+        return True, f"SUBJECT: {subject}; " \
+                     f"SCAN: {scan}; " \
+                     f"Message: Successful conversion", import_summary
     except FileNotFoundError:
-        return True, "CHECK TEMP", import_summary
+        return True, f"SUBJECT: {subject}; " \
+                     f"SCAN: {scan}; " \
+                     f"ERROR: Failed at deleting the TEMP folder", import_summary
 
 
 def create_import_summary(import_summaries: list, config: dict):
@@ -530,8 +568,8 @@ def create_import_summary(import_summaries: list, config: dict):
     df["dt"] = df["RepetitionTime"]
     appropriate_ordering = ['subject', 'session', 'scan', 'dx', 'dy', 'dz', 'dt', 'nx', 'ny', 'nt',
                             "RepetitionTime", "EchoTime", "NumberOfAverages", "RescaleSlope", "RescaleIntercept",
-                            "MRScaleSlope", "RealWorldValueSlope", "AcquisitionTime", "AcquisitionMatrix",
-                            "TotalReadoutTime", "EffectiveEchoSpacing"]
+                            "MRScaleSlope", "RealWorldValueSlope", "SoftwareVersions", "AcquisitionTime",
+                            "AcquisitionMatrix", "TotalReadoutTime", "EffectiveEchoSpacing"]
     df = df.reindex(columns=appropriate_ordering)
     df = df.sort_values(by=["scan", "subject"]).reset_index(drop=True)
 
@@ -542,3 +580,62 @@ def create_import_summary(import_summaries: list, config: dict):
     except PermissionError:
         os.remove(os.path.join(analysis_dir, "import_summary.tsv"))
         df.to_csv(os.path.join(analysis_dir, "import_summary.tsv"), sep='\t', index=False, na_rep='n/a')
+
+
+def fix_mosaic(mosaic_nifti: nib.Nifti1Image, acq_dims: tuple):
+    """
+    Fixes incorrectly-processed NIFTIs by dcm2niix where they still remain mosaics due to a lack of
+    NumberOfImagesInMosaic header. This function implements a hack to
+    :param mosaic_nifti: the nifti image object that needs to be fixed. Should be of shape m x n x 1
+    the sliding window algorithm
+    :param acq_dims: the (row, col) acquisition dimensions for rows and columns from the AcquisitionMatrix DICOM field.
+    Used to determine the appropriate kernel size to use for the sliding window algorithm
+    :return: new_nifti; a 3D NIFTI that is no longer mosaic
+    """
+    acq_rows, acq_cols = acq_dims
+
+    # Get the shape and array values of the mosaic (flatten the latter into a 2D array)
+    img_shape = mosaic_nifti.shape
+    img_data = np.rot90(np.squeeze(mosaic_nifti.get_fdata()))
+
+    # If this is a square, and the rows perfectly divides the mosaic
+    if img_shape[0] == img_shape[1] and img_shape[0] % acq_rows == 0:
+        nsplits_w, nsplits_h = img_shape[0] / acq_rows, img_shape[0] / acq_rows
+        kernel_w, kernel_h = acq_rows, acq_rows
+    # If this is a square, and the cols perfectly divides the mosaic
+    elif img_shape[0] == img_shape[1] and img_shape[0] % acq_cols == 0:
+        nsplits_w, nsplits_h = img_shape[0] / acq_cols, img_shape[0] / acq_cols
+        kernel_w, kernel_h = acq_cols, acq_cols
+    # If this is a rectangle
+    elif all([img_shape[0] != img_shape[1],
+              img_shape[0] % acq_rows == 0,
+              img_shape[1] % acq_cols == 0
+              ]):
+        nsplits_w, nsplits_h = img_shape[0] / acq_rows, img_shape[1] / acq_cols
+        kernel_w, kernel_h = acq_rows, acq_cols
+    else:
+        return
+
+    # Initialize the data that will house the split mosaic into slices
+    new_img_data = np.zeros(shape=(kernel_w, kernel_h, int(nsplits_w * nsplits_h)))
+    slice_num = 0
+
+    # Sliding Window algorithm
+    for ii in range(int(nsplits_w)):
+        for jj in range(int(nsplits_h)):
+            x_start, x_end = ii * kernel_w, (ii + 1) * kernel_w
+            y_start, y_end = jj * kernel_h, (jj + 1) * kernel_h
+            img_slice = img_data[x_start:x_end, y_start:y_end]
+
+            # Disregard slices that are only zeros
+            if np.nanmax(img_slice) == 0:
+                continue
+            # Otherwise update the zeros array at the appropriate slice with the new values
+            else:
+                new_img_data[:, :, slice_num] = img_slice
+                slice_num += 1
+
+    # Filter off slices that had only zeros
+    new_img_data = np.rot90(new_img_data[:, :, 0:slice_num], 3)
+    new_nifti = image.new_img_like(mosaic_nifti, new_img_data, affine=mosaic_nifti.affine)
+    return new_nifti

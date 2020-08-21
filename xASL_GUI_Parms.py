@@ -22,7 +22,7 @@ class xASL_Parms(QMainWindow):
                 self.config = json.load(f)
 
         # Window Size and initial visual setup
-        self.setMinimumSize(512, 720)
+        self.setMinimumSize(512, 960)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)

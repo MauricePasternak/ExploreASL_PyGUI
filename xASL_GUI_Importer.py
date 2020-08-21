@@ -2,7 +2,7 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from xASL_GUI_ASL2BIDS import get_dicom_directories, asl2bids_onedir, create_import_summary
+from xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary
 from glob import iglob
 from tdda import rexpy
 from pprint import pprint
@@ -42,7 +42,7 @@ class Importer_Worker(QRunnable):
     # This is called by the threadpool during threadpool.start(worker)
     def run(self):
         for dicom_dir in self.dcm_dirs:
-            result, last_job, import_summary = asl2bids_onedir(dcm_dir=dicom_dir, config=self.import_config)
+            result, last_job, import_summary = asldcm2bids_onedir(dcm_dir=dicom_dir, config=self.import_config)
             if result:
                 self.import_summaries.append(import_summary)
             else:
@@ -68,8 +68,6 @@ class xASL_GUI_Importer(QMainWindow):
         self.labfont = QFont()
         self.labfont.setPointSize(16)
         self.rawdir = ''
-        self.folderhierarchy = ['', '', '']
-        self.tokenordering = ['', '', '']
         self.subject_regex = None
         self.session_regex = None
         self.scan_regex = None
@@ -98,6 +96,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.btn_run_importer = QPushButton("Run ASL2BIDS", self.cw, clicked=self.run_importer)
         self.btn_run_importer.setFont(self.labfont)
         self.btn_run_importer.setFixedHeight(50)
+        self.btn_run_importer.setEnabled(False)
         self.mainsplit.addWidget(self.btn_run_importer)
 
         self.mainsplit.setSizes([150, 250, 300, 50])
@@ -114,9 +113,10 @@ class xASL_GUI_Importer(QMainWindow):
         self.le_rootdir.setPlaceholderText("Drag and drop your study's raw directory here")
         self.le_rootdir.setReadOnly(True)
         self.le_rootdir.textChanged.connect(self.set_rootdir_variable)
-        self.btn_rootdir = QPushButton("...", self.grp_dirstruct, clicked=self.set_import_root_directory)
+        self.le_rootdir.textChanged.connect(self.clear_widgets)
+        self.btn_setrootdir = QPushButton("...", self.grp_dirstruct, clicked=self.set_import_root_directory)
         self.hlay_rootdir.addWidget(self.le_rootdir)
-        self.hlay_rootdir.addWidget(self.btn_rootdir)
+        self.hlay_rootdir.addWidget(self.btn_setrootdir)
         self.formlay_rootdir.addRow("Raw Root Directory", self.hlay_rootdir)
 
         # Next specify the QLabels that can be dragged to have their text copied elsewhere
@@ -138,6 +138,7 @@ class xASL_GUI_Importer(QMainWindow):
             le = DandD_Label2LineEdit(self, self.grp_dirstruct, idx)
             le.modified_text.connect(self.get_nth_level_dirs)
             le.textChanged.connect(self.update_sibling_awareness)
+            le.textChanged.connect(self.is_ready_import)
             self.levels[level] = le
 
         self.hlay_receivers.addWidget(self.lab_rootlabel)
@@ -179,6 +180,7 @@ class xASL_GUI_Importer(QMainWindow):
             cmb = QComboBox(self.grp_scanaliases)
             cmb.addItems(["Select an alias"])
             cmb.currentTextChanged.connect(self.update_scan_aliases)
+            cmb.currentTextChanged.connect(self.is_ready_import)
             self.cmb_scanaliases_dict[scantype] = cmb
             self.formlay_scanaliases.addRow(description, cmb)
 
@@ -199,10 +201,6 @@ class xASL_GUI_Importer(QMainWindow):
         self.vlay_sessionaliases.addWidget(self.scroll_sessionaliases)
         self.mainsplit.addWidget(self.grp_sessionaliases)
 
-    def clear_receivers(self):
-        for le in self.levels.values():
-            le.clear()
-
     # Purpose of this function is to set the directory of the root path lineedit based on the adjacent pushbutton
     @Slot()
     def set_import_root_directory(self):
@@ -217,24 +215,6 @@ class xASL_GUI_Importer(QMainWindow):
     @Slot()
     def set_rootdir_variable(self):
         self.rawdir = self.le_rootdir.text()
-
-    # Checks if any of subjects, sessions, or scans needs resetting
-    def check_if_reset_needed(self):
-        used_directories = [le.text() for le in self.levels.values()]
-        # If subjects is not in the currently-specified structure and the regex has been already set
-        if "Subject" not in used_directories and self.subject_regex is not None:
-            self.subject_regex = None
-
-        # If sessions is not in the currently-specified structure and the regex has been already set
-        if "Session" not in used_directories and self.session_regex is not None:
-            self.session_regex = None
-            self.session_aliases.clear()
-            self.reset_session_alias_cmbs()  # This clears the sessionaliases dict and the widgets
-
-        if "Scan" not in used_directories and self.scan_regex is not None:
-            self.scan_regex = None
-            self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
-            self.reset_scan_alias_cmbs(basenames=[])
 
     def get_nth_level_dirs(self, dir_type: str, level: int):
         """
@@ -268,7 +248,8 @@ class xASL_GUI_Importer(QMainWindow):
                                 "The directory depth you've indicated does not have directories present at that level."
                                 " Cancelling operation.",
                                 QMessageBox.Ok)
-            self.clear_nth_level_lineedit(level)
+            # Clear the appropriate lineedit that called this function after the error message
+            list(self.levels.values())[level].clear()
             return
 
         # Do not proceed if no directories were found and clear the linedit that emitted the textChanged signal
@@ -280,18 +261,18 @@ class xASL_GUI_Importer(QMainWindow):
 
         # Otherwise, make the appropriate adjustment depending on which label was dropped in
         if dir_type == "Subject":
-            self.subject_regex = self.inferregex(list(basenames))
+            self.subject_regex = self.infer_regex(list(basenames))
             print(f"Subject regex: {self.subject_regex}")
             del directories, basenames
 
         elif dir_type == "Session":
-            self.session_regex = self.inferregex(list(set(basenames)))
+            self.session_regex = self.infer_regex(list(set(basenames)))
             print(f"Session regex: {self.session_regex}")
-            self.update_session_aliases(basenames=list(set(basenames)))
+            self.reset_session_aliases(basenames=list(set(basenames)))
             del directories, basenames
 
         elif dir_type == "Scan":
-            self.scan_regex = self.inferregex(list(set(basenames)))
+            self.scan_regex = self.infer_regex(list(set(basenames)))
             print(f"Scan regex: {self.scan_regex}")
             self.reset_scan_alias_cmbs(basenames=list(set(basenames)))
             del directories, basenames
@@ -305,83 +286,201 @@ class xASL_GUI_Importer(QMainWindow):
             print("Error. This should never print")
             return
 
-    def clear_nth_level_lineedit(self, level):
-        list(self.levels.values())[level].clear()
+    #####################################
+    # SECTION - RESET AND CLEAR FUNCTIONS
+    #####################################
 
-    # Purpose of this function is to reset all the comboboxes of the scans section and repopulate them with new options
-    def reset_scan_alias_cmbs(self, basenames):
-        # print(f"INSIDE RESET SCAN ALIAS CMBS with basenames: {basenames}")
+    def clear_widgets(self):
+        """
+        Raw reset. Resets all important variables upon a change in the indicated raw directory text.
+        """
+        # Resets everything back to normal
+        self.subject_regex = None
+        self.session_regex = None
+        self.scan_regex = None
+        self.clear_receivers()
+        self.clear_session_alias_cmbs_and_les()
+        self.reset_scan_alias_cmbs(basenames=[])
+        self.session_aliases = OrderedDict()
+        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
+
+    def check_if_reset_needed(self):
+        """
+        More specialized reset function. If any of the drop-enabled lineedits has their field change,
+        this function will accomodate that change by resetting the variable that may have been removed
+        during the drop
+        """
+        used_directories = [le.text() for le in self.levels.values()]
+        # If subjects is not in the currently-specified structure and the regex has been already set
+        if "Subject" not in used_directories and self.subject_regex is not None:
+            self.subject_regex = None
+
+        # If sessions is not in the currently-specified structure and the regex has been already set
+        if "Session" not in used_directories and self.session_regex is not None:
+            self.session_regex = None
+            self.session_aliases.clear()
+            self.clear_session_alias_cmbs_and_les()  # This clears the sessionaliases dict and the widgets
+
+        if "Scan" not in used_directories and self.scan_regex is not None:
+            self.scan_regex = None
+            self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
+            self.reset_scan_alias_cmbs(basenames=[])
+
+    def clear_receivers(self):
+        """
+        Convenience function for resetting the drop-enabled lineedits
+        """
+        for le in self.levels.values():
+            le.clear()
+
+    def reset_scan_alias_cmbs(self, basenames=None):
+        """
+        Resets all comboboxes in the scans section and repopulates them with new options
+        :param basenames: filepath basenames to populate the comboboxes with
+        """
+        if basenames is None:
+            basenames = []
+
+        # Must first disconnect the combobox or else update_scan_aliases goes berserk because the index
+        # will be reset for each combobox in the process. Reconnect after changes.
         for key, cmb in self.cmb_scanaliases_dict.items():
-            # print(f"Setting for key: {key} and cmb {cmb}")
             cmb.currentTextChanged.disconnect(self.update_scan_aliases)
             cmb.clear()
             cmb.addItems(["Select an alias"] + basenames)
             cmb.currentTextChanged.connect(self.update_scan_aliases)
+            cmb.currentTextChanged.connect(self.is_ready_import)
 
-    # Convenience function for resetting all the lineedits for the session aliases
-    def reset_session_alias_cmbs(self):
-        for idx in range(self.formlay_sessionaliases.rowCount()):
-            self.formlay_sessionaliases.removeRow(0)
-        self.le_sessionaliases_dict.clear()
-        self.cmb_sessionaliases_dict.clear()
-
-    # Purpose of this function is to update the global attribute for the scan aliases as the comboboxes are selected
     def update_scan_aliases(self):
-        print("INSIDE UPDATE_SCAN_ALIASES")
+        """
+        Updates the scan aliases global variable as comboboxes in the scans section are selected
+        """
         for key, value in self.cmb_scanaliases_dict.items():
             if value.currentText() != "Select an alias":
                 self.scan_aliases[key] = value.currentText()
             else:
                 self.scan_aliases[key] = None
 
+    def clear_session_alias_cmbs_and_les(self):
+        """
+        Removes all row widgets from the sessions section. Clears the lineedits dict linking directory names to user-
+        preferred aliases. Clears the comboboxes dictionary specifying order.
+        """
+        for idx in range(self.formlay_sessionaliases.rowCount()):
+            self.formlay_sessionaliases.removeRow(0)
+        self.le_sessionaliases_dict.clear()
+        self.cmb_sessionaliases_dict.clear()
+
     # Purpose of this function is to update the lineedits of the sessions section and repopulate
-    def update_session_aliases(self, basenames):
+    def reset_session_aliases(self, basenames=None):
+        """
+        Resets the entire session section. Clears previous rows if necessary. Resets the global variables for the
+        lineedits and comboboxes containing mappings of the basename to the row widgets.
+        :param basenames: filepath basenames to populate the row labels with and establish alias mappings with
+        """
+        if basenames is None:
+            basenames = []
+
         # If this is an update, remove the previous widgets and clear the dict
         if len(self.le_sessionaliases_dict) > 0:
-            self.reset_session_alias_cmbs()
+            self.clear_session_alias_cmbs_and_les()
 
-        # Generate the new dict, populate the format layout, and add the lineedits to the dict
+        # Generate the new dict mappings of directory basename to preferred alias name and mapping
         self.le_sessionaliases_dict = dict.fromkeys(basenames)
         self.cmb_sessionaliases_dict = dict.fromkeys(basenames)
 
+        # Repopulate the format layout, and establish mappings for the lineedits and the comboboxes
         for ii, key in enumerate(self.le_sessionaliases_dict):
             hlay = QHBoxLayout()
             cmb = QComboBox()
             nums_to_add = [str(num) for num in range(1, len(self.le_sessionaliases_dict) + 1)]
             cmb.addItems(nums_to_add)
             cmb.setCurrentIndex(ii)
+            cmb.currentIndexChanged.connect(self.is_ready_import)
             le = QLineEdit()
             le.setPlaceholderText("(Optional) Specify the alias for this session")
             hlay.addWidget(le)
             hlay.addWidget(cmb)
-
             self.formlay_sessionaliases.addRow(key, hlay)
+            # This is where the mappings are re-established
             self.le_sessionaliases_dict[key] = le
             self.cmb_sessionaliases_dict[key] = cmb
 
-    # Convenience function for returning the regex string, provided a list of directories
+    ##########################
+    # SECTION - MISC FUNCTIONS
+    ##########################
+
     @staticmethod
-    def inferregex(dirs):
-        extractor = rexpy.Extractor(dirs)
+    def infer_regex(list_of_strings):
+        """
+        Self-explanatory: deduces a regex string to match a provided list of strings
+        :param list_of_strings: the list of string to be matched
+        :return: The inferred regex string matching the all the items in the list of strings
+        """
+        extractor = rexpy.Extractor(list_of_strings)
         extractor.extract()
         regex = extractor.results.rex[0]
         return regex
 
-    # Convenience function for updating
     @Slot()
     def update_sibling_awareness(self):
+        """
+        Updates the awareness of what each drop-enabled lineedits contain such that certain variables cannot be dropped
+        in for multiple lineedits
+        """
         current_texts = [le.text() for le in self.levels.values()]
         for le in self.levels.values():
             le.sibling_awareness = current_texts
 
+    @Slot()
     def is_ready_import(self):
-        pass
+        """
+        Quality controls several conditions required in order to be able to run the Importer.
+        """
+        current_texts = [le.text() for le in self.levels.values()]
+        # First requirement; raw directory must be an existent directory
+        if os.path.exists(self.le_rootdir.text()):
+            if not os.path.isdir(self.le_rootdir.text()):
+                self.btn_run_importer.setEnabled(False)
+                return
+        else:
+            return
 
-    def set_widgets_on_or_off(self, state):
+        # Next requirement; a minimum of "Subject" and "Scan" must be present in the lineedits
+        if not all(["Subject" in current_texts, "Scan" in current_texts]):
+            self.btn_run_importer.setEnabled(False)
+            return
+
+        # Next requirement; a minimum of "ASL4D" and "T1" must have their aliases specified
+        if any([self.scan_aliases["ASL4D"] is None, self.scan_aliases["T1"] is None]):
+            self.btn_run_importer.setEnabled(False)
+            return
+
+        # Next requirement; if Session is indicated, the aliases and ordering must both be unique
+        if "Session" in current_texts and len(self.cmb_sessionaliases_dict) > 0:
+            current_session_aliases = [le.text() for le in self.le_sessionaliases_dict.values() if le.text() != '']
+            current_session_ordering = [cmb.currentText() for cmb in self.cmb_sessionaliases_dict.values()]
+            if any([
+                len(set(current_session_aliases)) != len(current_session_aliases),  # unique aliases requires
+                len(set(current_session_ordering)) != len(current_session_ordering)  # unique ordering required
+            ]):
+                self.btn_run_importer.setEnabled(False)
+                return
+
+        self.btn_run_importer.setEnabled(True)
+
+    def set_widgets_on_or_off(self, state: bool):
+        """
+        Convenience function for turning off widgets during an import run and then re-enabling them afterwards
+        :param state: the boolean state of whether the widgets should be enabled or not
+        """
         self.btn_run_importer.setEnabled(state)
+        self.btn_setrootdir.setEnabled(state)
         for le in self.levels.values():
             le.setEnabled(state)
 
+    ##################################
+    # SECTION - RETRIEVAL OF VARIABLES
+    ##################################
 
     # Returns the directory structure in preparation of running the import
     def get_directory_structure(self):
@@ -417,7 +516,7 @@ class xASL_GUI_Importer(QMainWindow):
         # print(valid_dirs)
         return True, valid_dirs
 
-    # Sanity check for false user input in specifying scan aliases
+    # Returns the dictionary mapping of ExploreASL standard scan name --> scan directory name
     def get_scan_aliases(self):
         try:
             if any([self.scan_aliases["ASL4D"] is None,
@@ -437,7 +536,7 @@ class xASL_GUI_Importer(QMainWindow):
 
         return True, scan_aliases
 
-    # Returns the dictionary
+    # Returns the dictionary mapping of session alias name --> preferred name
     def get_session_aliases(self):
 
         session_aliases = OrderedDict()
@@ -473,6 +572,7 @@ class xASL_GUI_Importer(QMainWindow):
 
         return True, session_aliases
 
+    # Utilizes the other get_ functions above to create the import parameters file
     def get_import_parms(self):
         import_parms = {}.fromkeys(["Regex", "Directory Structure", "Scan Aliases", "Ordered Session Aliases"])
         # Get the directory structure, the scan aliases, and the session aliases
@@ -499,34 +599,58 @@ class xASL_GUI_Importer(QMainWindow):
 
         return import_parms
 
-    @Slot(list)
-    def create_import_summary_file(self, signalled_summaries):
+    #############################################
+    # SECTION - CONCURRENT AND POST-RUN FUNCTIONS
+    #############################################
 
+    @Slot(list)
+    def create_import_summary_file(self, signalled_summaries: list):
+        """
+        Creates the summary file. Increments the "debt" due to launching workers back towards zero. Resets widgets
+        once importer workers are done.
+        :param signalled_summaries: A list of dicts, each dict being all the relevant DICOM and NIFTI parameters of
+        a converted directory
+        """
+        # Stockpile the completed summaries and increment the "debt" back towards zero
         self.import_summaries.extend(signalled_summaries)
         self.n_import_workers -= 1
 
+        # Don't proceed until all importer workers are finished
         if self.n_import_workers > 0 or self.import_parms is None:
             return
 
-        # Re-enable widgets
+        # Re-enable widgets and change the cwd back to the scripts directory
         self.set_widgets_on_or_off(state=True)
+        os.chdir(self.config["ScriptsDir"])
 
         # Create the import summary
         create_import_summary(import_summaries=self.import_summaries, config=self.import_parms)
 
     @Slot(list)
-    def create_failed_runs_summary_file(self, failed_runs):
-        self.failed_runs.extend(failed_runs)
+    def create_failed_runs_summary_file(self, signalled_failed_runs: list):
+        """
+        Creates a json file detailing the subjects/sessions/scans that could not be converted and the step at which
+        that process crashed
+        :param signalled_failed_runs: A list of dicts, each dict being the name of the DICOM directory attempted for
+        conversion and the value being a description of the step in DCM2BIDS that it failed on.
+        """
+        self.failed_runs.extend(signalled_failed_runs)
 
+        # Don't proceed until all importer workers are finished
         if self.n_import_workers > 0 or self.import_parms is None:
             return
 
         analysis_dir = os.path.join(os.path.dirname(self.import_parms["RawDir"]), "analysis")
         with open(os.path.join(analysis_dir, "import_summary_failed.json")) as failed_writer:
-            json.dump(dict(failed_runs), failed_writer, indent=3)
+            json.dump(dict(signalled_failed_runs), failed_writer, indent=3)
 
-
+    ########################
+    # SECTION - RUN FUNCTION
+    ########################
     def run_importer(self):
+        """
+        First confirms that all import parameters are set, then runs ASL2BIDS using multi-threading
+        """
         # Set (or reset if this is another run) the essential variables
         self.n_import_workers = 0
         self.import_parms = None
@@ -541,6 +665,9 @@ class xASL_GUI_Importer(QMainWindow):
         # Get the import parameters
         self.import_parms = self.get_import_parms()
         if self.import_parms is None:
+            # Reset widgets back to normal and change the directory back
+            self.set_widgets_on_or_off(state=True)
+            os.chdir(self.config["ScriptsDir"])
             return
 
         # Get the dicom directories
@@ -604,14 +731,14 @@ class DandD_Label2LineEdit(QLineEdit):
 
     modified_text = Signal(str, int)
 
-    def __init__(self, superparent, parent=None, identification=None):
+    def __init__(self, superparent, parent=None, identification: int = None):
         super().__init__(parent)
 
         self.setAcceptDrops(True)
         self.setReadOnly(True)
         self.superparent = superparent  # This is the Importer Widget itself
         self.sibling_awareness = ['', '', '', '', '']
-        self.id = identification
+        self.id = identification  # This is the python index of which level after ..\\raw does this lineedit represent
         self.textChanged.connect(self.modifiedtextChanged)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
@@ -619,7 +746,6 @@ class DandD_Label2LineEdit(QLineEdit):
             if all([event.mimeData().text() not in self.sibling_awareness,
                     self.superparent.le_rootdir.text() != '']) or event.mimeData().text() == "Dummy":
                 event.accept()
-
         else:
             event.ignore()
 
