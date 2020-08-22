@@ -1,12 +1,11 @@
 import json
 import os
 import re
-import sys
-from glob import glob
+from glob import glob, iglob
 from itertools import chain
 from time import sleep
 from datetime import date
-
+from more_itertools import peekable
 import matlab
 import matlab.engine
 from PySide2.QtCore import *
@@ -16,7 +15,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter, \
-    calculate_missing_STATUS, xASL_GUI_RerunPrep
+    calculate_missing_STATUS, xASL_GUI_RerunPrep, interpret_statusfile_errors
 from xASL_GUI_HelperFuncs import set_widget_icon
 from pprint import pprint
 
@@ -103,9 +102,14 @@ class xASL_Executor(QMainWindow):
         # Main run button must be defined early, since connections will be dynamically made to it
         self.threadpool = QThreadPool()
 
+        # MISC VARIABLES
         # Create a "debt" variable that will be used to reactivate the ExploreASL button; will decrement when a process
         # begins, and increment back towards zero when said process ends. At zero, the button will be re-activated
         self.total_process_dbt = 0
+        with open(os.path.join(self.config["ScriptsDir"],
+                               "JSON_LOGIC",
+                               "ExecutorTranslators.json")) as translator_reader:
+            self.executor_translators = json.load(translator_reader)
 
         self.UI_Setup_Layouts_and_Groups()
         self.UI_Setup_TaskScheduler()
@@ -432,10 +436,18 @@ class xASL_Executor(QMainWindow):
         if len(postrun_diagnosis) > 0:
 
             for study_dir, incomplete_files in postrun_diagnosis.items():
-                msg = ["The following .status files could not be completed during the run:\n"] + \
-                      [file + '\n' for file in incomplete_files]
+                structmod_msgs, \
+                aslmod_msgs, \
+                popmod_msgs = interpret_statusfile_errors(incomplete_files, self.executor_translators)
+                msg = ["The following could not be completed during the run:\n"] + \
+                      ["\n########################", "\nIn the Structural Module:\n"] + \
+                      [file + '\n' for file in structmod_msgs] + \
+                      ["\n########################", "\nIn the ASL Module:\n"] + \
+                      [file + '\n' for file in aslmod_msgs] + \
+                      ["\n########################", "\nIn the Population Module:\n"] + \
+                      [file + '\n' for file in popmod_msgs]
 
-                with open(os.path.join(study_dir, f"{date.today()} run - incomplete STATUS files.txt"), 'w') as writer:
+                with open(os.path.join(study_dir, f"{date.today()} ExploreASL run - errors.txt"), 'w') as writer:
                     writer.writelines(msg)
 
             dirs_string = "\n".join(list(postrun_diagnosis.keys()))
@@ -443,10 +455,9 @@ class xASL_Executor(QMainWindow):
                                 f"Errors were encountered during ExploreASL run",
                                 f"The following study directories encountered at least 1 error during their run:\n"
                                 f"{dirs_string}\n"
-                                f"Please review the generated [Date of run] run - incomplete STATSUS files.txt\n"
-                                f"within each of the listed studies to see which .status files could not be generated.",
+                                f"Please review the generated [Date of run] ExploreASL run - errors.txt \n"
+                                f"within each of the listed studies to see which subjects could not be processed",
                                 QMessageBox.Ok)
-
         else:
             QMessageBox.information(self,
                                     f"Successful ExploreASL run",
@@ -483,17 +494,15 @@ class xASL_Executor(QMainWindow):
         print(f"update_progressbar received a signal from watcher {study_idx} to increase the progressbar value by"
               f"{val_to_inc_by}")
         selected_progbar: QProgressBar = self.formlay_progbars_list[study_idx]
-        print(
-            f"The progressbar's value before update: {selected_progbar.value()} "
-            f"out of maximum {selected_progbar.maximum()}")
+        print(f"The progressbar's value before update: {selected_progbar.value()} "
+              f"out of maximum {selected_progbar.maximum()}")
         selected_progbar.setValue(selected_progbar.value() + val_to_inc_by)
-        print(
-            f"The progressbar's value after update: {selected_progbar.value()} "
-            f"out of maximum {selected_progbar.maximum()}")
+        print(f"The progressbar's value after update: {selected_progbar.value()} "
+              f"out of maximum {selected_progbar.maximum()}")
 
     # This slot is responsible for re-activating the Run ExploreASL button
     @Slot()
-    def reactivate_runbtn(self):
+    def reactivate_widgets_postrun(self):
         self.total_process_dbt += 1
         print(f"reactivate_runbtn received a signal and incremented the debt. "
               f"The debt at this time is: {self.total_process_dbt}")
@@ -517,7 +526,6 @@ class xASL_Executor(QMainWindow):
             le.setEnabled(state)
             btn.setEnabled(state)
             runopt_cmb.setEnabled(state)
-
 
     # This is the main function; prepares arguments; spawns workers; feeds in arguments to the workers during their
     # initialization; then begins the programs
@@ -549,38 +557,45 @@ class xASL_Executor(QMainWindow):
             inner_worker_block = []
             debt = 0
 
-            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 1 - Prepare the workers for that study
-            # Inner for loop: loops over the range of the num of cores within a study. Each core will be an iWorker
-            for ii in range(box.count()):
-                if ii < int(box.currentText()):
-                    worker = ExploreASL_Worker(
-                        self.parent().config["ExploreASLRoot"],  # The exploreasl filepath
-                        glob(os.path.join(path.text(), "*Par*.json"))[0].replace('\\', '/'),  # The filepath to parms
-                        1,  # Process the data
-                        1,  # Skip the pause
-                        ii + 1,  # iWorker
-                        int(box.currentText()),  # nWorkers
-                        translator[run_opts.currentText()]  # Processing options
-                    )
-
-                    inner_worker_block.append(worker)
-                    debt -= 1
-                    self.total_process_dbt -= 1
-
-            # Add the block to the main workers argument
-            self.workers.append(inner_worker_block)
-
             # %%%%%%%%%%%%%%%%%%%%%%
-            # Step 2 - Make preparations to feed the appropriate arguments to the watcher
-            parms_file = glob(os.path.join(path.text(), "*Par*.json"))[0]
+            # Step 1 - For the study, load in the parameters
+            try:
+                parms_file = glob(os.path.join(path.text(), "*Par*.json"))[0]
+            except IndexError:
+                QMessageBox.warning(self,
+                                    f"Problem prior to starting ExploreASL",
+                                    f"No DataPar file found within study:\n{path.text()}\n"
+                                    f"Please ensure that the study's parameters file is present within the directory",
+                                    QMessageBox.Ok)
+
+                # Remember to re-activate widgets
+                self.set_widgets_activation_states(True)
+                return
+
+            # Get a few essentials that will be needed for the workers and the watcher for this study
             with open(parms_file) as f:
                 parms = json.load(f)
-                str_regex: str = parms["subject_regexp"]
-                regex = re.compile(str_regex)
-                sess_names = parms["SESSIONS"]
-                if str_regex.startswith("^") or str_regex.endswith('$'):
-                    str_regex = str_regex.strip('^$')
+                try:
+                    str_regex: str = parms["subject_regexp"]
+                    explore_asl_path = parms["MyPath"]
+                    regex = re.compile(str_regex)
+                    sess_names = parms["SESSIONS"]
+                    if str_regex.startswith("^") or str_regex.endswith('$'):
+                        str_regex = str_regex.strip('^$')
+                except KeyError:
+                    QMessageBox.warning(self,
+                                        f"Problem prior to starting ExploreASL",
+                                        f"Essential parameters not present within the DataPar file for study:"
+                                        f"\n{path.text()}\n"
+                                        f"Please ensure that parameter file contains fields detailing:\n"
+                                        f"1) A MyPath key detailing the path to the Explore ASL directory\n"
+                                        f"2) A subject_regex key representing subjects in the study\n"
+                                        f"3) A SESSIONS key detailing the sessions in the study, if any",
+                                        QMessageBox.Ok)
+
+                    # Remember to re-activate widgets
+                    self.set_widgets_activation_states(True)
+                    return
 
             # With the parms now loaded, additional checks can be made to prevent false runs
             if any([not os.path.exists(parms["MyPath"]),  # ExploreASL dir must exist
@@ -589,12 +604,6 @@ class xASL_Executor(QMainWindow):
                     str_regex == '',  # The string used to make the regex cannot be blank
                     parms["D"]["ROOT"] != path.text()  # The study provided must match the one in the parms file
                     ]):
-                # print(not os.path.exists(parms["MyPath"]))
-                # print(sum([bool(regex.search(file)) for file in os.listdir(path.text())
-                #            if file not in ["lock", "Population"]]) == 0)
-                # print(str_regex == '')
-                # print(parms["D"]["ROOT"] != path.text())
-
                 QMessageBox.warning(self,
                                     f"Problem prior to starting ExploreASL",
                                     f"An error was encountered while preparing study:\n{path.text()}\n"
@@ -610,12 +619,44 @@ class xASL_Executor(QMainWindow):
                 self.set_widgets_activation_states(True)
                 return
 
+            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            # Step 2 - Prepare the workers for that study
+            # Inner for loop: loops over the range of the num of cores within a study. Each core will be an iWorker
+            for ii in range(box.count()):
+                if ii < int(box.currentText()):
+                    worker = ExploreASL_Worker(
+                        explore_asl_path,  # The exploreasl filepath
+                        glob(os.path.join(path.text(), "*Par*.json"))[0].replace('\\', '/'),  # The filepath to parms
+                        1,  # Process the data
+                        1,  # Skip the pause
+                        ii + 1,  # iWorker
+                        int(box.currentText()),  # nWorkers
+                        translator[run_opts.currentText()]  # Processing options
+                    )
+
+                    inner_worker_block.append(worker)
+                    debt -= 1
+                    self.total_process_dbt -= 1
+
+            # Add the block to the main workers argument
+            self.workers.append(inner_worker_block)
+
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 3 - Create all lock directories in advance; this will give the watcher full oversight
             initialize_all_lock_dirs(analysis_dir=path.text(),
                                      regex=regex,
                                      run_options=run_opts.currentText(),
                                      session_names=sess_names)
+
+            # Also delete any directories called "locked" in the study
+            locked_dirs = iglob(os.path.join(path.text(), "**", "locked"), recursive=True)
+            locked_dirs = peekable(locked_dirs)
+            if locked_dirs:
+                print(f"Detected locked direcorties in {path.text()} prior to starting ExploreASL. "
+                      f"Removing them first.")
+                pprint(locked_dirs)
+                for lock_dir in locked_dirs:
+                    os.removedirs(lock_dir)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
@@ -631,12 +672,14 @@ class xASL_Executor(QMainWindow):
             # Save the expected status files to the dict container; these will be iterated over after workers are done
             self.expected_status_files[path.text()] = expected_status_files
             pprint(expected_status_files)
+
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 5 - Create a Watcher for that study
             watcher = ExploreASL_Watcher(target=path.text(),  # the analysis directory
                                          regex=str_regex,  # the regex used to recognize subjects
                                          watch_debt=debt,  # the debt used to determine when to stop watching
-                                         study_idx=study_idx  # the identifier used to know which progressbar to signal
+                                         study_idx=study_idx,  # the identifier used to know which progressbar to signal
+                                         translators=self.executor_translators
                                          )
             self.textedit_textoutput.append(f"Setting a Watcher thread on {path.text()}")
 
@@ -658,9 +701,9 @@ class xASL_Executor(QMainWindow):
                 worker.signals.finished_processing.connect(watcher.increment_debt)
                 # Connect the finished signal to the run btn reactivator so that the run button may be reactivated
                 # via debt repayment counter
-                worker.signals.finished_processing.connect(self.reactivate_runbtn)
+                worker.signals.finished_processing.connect(self.reactivate_widgets_postrun)
 
-                self.textedit_textoutput.append(f"Preparing Worker {idx+1} of {len(inner_worker_block)} for study: "
+                self.textedit_textoutput.append(f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study: "
                                                 f"{path.text()}")
 
         ######################################
@@ -693,7 +736,7 @@ class ExploreASL_Watcher(QRunnable):
     3)
     """
 
-    def __init__(self, target, regex, watch_debt, study_idx):
+    def __init__(self, target, regex, watch_debt, study_idx, translators):
         super().__init__()
         self.signals = ExploreASL_WatcherSignals()
         self.dir_to_watch = os.path.join(target, "lock")
@@ -715,60 +758,10 @@ class ExploreASL_Watcher(QRunnable):
         self.observer.schedule(event_handler=self.event_handler,
                                path=self.dir_to_watch,
                                recursive=True)
-        self.stuct_status_file_translator = {
-            "010_LinearReg_T1w2MNI.status": "T1w-image rigid-body registration to MNI population center",
-            "060_Segment_T1w.status": "CAT12/SPM12 T1w-image segmentation",
-            "080_Resample2StandardSpace.status": "T1w-image reslicing into MNI/common space",
-            "090_GetVolumetrics.status": "GM, WM, & CSF volume calculation",
-            "100_VisualQC_Structural.status": "image quality-control",
-            "999_ready.status": "all submodules"
-        }
-        self.asl_status_file_translator = {
-            "020_RealignASL.status": "motion correction and spike removal",
-            "030_RegisterASL.status": "ASL series rigid-body registration to the T1w image",
-            "040_ResampleASL.status": "ASL series reslicing to MNI space and mean control image creation",
-            "050_PreparePV.status": "preparation of partial volume maps",
-            "060_ProcessM0.status": "M0 image processing",
-            "070_Quantification.status": "CBF quantification",
-            "080_CreateAnalysisMask.status": "CBF threshold mask creation",
-            "090_VisualQC_ASL.status": "image quality-control",
-            "999_ready.status": "all submodules"
-        }
-
-        self.workload_translator = {
-            # STRUCTURAL
-            "010_LinearReg_T1w2MNI.status": 1,
-            "020_LinearReg_FLAIR2T1w.status": 2,
-            "030_Resample_FLAIR2T1w.status": 1,
-            "040_Segment_FLAIR.status": 3,
-            "050_LesionFilling.status": 1,
-            "060_Segment_T1w.status": 10,
-            "070_GetWMHvol.status": 1,
-            "080_Resample2StandardSpace.status": 2,
-            "090_GetVolumetrics.status": 1,
-            "100_VisualQC_Structural.status": 1,
-            # ASL
-            "020_RealignASL.status": 1,
-            "030_RegisterASL.status": 2,
-            "040_ResampleASL.status": 1,
-            "050_PreparePV.status": 1,
-            "060_ProcessM0.status": 1,
-            "070_Quantification.status": 2,
-            "080_CreateAnalysisMask.status": 1,
-            "090_VisualQC_ASL.status": 1,
-            # POPULATION
-            "010_CreatePopulationTemplates.status": 1,
-            "020_CreateAnalysisMask.status": 1,
-            "030_CreateBiasfield.status": 1,
-            "040_GetDICOMStatistics.status": 1,
-            "050_GetVolumeStatistics.status": 1,
-            "060_GetMotionStatistics.status": 1,
-            "070_GetROIstatistics.status": 20,
-            "080_SortBySpatialCoV.status": 1,
-            "090_DeleteAndZip.status": 1,
-            "999_ready.status": 0
-        }
-
+        self.stuct_status_file_translator = translators["Structural_Module_Filename2Description"]
+        self.asl_status_file_translator = translators["ASL_Module_Filename2Description"]
+        self.pop_status_file_translator = translators["Population_Module_Filename2Description"]
+        self.workload_translator = translators["ExploreASL_Filename2Workload"]
         print(f"Initialized a watcher for the directory {self.dir_to_watch} and will communicate with the progressbar"
               f"at Python idx: {self.study_idx}")
 
@@ -870,11 +863,3 @@ class RowAwareQPushButton(QPushButton):
 
     def mousePressEvent(self, e):
         self.row_idx_signal.emit(self.row_idx)
-
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion')
-    maker = xASL_ParmsMaker()
-    maker.show()
-    sys.exit(app.exec())

@@ -1,12 +1,12 @@
 import os
-from glob import glob
+from glob import iglob
 import re
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
 from xASL_GUI_HelperClasses import DandD_FileExplorerFile2LineEdit
 import pandas as pd
-import shutil
+import platform
 from itertools import chain
 from pprint import pprint
 from functools import reduce
@@ -21,7 +21,6 @@ def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
     :param regex: the regex used to identify subjects
     :param run_options: the type of run (ex. ASL, Structural, Both, Population)
     :param session_names: the expected session names that should be encountered (ex. ASL_1, ASL_2, etc.)
-    :return: Does not return anything
     """
 
     def dirnames_for_asl(analysis_directory, study_sessions, within_session_names):
@@ -220,12 +219,91 @@ def calculate_anticipated_workload(parmsdict, run_options):
 # Called after processing is done to compare the present status files against the files that were expected to be created
 # at the time the run was initialized
 def calculate_missing_STATUS(analysis_dir, expected_status_files):
-    postrun_status_files = glob(os.path.join(analysis_dir, 'lock', "**", "*.status"), recursive=True)
+    postrun_status_files = iglob(os.path.join(analysis_dir, 'lock', "**", "*.status"), recursive=True)
     incomplete = [file for file in expected_status_files if file not in postrun_status_files]
     if len(incomplete) == 0:
         return True, incomplete
     else:
         return False, incomplete
+
+
+def interpret_statusfile_errors(incomplete_files, translators: dict):
+    """
+    Interprets the step in the ExploreASL pipeline for which particular subjects/sessions/etc. must have failed and
+    returns these interpretations as messages for each of the modules
+    :param incomplete_files: the list of status files that were not generated in the pipeline
+    :param translators: the translators (from JSON_LOGIC directory) used to convert filenames to their descriptions for
+    generating the correct error message
+    :return: 3 lists of interpreted error messages, one for each ExploreASL module
+    """
+    if platform.system() == "Windows":
+        delimiter = '\\\\'
+    else:
+        delimiter = '/'
+
+    # Prepare containers and translators
+    struct_dict = {}
+    asl_dict = {}
+    pop_list = []
+    asl_msgs = []
+    struct_msgs = []
+    pop_msgs = []
+    stuct_status_file_translator = translators["Structural_Module_Filename2Description"]
+    asl_status_file_translator = translators["ASL_Module_Filename2Description"]
+    population_file_translator = translators["Population_Module_Filename2Description"]
+
+    # Prepare regex detectors
+    asl_regex = re.compile(f"(?:.*){delimiter}lock{delimiter}xASL_module_(?:Structural|ASL){delimiter}(.*){delimiter}"
+                           f"xASL_module_(?:Structural|ASL)_?(.*)?{delimiter}(.*\\.status)")
+    pop_regex = re.compile(f"(?:.*){delimiter}lock{delimiter}xASL_module_Population{delimiter}"
+                           f"xASL_module_Population{delimiter}(.*\\.status)")
+
+    # Use the regex to extract subject, session, filename fields from the status filepaths, then organize the status
+    # file basenames into the appropriate dictionary structure
+    for file in incomplete_files:
+        asl_match = asl_regex.search(file)
+        pop_match = pop_regex.search(file)
+        if asl_match:
+            subject, session, file = asl_match.groups()
+            # Structural
+            if session == "":
+                struct_dict.setdefault(subject, [])
+                struct_dict[subject].append(file)
+            # ASL
+            else:
+                asl_dict.setdefault(subject, {})
+                asl_dict[subject].setdefault(session, [])
+                asl_dict[subject][session].append(file)
+        # Population
+        elif pop_match:
+            file = pop_match.group(1)
+            pop_list.append(file)
+        else:
+            return
+
+    # For each of the dictionaries corresponding to an ExploreASL module, sort the basenames and create the appropriate
+    # error message for that subject/session
+    if len(asl_dict) > 0:
+        for subject, inner_1 in asl_dict.items():
+            for session, files in inner_1.items():
+                sorted_files = sorted(files)
+                msg = f"Subject: {subject}; Session: {session}; Failed in the ASL module prior to: " \
+                      f"{asl_status_file_translator[sorted_files[0]]}; " \
+                      f"STATUS file failed to be created: {sorted_files[0]}"
+                asl_msgs.append(msg)
+
+    if len(struct_dict) > 0:
+        for subject, files in struct_dict.items():
+            sorted_files = sorted(files)
+            msg = f"Subject: {subject}; Failed in the Structural module prior to: " \
+                  f"{stuct_status_file_translator[sorted_files[0]]}; " \
+                  f"STATUS file failed to be created: {sorted_files[0]}"
+            struct_msgs.append(msg)
+
+    if len(pop_list) > 0:
+        pop_msgs = [population_file_translator[sorted(pop_list)][0]]
+
+    return struct_msgs, asl_msgs, pop_msgs
 
 
 class xASL_GUI_RerunPrep(QWidget):
