@@ -1,6 +1,7 @@
 import os
-from glob import iglob
+from glob import glob
 import re
+import json
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
@@ -72,7 +73,8 @@ def calculate_anticipated_workload(parmsdict, run_options):
     used to determine the appropriate maximum value for the progressbar
     """
 
-    def get_structural_workload(analysis_directory, study_subjects, structuralmod_dict):
+    def get_structural_workload(analysis_directory, study_subjects, structuralmod_dict,
+                                skip_if_no_asl, skip_if_no_m0, skip_if_no_flair):
         workload_translator = {
             "010_LinearReg_T1w2MNI.status": 1, "020_LinearReg_FLAIR2T1w.status": 2,
             "030_Resample_FLAIR2T1w.status": 1, "040_Segment_FLAIR.status": 3, "050_LesionFilling.status": 1,
@@ -86,7 +88,32 @@ def calculate_anticipated_workload(parmsdict, run_options):
                           "040_Segment_FLAIR.status", "050_LesionFilling.status", "070_GetWMHvol.status"]
         status_files = []
         for subject in study_subjects:
-            has_flair_img = os.path.exists(os.path.join(analysis_directory, subject, "FLAIR.nii"))
+
+            # Ascertain if there are any FLAIR images and compare their presence/absence to the FLAIR skip flag
+            path_to_FLAIR = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
+            try:
+                has_flair_img = os.path.exists(path_to_FLAIR[0])
+            except IndexError:
+                has_flair_img = False
+
+            path_to_M0 = glob(os.path.join(analysis_directory, subject, "*", "*M0.nii"))
+            try:
+                has_m0_img = os.path.exists(path_to_M0[0])
+            except IndexError:
+                has_m0_img = False
+            path_to_ASL = glob(os.path.join(analysis_directory, subject, "*", "*ASL4D.nii"))
+            try:
+                has_asl_img = os.path.exists(path_to_ASL[0])
+            except IndexError:
+                has_asl_img = False
+
+            # Do not proceed to if a particular subject/session is missing the required image based on parms
+            if any([skip_if_no_m0 and not has_m0_img,
+                    skip_if_no_asl and not has_asl_img,
+                    skip_if_no_flair and not has_flair_img
+                    ]):
+                continue
+
             directory = os.path.join(analysis_directory, "lock", "xASL_module_Structural", subject,
                                      "xASL_module_Structural")
             current_status_files = os.listdir(directory)
@@ -107,7 +134,8 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
         return structuralmod_dict, status_files
 
-    def get_asl_workload(analysis_directory, study_subjects, session_names, aslmod_dict):
+    def get_asl_workload(analysis_directory, study_subjects, session_names, aslmod_dict,
+                         skip_if_no_asl, skip_if_no_m0, skip_if_no_flair):
         workload_translator = {
             "020_RealignASL.status": 1, "030_RegisterASL.status": 2, "040_ResampleASL.status": 1,
             "050_PreparePV.status": 1, "060_ProcessM0.status": 1, "070_Quantification.status": 2,
@@ -121,6 +149,29 @@ def calculate_anticipated_workload(parmsdict, run_options):
         status_files = []
         for subject in study_subjects:
             for session in session_names:
+                path_to_M0 = glob(os.path.join(analysis_directory, subject, session, "*M0.nii"))
+                try:
+                    has_m0_img = os.path.exists(path_to_M0[0])
+                except IndexError:
+                    has_m0_img = False
+                path_to_ASL = glob(os.path.join(analysis_directory, subject, session, "*ASL4D.nii"))
+                try:
+                    has_asl_img = os.path.exists(path_to_ASL[0])
+                except IndexError:
+                    has_asl_img = False
+                path_to_FLAIR = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
+                try:
+                    has_flair_img = os.path.exists(path_to_FLAIR[0])
+                except IndexError:
+                    has_flair_img = False
+
+                # Do not proceed to if a particular subject/session is missing the required image based on parms
+                if any([skip_if_no_m0 and not has_m0_img,
+                        skip_if_no_asl and not has_asl_img,
+                        skip_if_no_flair and not has_flair_img
+                        ]):
+                    continue
+
                 directory = os.path.join(analysis_directory, "lock", "xASL_module_ASL", subject,
                                          f"xASL_module_ASL_{session}")
                 current_status_files = os.listdir(directory)
@@ -166,6 +217,9 @@ def calculate_anticipated_workload(parmsdict, run_options):
     analysis_dir: str = parmsdict["D"]["ROOT"]
     regex = re.compile(parmsdict["subject_regexp"])
     sess_names: list = parmsdict["SESSIONS"]
+    skipifnoasl: bool = parmsdict["SkipIfNoASL"]
+    skipifnom0: bool = parmsdict["SkipIfNoM0"]
+    skipifnoflair: bool = parmsdict["SkipIfNoFlair"]
     subjects = [subject for subject in os.listdir(analysis_dir) if
                 all([regex.search(subject),  # regex must fit
                      os.path.isdir(os.path.join(analysis_dir, subject)),  # must be a directory
@@ -178,8 +232,13 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
     # Update the dicts as appropriate
     if run_options == "Both":
-        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict)
-        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
+        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict,
+                                                             skipifnoasl, skipifnom0, skipifnoflair)
+        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict,
+                                                skipifnoasl, skipifnom0, skipifnoflair)
+
+        pprint(struct_status)
+        pprint(asl_status)
 
         struct_totalworkload = sum(struct_dict.values())
         asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
@@ -190,7 +249,8 @@ def calculate_anticipated_workload(parmsdict, run_options):
         return struct_totalworkload + asl_totalworkload, struct_status + asl_status
 
     elif run_options == "ASL":
-        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict)
+        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict,
+                                                skipifnoasl, skipifnom0, skipifnoflair)
         # pprint(asl_dict)
         asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
         asl_totalworkload = sum(asl_totalworkload.values())
@@ -199,7 +259,8 @@ def calculate_anticipated_workload(parmsdict, run_options):
         return asl_totalworkload, asl_status
 
     elif run_options == "Structural":
-        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict)
+        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict,
+                                                             skipifnoasl, skipifnom0, skipifnoflair)
         # pprint(struct_dict)
         struct_totalworkload = sum(struct_dict.values())
         print(f"Structural Calculated Workload: {struct_totalworkload}")
@@ -219,7 +280,7 @@ def calculate_anticipated_workload(parmsdict, run_options):
 # Called after processing is done to compare the present status files against the files that were expected to be created
 # at the time the run was initialized
 def calculate_missing_STATUS(analysis_dir, expected_status_files):
-    postrun_status_files = iglob(os.path.join(analysis_dir, 'lock', "**", "*.status"), recursive=True)
+    postrun_status_files = glob(os.path.join(analysis_dir, 'lock', "**", "*.status"), recursive=True)
     incomplete = [file for file in expected_status_files if file not in postrun_status_files]
     if len(incomplete) == 0:
         return True, incomplete
@@ -301,7 +362,10 @@ def interpret_statusfile_errors(incomplete_files, translators: dict):
             struct_msgs.append(msg)
 
     if len(pop_list) > 0:
-        pop_msgs = [population_file_translator[sorted(pop_list)][0]]
+        sorted_files = sorted(pop_list)
+        msg = f"Population module failed at: {population_file_translator[sorted_files[0]]}; " \
+              f"STATUS file failed to be created: {sorted_files[0]}"
+        pop_msgs = [msg]
 
     return struct_msgs, asl_msgs, pop_msgs
 
@@ -557,3 +621,10 @@ class ColnamesDragDrop_ListWidget(QListWidget):
                 self.addItem(item.text())
         else:
             event.ignore()
+
+
+if __name__ == '__main__':
+    with open(r'C:\Users\Maurice\Documents\22q11_no_sep_M0\analysis\DataPar.json') as foo:
+        bar = json.load(foo)
+
+    calculate_anticipated_workload(parmsdict=bar, run_options="Both")

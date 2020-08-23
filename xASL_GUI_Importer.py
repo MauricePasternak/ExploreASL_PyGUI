@@ -30,9 +30,10 @@ class Importer_Worker(QRunnable):
     Worker thread for running the import for a particular group.
     """
 
-    def __init__(self, dcm_dirs, config):
+    def __init__(self, dcm_dirs, config, use_legacy_mode):
         self.dcm_dirs = dcm_dirs
         self.import_config = config
+        self.use_legacy_mode = use_legacy_mode
         super().__init__()
         self.signals = Importer_WorkerSignals()
         print(f"Initialized Worker with args {self.dcm_dirs}\n{self.import_config}")
@@ -42,7 +43,9 @@ class Importer_Worker(QRunnable):
     # This is called by the threadpool during threadpool.start(worker)
     def run(self):
         for dicom_dir in self.dcm_dirs:
-            result, last_job, import_summary = asldcm2bids_onedir(dcm_dir=dicom_dir, config=self.import_config)
+            result, last_job, import_summary = asldcm2bids_onedir(dcm_dir=dicom_dir,
+                                                                  config=self.import_config,
+                                                                  legacy_mode=self.use_legacy_mode)
             if result:
                 self.import_summaries.append(import_summary)
             else:
@@ -117,7 +120,10 @@ class xASL_GUI_Importer(QMainWindow):
         self.btn_setrootdir = QPushButton("...", self.grp_dirstruct, clicked=self.set_import_root_directory)
         self.hlay_rootdir.addWidget(self.le_rootdir)
         self.hlay_rootdir.addWidget(self.btn_setrootdir)
+        self.chk_uselegacy = QCheckBox(checked=False)
         self.formlay_rootdir.addRow("Raw Root Directory", self.hlay_rootdir)
+        self.formlay_rootdir.addRow("Use Legacy Import", self.chk_uselegacy)
+
 
         # Next specify the QLabels that can be dragged to have their text copied elsewhere
         self.hlay_placeholders = QHBoxLayout()
@@ -676,7 +682,9 @@ class xASL_GUI_Importer(QMainWindow):
         # Create workers
         dicom_dirs = list(divide(4, dicom_dirs))
         for ddirs in dicom_dirs:
-            worker = Importer_Worker(ddirs, self.import_parms)
+            worker = Importer_Worker(ddirs,  # The list of dicom directories
+                                     self.import_parms,  # The import parameters
+                                     self.chk_uselegacy.isChecked())  # Whether to use legacy mode or not
             worker.signals.signal_send_summaries.connect(self.create_import_summary_file)
             worker.signals.signal_send_errors.connect(self.create_failed_runs_summary_file)
             workers.append(worker)

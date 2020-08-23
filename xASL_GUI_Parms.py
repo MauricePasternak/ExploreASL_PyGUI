@@ -232,7 +232,7 @@ class xASL_Parms(QMainWindow):
             "M0_GMScaleFactor": float(self.spinbox_gmscale.value()),
             "readout_dim": self.cmb_readout_dim.currentText(),
             "Vendor": self.cmb_vendor.currentText(),
-            "Sequence": {"3D Spiral": "3D_Spiral", "3D GRaSE": "3D_GRaSE", "2D EPI": "2D_EPI"}
+            "Sequence": {"3D Spiral": "3D_spiral", "3D GRaSE": "3D_GRaSE", "2D EPI": "2D_EPI"}
             [self.cmb_sequencetype.currentText()],
             "Quality": {"High": 1, "Low": 0}[self.cmb_quality.currentText()],
             "DELETETEMP": int(self.chk_deltempfiles.isChecked()),
@@ -308,6 +308,7 @@ class xASL_Parms(QMainWindow):
             "M0_conventionalProcessing": self.get_m0_algo,
             "M0": self.get_m0_isseparate,
             "M0_GMScaleFactor": self.spinbox_gmscale.setValue,
+            "M0PositionInASL4D": self.get_m0_posinasl,
             "readout_dim": self.get_readout_dim,
             "Vendor": self.get_vendor,
             "Sequence": self.get_sequence,
@@ -428,6 +429,16 @@ class xASL_Parms(QMainWindow):
             return
         self.cmb_m0_isseparate.setCurrentIndex(index)
 
+    def get_m0_posinasl(self, value):
+        translator = {"[1 2]": "M0 is the first ASL control-label pair", 1: "M0 is the first ASL scan volume",
+                      2: "M0 is the second ASL scan volume"}
+        text = translator[value]
+        index = self.cmb_m0_posinasl.findText(text)
+        if index == -1:
+            self.import_error_logger.append("M0 Position in ASL")
+            return
+        self.cmb_m0_posinasl.setCurrentIndex(index)
+
     def get_readout_dim(self, value):
         index = self.cmb_readout_dim.findText(value)
         if index == -1:
@@ -443,7 +454,7 @@ class xASL_Parms(QMainWindow):
         self.cmb_vendor.setCurrentIndex(index)
 
     def get_sequence(self, value):
-        translator = {"3D_Spiral": "3D Spiral", "3D_GRaSE": "3D GRaSE", "2D_EPI": "2D EPI"}
+        translator = {"3D_spiral": "3D Spiral", "3D_GRaSE": "3D GRaSE", "2D_EPI": "2D EPI"}
         text = translator[value]
         index = self.cmb_sequencetype.findText(text)
         if index == -1:

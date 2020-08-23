@@ -105,6 +105,10 @@ class xASL_Executor(QMainWindow):
         # MISC VARIABLES
         # Create a "debt" variable that will be used to reactivate the ExploreASL button; will decrement when a process
         # begins, and increment back towards zero when said process ends. At zero, the button will be re-activated
+        self.red_palette = QPalette()
+        self.red_palette.setColor(QPalette.Highlight, Qt.red)
+        self.green_palette = QPalette()
+        self.green_palette.setColor(QPalette.Highlight, Qt.green)
         self.total_process_dbt = 0
         with open(os.path.join(self.config["ScriptsDir"],
                                "JSON_LOGIC",
@@ -243,6 +247,7 @@ class xASL_Executor(QMainWindow):
                 inner_hbox.addWidget(inner_btn)
                 inner_hbox.addWidget(inner_cmb_procopts)
                 inner_progbar = QProgressBar(orientation=Qt.Horizontal, value=0, maximum=100, minimum=0)
+                inner_progbar.setPalette(self.green_palette)
 
                 # Update format layouts through addition of the appropriate row
                 self.formlay_tasks.addRow(inner_cmb, inner_hbox)
@@ -427,6 +432,9 @@ class xASL_Executor(QMainWindow):
         postrun_diagnosis = {}
         for study_dir, expected_files in self.expected_status_files.items():
             all_completed, incomplete_status_files = calculate_missing_STATUS(study_dir, expected_files)
+            print("INCOMPLETE STATUS FILES:")
+            pprint(incomplete_status_files)
+
             if all_completed:
                 continue
             else:
@@ -513,6 +521,11 @@ class xASL_Executor(QMainWindow):
 
             # Check if all expected operations took place
             self.assess_STATUS_completion()
+
+            # Check the progressbars
+            for progbar in self.formlay_progbars_list:
+                if progbar.value() != progbar.maximum():
+                    progbar.setPalette(self.red_palette)
 
     # Convenience function; deactivates all widgets associated with running exploreASL
     def set_widgets_activation_states(self, state: bool):
@@ -668,6 +681,7 @@ class xASL_Executor(QMainWindow):
             progressbar.setMaximum(workload)
             progressbar.setMinimum(0)
             progressbar.setValue(0)
+            progressbar.setPalette(self.green_palette)
             del workload
             # Save the expected status files to the dict container; these will be iterated over after workers are done
             self.expected_status_files[path.text()] = expected_status_files
