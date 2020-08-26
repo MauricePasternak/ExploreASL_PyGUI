@@ -1,10 +1,12 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from xASL_GUI_HelperClasses import DandD_ListWidget2LineEdit, DandD_FileExplorer2LineEdit, \
+from xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit, DandD_FileExplorer2LineEdit, \
     DandD_FileExplorerFile2LineEdit
 from xASL_GUI_FacetPlot import xASL_GUI_FacetGridOrganizer
 from xASL_GUI_PlotLabels import xASL_GUI_PlotLabels
+from xASL_GUI_Graph_Subsetter import xASL_GUI_Subsetter
+from xASL_GUI_Graph_Loader import xASL_GUI_Data_Loader
 import os
 import sys
 import json
@@ -22,8 +24,11 @@ pd.set_option("display.max_columns", 10)
 pd.set_option("display.width", 400)
 
 
-# noinspection PyAttributeOutsideInit,PyCallingNonCallable
+# noinspection PyCallingNonCallable
 class xASL_PostProc(QMainWindow):
+    """
+    Central Graphing Widget which will act as a "central hub" for other widgets to be placed in
+    """
     def __init__(self, parent_win=None):
         # Parent window is fed into the constructor to allow for communication with parent window devices
         super().__init__(parent=parent_win)
@@ -41,6 +46,7 @@ class xASL_PostProc(QMainWindow):
 
         # Central Classes
         self.subsetter = xASL_GUI_Subsetter(self)
+        self.loader = xASL_GUI_Data_Loader(self)
         self.plotlabels = xASL_GUI_PlotLabels(self)
 
         # Initialize blank givens
@@ -77,9 +83,9 @@ class xASL_PostProc(QMainWindow):
         self.cmb_pvc_selection.addItems(["Without Partial Volume Correction", "With Partial Volume Correction"])
         self.cmb_stats_selection = QComboBox(self.grp_directories)
         self.cmb_stats_selection.addItems(["Mean", "Median", "Coefficient of Variation"])
-        self.btn_subset_data = QPushButton("Subset Data", self.grp_directories, clicked=self.show_subsetter)
+        self.btn_subset_data = QPushButton("Subset Data", self.grp_directories, clicked=self.subsetter.show)
         self.btn_subset_data.setEnabled(False)
-        self.btn_load_in_data = QPushButton("Load Data", self.grp_directories, clicked=self.load_exploreasl_data)
+        self.btn_load_in_data = QPushButton("Load Data", self.grp_directories, clicked=self.loader.load_exploreasl_data)
         self.formlay_directories.addRow("Analysis Directory", self.le_analysis_dir)
         self.formlay_directories.addRow("Ancillary Study Dataframe", self.le_demographics_file)
         self.formlay_directories.addRow("Which Atlas to Utilize", self.cmb_atlas_selection)
@@ -165,19 +171,11 @@ class xASL_PostProc(QMainWindow):
 
         # Set up the text options and connect the plotlabels signals to the appropriate function
         self.btn_showplotlabels = QPushButton("Show Plot Label Settings", self.cont_pltsettings_univlvlparms,
-                                              clicked=self.show_plotlabels)
+                                              clicked=self.plotlabels.show)
         self.formlay_commonparms.addRow(self.btn_showplotlabels)
         self.plotlabels.signal_xaxislabel_changed.connect(self.plotupdate_xlabel)
         self.plotlabels.signal_yaxislabel_changed.connect(self.plotupdate_ylabel)
         self.plotlabels.signal_title_changed.connect(self.plotupdate_title)
-
-
-    def show_plotlabels(self):
-        self.plotlabels.show()
-
-    def show_subsetter(self):
-        self.subsetter.show()
-        print("show_subsetter was executed")
 
     # When called, this updates the general plot style occuring for figures
     def plotupdate_plotstyle(self):
@@ -304,7 +302,7 @@ class xASL_PostProc(QMainWindow):
             self.mainfig = Figure()
         # In "Facet Grid Default" a simple placeholder canvas is set
         elif action == 'Facet Grid Default':
-            self.grid = sns.FacetGrid(data=self.long_data)
+            self.grid = sns.FacetGrid(data=self.loader.long_data)
             self.mainfig = self.grid.fig
         # In "Facet Grid Figure Call", a change in the figure parms is forcing an update
         elif action == "Facet Grid Figure Call":
@@ -323,10 +321,11 @@ class xASL_PostProc(QMainWindow):
             # Create the FacetGrid; take note that if the grid type is a regression plot, then the palette argument
             # is fed into the grid call instead of the axes contructor
             if not self.cmb_figuretypeselection.currentText() == "Regression Plot":
-                self.grid = sns.FacetGrid(data=self.long_data, **constructor)
+                self.grid = sns.FacetGrid(data=self.loader.long_data, **constructor)
                 self.mainfig = self.grid.fig
             else:
-                self.grid = sns.FacetGrid(data=self.long_data, palette=self.fig_manager.cmb_palette.currentText(),
+                self.grid = sns.FacetGrid(data=self.loader.long_data,
+                                          palette=self.fig_manager.cmb_palette.currentText(),
                                           **constructor)
                 self.mainfig = self.grid.fig
 
@@ -334,8 +333,6 @@ class xASL_PostProc(QMainWindow):
         self.nav = NavigationToolbar(self.canvas, self.canvas)
         self.mainlay.addWidget(self.nav)
         self.mainlay.addWidget(self.canvas)
-        # self.canvas.draw()  # May not be necessary, since canvas_generate is usually followed up with
-        # plotupdate_padding, which has the canvas draw at that time
 
     # Called by updates from the Figure Parameters
     @Slot()
@@ -392,16 +389,15 @@ class xASL_PostProc(QMainWindow):
         print("AXES CONSTRUCTOR:")
         pprint(axes_constructor)
         if hue == '':
-            self.grid = self.grid.map(func, x, y, data=self.long_data, **axes_constructor)
+            self.grid = self.grid.map(func, x, y, data=self.loader.long_data, **axes_constructor)
         else:
-            self.grid = self.grid.map(func, x, y, hue, data=self.long_data, **axes_constructor)
+            self.grid = self.grid.map(func, x, y, hue, data=self.loader.long_data, **axes_constructor)
 
         # Redraw the legend
         self.plotupdate_facetgrid_legend()
 
     # Called by updates to the legend parameters of an axes within a FacetGrid
     def plotupdate_facetgrid_legend(self):
-        print(f"The checkbox for showing the legend is checked: {self.fig_manager.chk_showlegend.isChecked()}")
         if all([len(self.fig_manager.legend_kwargs) > 0,  # kwargs for the legend function must exist
                 self.fig_manager.chk_showlegend.isChecked(),  # the option to show the legend must be there
                 self.fig_manager.axes_arg_hue() != ''  # the hue argument cannot be empty
@@ -412,217 +408,3 @@ class xASL_PostProc(QMainWindow):
 
         # This contains the canvas.draw() call within it
         self.plotupdate_padding()
-
-    # Loads in data as a pandas dataframe
-    def load_exploreasl_data(self):
-        # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        # First Section - Load in the ExploreASL Stats directory data
-        if os.path.exists(os.path.join(self.le_analysis_dir.text(), "Population", "Stats")):
-            stats_dir = os.path.join(self.le_analysis_dir.text(), "Population", "Stats")
-            atlas = {"MNI": "MNI_structural", "Hammers": "Hammers"}[self.cmb_atlas_selection.currentText()]
-            pvc = {"With Partial Volume Correction": "PVC2",
-                   "Without Partial Volume Correction": "PVC0"}[self.cmb_pvc_selection.currentText()]
-            stat = {"Mean": "mean", "Median": "median",
-                    "Coefficient of Variation": "CoV"}[self.cmb_stats_selection.currentText()]
-            # Get the relevant files
-            gm_file = glob(os.path.join(stats_dir, f'{stat}_*_TotalGM*{pvc}.tsv'))
-            wm_file = glob(os.path.join(stats_dir, f'{stat}_*_DeepWM*{pvc}.tsv'))
-            atlas_file = glob(os.path.join(stats_dir, f'{stat}_*_{atlas}*{pvc}.tsv'))
-            # Exit if not all files can be found
-            for file in [gm_file, wm_file, atlas_file]:
-                if len(file) == 0: return
-            # Clearing of appropriate widgets to accomodate new data
-            self.lst_varview.clear()
-            # Extract each as a dataframe and merge them
-            dfs = []
-            for file in [gm_file, wm_file, atlas_file]:
-                df = pd.read_csv(file[0], sep='\t')
-                df.drop(0, axis=0, inplace=True)  # First row is unnecessary
-                df = df.loc[:, [col for col in df.columns if "Unnamed" not in col]]
-                dfs.append(df)
-            df: pd.DataFrame = pd.concat(dfs, axis=1)
-            df = df.T.drop_duplicates().T
-
-            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Second Section - Fix the ExploreASL native data dtypes
-            self.dtype_guide = {"SUBJECT": "object", "LongitudinalTimePoint": "category", "SubjectNList": "category",
-                                "Site": "category", "AcquisitionTime": "float64", "GM_vol": "float64",
-                                "WM_vol": "float64", "CSF_vol": "float64", "GM_ICVRatio": "float64",
-                                "GMWM_ICVRatio": "float64"}
-            for col in df.columns:
-                if col in self.dtype_guide.keys():
-                    df[col] = df[col].astype(self.dtype_guide[col])
-                else:
-                    df[col] = df[col].astype("float64")
-            self.loaded_wide_data = df
-            self.backup_data = df.copy()
-
-            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Third Section - If there is any ancillary data specified, load it in
-            if all([os.path.exists(self.le_demographics_file.text()),
-                    os.path.isfile(self.le_demographics_file.text()),
-                    os.path.splitext(self.le_demographics_file.text())[1] in [".tsv", ".csv", ".xlsx"]
-                    ]):
-                result = self.load_ancillary_data(df)
-                if result is not None:
-                    self.loaded_wide_data = result
-                # If the merging failed, default to just using the ExploreASL datasets. In a future update, add some
-                # sort of user feedback that this went wrong
-                else:
-                    self.loaded_wide_data = self.backup_data
-
-            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Fourth Section - Convert the wide format data into a long format
-            vars_to_keep_constant = [col for col in self.loaded_wide_data.columns if not any([col.endswith("_B"),
-                                                                                              col.endswith("_L"),
-                                                                                              col.endswith("_R")])]
-            vars_to_melt = [col for col in self.loaded_wide_data.columns if col not in vars_to_keep_constant]
-            self.loaded_long_data = self.loaded_wide_data.melt(id_vars=vars_to_keep_constant,
-                                                               value_vars=vars_to_melt,
-                                                               var_name="Atlas Location",
-                                                               value_name="CBF")
-            self.loaded_long_data["CBF"] = self.loaded_long_data["CBF"].astype("float64")
-            atlas_location = self.loaded_long_data.pop("Atlas Location")
-            atlas_loc_df: pd.DataFrame = atlas_location.str.extract("(.*)_(B|L|R)", expand=True)
-            atlas_loc_df.rename(columns={0: "Anatomical Area", 1: "Side of the Brain"}, inplace=True)
-            atlas_loc_df["Side of the Brain"] = atlas_loc_df["Side of the Brain"].apply(lambda x: {"B": "Bilateral",
-                                                                                                   "R": "Right",
-                                                                                                   "L": "Left"}[x])
-            atlas_loc_df = atlas_loc_df.astype("category")
-            self.loaded_long_data: pd.DataFrame = pd.concat([self.loaded_long_data, atlas_loc_df], axis=1)
-            self.loaded_long_data.infer_objects()
-            self.current_dtypes = self.loaded_long_data.dtypes
-            self.current_dtypes = {col: str(str_name) for col, str_name in
-                                   zip(self.current_dtypes.index, self.current_dtypes.values)}
-            self.lst_varview.addItems(self.loaded_long_data.columns.tolist())
-
-            # The user may have loaded in new data and the subsetter's fields should reflect that
-            self.subsetter.update_subsetable_fields()
-
-            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Fifth Section - (Upcoming) Subset the data accordingly if the criteria is set
-
-            self.loaded_long_data = self.subsetter.subset_data(self.loaded_long_data)
-
-            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Sixth Section - Housekeeping and Finishing touches
-            # Alter this when Section 5 is completed; long_data is the "good copy" of the data that will be plotted
-            self.long_data = self.loaded_long_data
-            self.cmb_figuretypeselection.setEnabled(True)  # Data is loaded; figure selection settings can be enabled
-            self.btn_subset_data.setEnabled(True)  # Data is loaded; subsetting is allowed
-
-            # In case any of this was done again (data was already loaded once before), we must account for what may
-            # have already been plotted or set; everything must be cleared. This should be as easy as setting the
-            # figureselection to the first index, as plots & settings can only exist if its current index is non-zero,
-            # and setting it to zero has the benefit of clearing everything else already
-            if self.cmb_figuretypeselection.currentIndex() != 0:
-                self.cmb_figuretypeselection.setCurrentIndex(0)
-
-    def load_ancillary_data(self, exasl_df):
-        # Load in the other dataframe, with flexibility for filetype
-        file = self.le_demographics_file.text()
-        filetype = os.path.splitext(file)[1]
-        if filetype == '.tsv':
-            demo_df = pd.read_csv(file, sep='\t')
-        elif filetype == '.csv':
-            demo_df = pd.read_csv(file)
-        elif filetype == '.xlsx':
-            demo_df = pd.read_excel(file)
-        else:
-            print("An unsupported filetype was given")
-            QMessageBox().warning(self,
-                                  "Unsupported File Type",
-                                  "This program only accepts the following filetypes:\n"
-                                  "Comma-separated values (*.csv)\n"
-                                  "Tab-separated values (*.tsv)\n"
-                                  "Microsoft Excel spreadsheets (*.xlsx)",
-                                  QMessageBox.Ok)
-            return None
-        # Abort if the pertinent "SUBJECT" column is not in the read columns. In a future update, add support for user
-        # specification of which column to interpret as the SUBJECT column
-        if "SUBJECT" not in demo_df.columns:
-            return None
-        merged = pd.merge(left=demo_df, right=exasl_df, how='inner', on='SUBJECT', sort=True)
-        if len(merged) == 0:
-            return None
-        sub_in_merge, sub_in_demo, sub_in_exasl = set(merged["SUBJECT"].tolist()), set(
-            demo_df["SUBJECT"].tolist()), set(exasl_df["SUBJECT"].tolist())
-        diff_in_demo = sub_in_demo.difference(sub_in_merge)
-        diff_in_exasl = sub_in_exasl.difference(sub_in_merge)
-        if any([len(diff_in_demo) > 0, len(diff_in_exasl) > 0]):
-            QMessageBox().information(self,
-                                      "Merge successful, but differences were found:\n",
-                                      f"You provided a file with {len(sub_in_demo)} subjects.\n"
-                                      f"ExploreASL's output had {len(sub_in_exasl)} subjects.\n"
-                                      f"During the merge {len(diff_in_demo)} subjects present in the file "
-                                      f"had to be excluded.\n"
-                                      f"During the merge {len(diff_in_exasl)} subjects present in ExploreASL's output "
-                                      f"had to be excluded",
-                                      QMessageBox.Ok)
-        return merged
-
-
-# noinspection PyAttributeOutsideInit
-class xASL_GUI_Subsetter(QWidget):
-    def __init__(self, parent=None):
-        super(xASL_GUI_Subsetter, self).__init__(parent)
-        self.setWindowFlag(Qt.Window)
-        self.setWindowTitle("Subset the data")
-        self.font_format = QFont()
-        self.font_format.setPointSize(16)
-
-        # This will be used to keep track of columns that have already been added to the subset form layout
-        self.current_rows = {}
-
-        # Main Setup
-        self.Setup_UI_MainWidgets()
-
-    def Setup_UI_MainWidgets(self):
-        self.mainlay = QVBoxLayout(self)
-        self.formlay_headers = QFormLayout()
-        self.formlay_subsets = QFormLayout()
-        self.lab_inform_reload = QLabel("Changes will not take place until you re-load the data")
-        self.lab_inform_reload.setFont(self.font_format)
-        self.formlay_headers.addRow(QLabel("Column Names"), QLabel("\t\tSubset on"))
-
-        self.mainlay.addLayout(self.formlay_headers)
-        self.mainlay.addLayout(self.formlay_subsets)
-        self.mainlay.addWidget(self.lab_inform_reload)
-
-    # Updates the current fields that are permitted to be subset.
-    def update_subsetable_fields(self):
-        df = self.parent().loaded_long_data
-        colnames = df.columns
-        for name in colnames:
-            # print(f"Name: {name} \t dtype: {str(df[name].dtype)}")
-            # Skip any column based on criteria
-            if any([name in self.current_rows.keys(),  # skip if already encountered
-                    str(df[name].dtype) not in ["object", "category"],  # skip if not categorical
-                    name in ["SUBJECT", "SubjectNList"]  # skip some unnecessary defaults with too many categories
-                    ]):
-                continue
-
-            # Otherwise, create a combobox, add it to the form layout, and add the method to the current text as a
-            # value, as this will be used to
-            cmb = QComboBox()
-            cmb.addItems(["Select a subset"] + df[name].unique().tolist())
-            self.formlay_subsets.addRow(name, cmb)
-            self.current_rows[name] = cmb.currentText
-
-    # Convenience function for purging everything in the event that either the analysis directory changes or the
-    # supplementary data file provided is changed
-    def clear_contents(self):
-        # Clear the dict
-        self.current_rows.clear()
-        # Clear the rows of the format layout
-        for ii in range(self.formlay_subsets.rowCount()):
-            self.formlay_subsets.removeRow(0)
-
-    # The active function that will subset the data; takes in a dataframe and subsets it
-    def subset_data(self, long_df):
-        for key, call in self.current_rows.items():
-            if call() != "Select a subset":
-                print(f"Subsetting {key} on {call()}")
-                long_df = long_df.loc[long_df[key] == call(), :]
-
-        return long_df

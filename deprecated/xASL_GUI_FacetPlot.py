@@ -8,7 +8,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import seaborn as sns
-from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_ListWidget2LineEdit
+from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_Graphing_ListWidget2LineEdit
 from xASL_GUI_HelperFuncs import connect_widget_to_signal
 import json
 import sys
@@ -30,7 +30,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
 
     def __init__(self, parent):
         super(xASL_GUI_FacetGridOrganizer, self).__init__(parent=parent)
-        self.parent = parent  # Parent at the time of initialization, which will be the PostProc Widget
+        self.parent_cw = parent  # Parent at the time of initialization, which will be the PostProc Widget
         self.manager_type = "Facet Grid"
 
         # Prepare arguments for legend widget
@@ -99,9 +99,9 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
 
     # Sets up the widgets that will be contained within the "Figure Parameters" Tab
     def UI_Setup_FigureParms(self):
-        self.le_row = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
+        self.le_row = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, ["object", "category"])
         self.le_row.setPlaceholderText("Drag & Drop variable to define facet rows")
-        self.le_col = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
+        self.le_col = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, ["object", "category"])
         self.le_col.setPlaceholderText("Drag & Drop variable to define facet columns")
         self.chk_sharex = QCheckBox(checked=True)
         self.chk_sharey = QCheckBox(checked=True)
@@ -141,29 +141,29 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
     # Sets up the widgets that will be contained within the "Axes Parameters" Tab
     def UI_Setup_AxesParms(self, plot_type):
         # Start off by removing the previous axes
-        self.parent.clear_axesparms()
+        self.parent_cw.clear_axesparms()
         print(f"Selected {plot_type} as the Axes Type")
 
         # These are always a given
         if self.cmb_axestype.currentText() in ["Point Plot", "Bar Plot", "Strip Plot", "Swarm Plot",
                                                "Box Plot", "Violin Plot", "Boxen Plot"]:
-            self.le_x = DandD_ListWidget2LineEdit(self.parent, self.all_dtypes)
+            self.le_x = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, self.all_dtypes)
             self.le_x.setPlaceholderText("Drag & Drop the X-axis Variable")
-            self.le_y = DandD_ListWidget2LineEdit(self.parent, self.all_dtypes)
+            self.le_y = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, self.all_dtypes)
             self.le_y.setPlaceholderText("Drag & Drop the Y-axis Variable")
 
         elif self.cmb_axestype.currentText() in ["Scatter Plot", "Line Plot",
                                                  "Regression Plot", "Residuals Plot"]:
-            self.le_x = DandD_ListWidget2LineEdit(self.parent, self.numeric_dtypes)
+            self.le_x = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, self.numeric_dtypes)
             self.le_x.setPlaceholderText("Drag & Drop the X-axis Variable")
-            self.le_y = DandD_ListWidget2LineEdit(self.parent, self.numeric_dtypes)
+            self.le_y = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, self.numeric_dtypes)
             self.le_y.setPlaceholderText("Drag & Drop the Y-axis Variable")
 
         else:
             print("THIS SHOULD NEVER PRINT!!!!!")
             return
 
-        self.le_hue = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
+        self.le_hue = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, ["object", "category"])
         self.le_hue.setPlaceholderText("Drag & Drop the Hue Grouping Variable")
         self.axes_arg_x = self.le_x.text
         self.axes_arg_y = self.le_y.text
@@ -347,9 +347,9 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
 
         elif plot_type == "Scatter Plot":
             self.plotting_func = sns.scatterplot
-            self.size_grouper = DandD_ListWidget2LineEdit(self.parent, self.all_dtypes)
+            self.size_grouper = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, self.all_dtypes)
             self.size_grouper.setPlaceholderText("(Optional) Drag & Drop the Markersize-Grouping Variable")
-            self.style_grouper = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
+            self.style_grouper = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, ["object", "category"])
             self.style_grouper.setPlaceholderText("(Optional) Drag & Drop the Markerstyle-Grouping Variable")
             self.cmb_palette = self.UI_Setup_PaletteCombobox()
             self.spinbox_markersize = QDoubleSpinBox(maximum=100, minimum=0, value=40, singleStep=1)
@@ -373,9 +373,9 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
 
         elif plot_type == "Line Plot":
             self.plotting_func = sns.lineplot
-            self.size_grouper = DandD_ListWidget2LineEdit(self.parent, self.all_dtypes)
+            self.size_grouper = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, self.all_dtypes)
             self.size_grouper.setPlaceholderText("(Optional) Drag & Drop the Markersize-Grouping Variable")
-            self.style_grouper = DandD_ListWidget2LineEdit(self.parent, ["object", "category"])
+            self.style_grouper = DandD_Graphing_ListWidget2LineEdit(self.parent_cw, ["object", "category"])
             self.style_grouper.setPlaceholderText("(Optional) Drag & Drop the Markerstyle-Grouping Variable")
             self.sort = QCheckBox(checked=True)
             self.dashes = QCheckBox(checked=False)
@@ -410,10 +410,10 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
         self.UI_Setup_Btn2LegendParms()
 
         # Regardless of what type of plot was selected, the current axes should be cleared
-        axes = self.parent.grid.axes
+        axes = self.parent_cw.grid.axes
         for ax in axes.flat:
             ax.clear()
-        self.parent.canvas.draw()
+        self.parent_cw.canvas.draw()
 
     # Convenience function to generate the combobox that will respond to palette changes
     def UI_Setup_PaletteCombobox(self):
@@ -422,7 +422,7 @@ class xASL_GUI_FacetGridOrganizer(QWidget):
         cmb_palette.setMaxVisibleItems(10)
         cmb_palette.setEditable(True)
         cmb_palette.setCurrentIndex(self.default_palette_idx)
-        if len(self.parent.long_data) > 2000:
+        if len(self.parent_cw.loader.long_data) > 2000:
             cmb_palette.setAutoCompletion(False)
         return cmb_palette
 
@@ -468,7 +468,7 @@ class xASL_GUI_FacetLegend(QWidget):
                                         "Legend frame has rounded corners?", "Legend frame has shadow?",
                                         "Marker size", "Marker first before label?"]):
             self.formlay_legend.addRow(description, widget)
-            self.parent.connect_widget_to_signal(widget, self.sendSignal_legendparms_updateplot)
+            connect_widget_to_signal(widget, self.sendSignal_legendparms_updateplot)
 
     def sendSignal_legendparms_updateplot(self):
         self.prepare_legend_kwargs()

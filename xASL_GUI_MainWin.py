@@ -3,7 +3,7 @@ from PySide2.QtGui import *
 from PySide2.QtCore import *
 from xASL_GUI_Parms import xASL_Parms
 from xASL_GUI_Executor import xASL_Executor
-from xASL_GUI_PostProc import xASL_PostProc
+from xASL_GUI_Plotting import xASL_Plotting
 from xASL_GUI_Importer import xASL_GUI_Importer
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from collections import deque
@@ -11,7 +11,6 @@ import os
 import sys
 import json
 import platform
-import subprocess
 
 # Explore ASL Main Window
 # by Maurice Pasternak @ 2020
@@ -46,7 +45,7 @@ class xASL_MainWin(QMainWindow):
             self.config = config
         self.load_tooltips()
         # Window Size and initial visual setup
-        self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.setMinimumSize(800, 480)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
@@ -69,7 +68,7 @@ class xASL_MainWin(QMainWindow):
         # Pre-initialize the main players
         self.parmsmaker = xASL_Parms(self)
         self.executor = xASL_Executor(self)
-        self.postproc = xASL_PostProc(self)
+        self.plotter = xASL_Plotting(self)
         self.importer = xASL_GUI_Importer(self)
 
     # This dockable navigator will contain the most essential parameters and will be repeatedly accessed by other
@@ -84,38 +83,40 @@ class xASL_MainWin(QMainWindow):
         # The main container and the main layout of the dock
         self.cont_navigator = QWidget(self.dock_navigator)
         self.vlay_navigator = QVBoxLayout(self.cont_navigator)
-        self.cont_navigator.setLayout(self.vlay_navigator)
         # Finish up initial dock setup
         self.dock_navigator.setWidget(self.cont_navigator)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.dock_navigator)
+
         # Essential Widgets
-        # First, form layout for most important fields such as the ExploreASL directory
-        self.formlay_navigator = QFormLayout(self.cont_navigator)
-        self.hlay_exploreasl_dir = QHBoxLayout(self.cont_navigator)
-        self.le_exploreasl_dir = DandD_FileExplorer2LineEdit(self.cont_navigator)
+        # First, the lineedit for the ExploreASL directory
+        self.le_exploreasl_dir = DandD_FileExplorer2LineEdit()
         self.le_exploreasl_dir.setText(self.config["ExploreASLRoot"])
         self.le_exploreasl_dir.textChanged.connect(self.set_exploreasl_dir)
         self.le_exploreasl_dir.setReadOnly(True)
-        self.btn_exploreasl_dir = QPushButton("...", self.cont_navigator, clicked=self.set_exploreasl_dir_frombtn)
+        self.btn_exploreasl_dir = QPushButton("...", clicked=self.set_exploreasl_dir_frombtn)
+        self.hlay_exploreasl_dir = QHBoxLayout()
         self.hlay_exploreasl_dir.addWidget(self.le_exploreasl_dir)
         self.hlay_exploreasl_dir.addWidget(self.btn_exploreasl_dir)
 
-        self.hlay_currentanalysis_dir = QHBoxLayout(self.cont_navigator)
+        # Second, the lineedit for the study analysis directory
         self.le_currentanalysis_dir = DandD_FileExplorer2LineEdit(self.cont_navigator)
         self.le_currentanalysis_dir.setText(self.config["DefaultRootDir"])
         self.le_currentanalysis_dir.textChanged.connect(self.set_analysis_dir)
-        self.le_exploreasl_dir.setReadOnly(True)
         self.btn_currentanalysis_dir = QPushButton("...", self.cont_navigator, clicked=self.set_analysis_dir_frombtn)
+        self.hlay_currentanalysis_dir = QHBoxLayout()
         self.hlay_currentanalysis_dir.addWidget(self.le_currentanalysis_dir)
         self.hlay_currentanalysis_dir.addWidget(self.btn_currentanalysis_dir)
 
+        # Third, the checkbox of whether to make the analysis directory list as the default display in other modules
         self.chk_makedefault_analysisdir = QCheckBox(self.cont_navigator)
         self.chk_makedefault_analysisdir.setChecked(True)
-
+        # These aforementioned widgets will be packaged into a form layout
+        self.formlay_navigator = QFormLayout()
         self.formlay_navigator.addRow("Explore ASL Directory", self.hlay_exploreasl_dir)
         self.formlay_navigator.addRow("Current Analysis Directory", self.hlay_currentanalysis_dir)
         self.formlay_navigator.addRow("Set selected directory as default?", self.chk_makedefault_analysisdir)
-        # Next, the main player will be a treeview with a FileSystemModel
+
+        # Finally, the main player will be a treeview with a FileSystemModel
         self.treev_navigator = QTreeView(self.cont_navigator)
         self.filemodel_navigator = QFileSystemModel(self.cont_navigator)
         self.filemodel_navigator.setRootPath(self.config["DefaultRootDir"])
@@ -126,6 +127,7 @@ class xASL_MainWin(QMainWindow):
         self.treev_navigator.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.treev_navigator.setSortingEnabled(True)
         self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
+
         # Add all essential widgets to the dock's main layout
         self.vlay_navigator.addLayout(self.formlay_navigator)
         self.vlay_navigator.addWidget(self.treev_navigator)
@@ -148,10 +150,12 @@ class xASL_MainWin(QMainWindow):
 
     # Setup the main selection
     def UI_Setup_MainSelections(self):
-        self.vlay_left = QVBoxLayout(self)
-        self.vlay_right = QVBoxLayout(self)
+        self.vlay_left = QVBoxLayout()
+        self.vlay_right = QVBoxLayout()
         for layout in [self.vlay_left, self.vlay_right]:
             self.mainlay.addLayout(layout)
+
+        # Set up the main buttons
         expanding_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         font_policy = QFont()
         font_policy.setPointSize(16)
@@ -174,6 +178,7 @@ class xASL_MainWin(QMainWindow):
             btn.setText(text)
             btn.setFont(font_policy)
 
+        # Add the buttons to the layouts
         self.vlay_left.addWidget(self.btn_open_importer)
         self.vlay_left.addWidget(self.btn_open_parmsmaker)
         self.vlay_right.addWidget(self.btn_open_runexploreasl)
@@ -199,7 +204,8 @@ class xASL_MainWin(QMainWindow):
 
     # Launch the Post-Analysis window
     def show_PostAnalysis(self):
-        self.postproc.show()
+        # self.postproc.show()
+        self.plotter.show()
 
     # Launch the "About Explore ASL" window
     def show_AboutExploreASL(self):
@@ -241,9 +247,11 @@ class xASL_MainWin(QMainWindow):
     # The actual function that sets the analysis directory
     def set_analysis_dir(self, directory):
         # Abort if the provided directory is not a filepath
-        if not os.path.exists(directory): return
+        if not os.path.exists(directory):
+            return
         # Abort if the provided directory is actually not a directory
-        if not os.path.isdir(directory): return
+        if not os.path.isdir(directory):
+            return
         # Alter filepath display in accordance with operating system
         if '/' in directory and platform.system() == "Windows":
             directory = directory.replace("/", "\\")
@@ -268,9 +276,11 @@ class xASL_MainWin(QMainWindow):
 
     def set_exploreasl_dir(self, directory):
         # Abort if the provided directory is not a filepath
-        if not os.path.exists(directory): return
+        if not os.path.exists(directory):
+            return
         # Abort if the provided directory is actually not a directory
-        if not os.path.isdir(directory): return
+        if not os.path.isdir(directory):
+            return
         # Alter filepath display in accordance with operating system
         if '/' in directory and platform.system() == "Windows":
             directory = directory.replace("/", "\\")

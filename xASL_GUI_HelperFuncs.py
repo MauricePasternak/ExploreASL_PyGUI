@@ -3,7 +3,7 @@ import json
 from PySide2.QtGui import QIcon
 from PySide2.QtCore import QSize
 from PySide2.QtWidgets import QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QCheckBox
-from xASL_GUI_HelperClasses import DandD_ListWidget2LineEdit
+from xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
 
 
 def set_widget_icon(widget, config, icon_name, size=None):
@@ -30,7 +30,7 @@ def connect_widget_to_signal(widget, target_signal):
         widget.currentTextChanged.connect(target_signal)
     elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
         widget.valueChanged.connect(target_signal)
-    elif isinstance(widget, (DandD_ListWidget2LineEdit, QLineEdit)):
+    elif isinstance(widget, (DandD_Graphing_ListWidget2LineEdit, QLineEdit)):
         widget.textChanged.connect(target_signal)
     elif isinstance(widget, QCheckBox):
         widget.clicked.connect(target_signal)
@@ -52,7 +52,7 @@ def disconnect_widget_and_reset(widget, target_signal, default):
     elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
         widget.valueChanged.disconnect(target_signal)
         widget.setValue(default)
-    elif isinstance(widget, (DandD_ListWidget2LineEdit, QLineEdit)):
+    elif isinstance(widget, (DandD_Graphing_ListWidget2LineEdit, QLineEdit)):
         widget.textChanged.disconnect(target_signal)
         widget.setText(default)
     elif isinstance(widget, QCheckBox):

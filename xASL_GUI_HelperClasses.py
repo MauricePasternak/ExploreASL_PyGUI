@@ -1,10 +1,10 @@
 from PySide2.QtWidgets import QLineEdit, QAbstractItemView, QListWidget
-from PySide2.QtCore import Qt, Signal
+from PySide2.QtCore import Qt, Signal, QModelIndex
 from platform import platform
 import os
 
 
-class DandD_ListWidget2LineEdit(QLineEdit):
+class DandD_Graphing_ListWidget2LineEdit(QLineEdit):
     """
     Modified QLineEdit to support accepting text drops from a QListWidget or QAbstractItemModel derivatives
     """
@@ -40,7 +40,8 @@ class DandD_ListWidget2LineEdit(QLineEdit):
             colname = ix.data()
 
             # Get the current data types of the loaded data
-            data_dtypes = {col: str(name) for col, name in self.PostProc_widget.long_data.dtypes.to_dict().items()}
+            data_dtypes = {col: str(name) for col, name in
+                           self.PostProc_widget.loader.long_data.dtypes.to_dict().items()}
             # print(f"The dtypes of the current dataframe are: {data_dtypes}")
             # print(f"For column: {colname}, the detected datatype was: {data_dtypes[colname]}")
             # print(f"The permitted dtypes for this widget are: {self.permitted_dtypes}")

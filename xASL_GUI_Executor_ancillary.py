@@ -90,20 +90,20 @@ def calculate_anticipated_workload(parmsdict, run_options):
         for subject in study_subjects:
 
             # Ascertain if there are any FLAIR images and compare their presence/absence to the FLAIR skip flag
-            path_to_FLAIR = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
+            path_to_flair = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
             try:
-                has_flair_img = os.path.exists(path_to_FLAIR[0])
+                has_flair_img = os.path.exists(path_to_flair[0])
             except IndexError:
                 has_flair_img = False
 
-            path_to_M0 = glob(os.path.join(analysis_directory, subject, "*", "*M0.nii"))
+            path_to_m0 = glob(os.path.join(analysis_directory, subject, "*", "*M0.nii"))
             try:
-                has_m0_img = os.path.exists(path_to_M0[0])
+                has_m0_img = os.path.exists(path_to_m0[0])
             except IndexError:
                 has_m0_img = False
-            path_to_ASL = glob(os.path.join(analysis_directory, subject, "*", "*ASL4D.nii"))
+            path_to_asl = glob(os.path.join(analysis_directory, subject, "*", "*ASL4D.nii"))
             try:
-                has_asl_img = os.path.exists(path_to_ASL[0])
+                has_asl_img = os.path.exists(path_to_asl[0])
             except IndexError:
                 has_asl_img = False
 
@@ -149,19 +149,19 @@ def calculate_anticipated_workload(parmsdict, run_options):
         status_files = []
         for subject in study_subjects:
             for session in session_names:
-                path_to_M0 = glob(os.path.join(analysis_directory, subject, session, "*M0.nii"))
+                path_to_m0 = glob(os.path.join(analysis_directory, subject, session, "*M0.nii"))
                 try:
-                    has_m0_img = os.path.exists(path_to_M0[0])
+                    has_m0_img = os.path.exists(path_to_m0[0])
                 except IndexError:
                     has_m0_img = False
-                path_to_ASL = glob(os.path.join(analysis_directory, subject, session, "*ASL4D.nii"))
+                path_to_asl = glob(os.path.join(analysis_directory, subject, session, "*ASL4D.nii"))
                 try:
-                    has_asl_img = os.path.exists(path_to_ASL[0])
+                    has_asl_img = os.path.exists(path_to_asl[0])
                 except IndexError:
                     has_asl_img = False
-                path_to_FLAIR = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
+                path_to_flair = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
                 try:
-                    has_flair_img = os.path.exists(path_to_FLAIR[0])
+                    has_flair_img = os.path.exists(path_to_flair[0])
                 except IndexError:
                     has_flair_img = False
 
@@ -447,10 +447,10 @@ class xASL_GUI_RerunPrep(QWidget):
 
         for status in selected_status:
             filepath = [status.text(0)]
-            parent = status.parent()
+            parent = status.parent_cw()
             while parent.text(0) != "lock":
                 filepath.insert(0, parent.text(0))
-                parent = parent.parent()
+                parent = parent.parent_cw()
             filepath.insert(0, "lock")
             filepaths.append(os.path.join(self.target_dir, *filepath))
 
@@ -481,6 +481,7 @@ class xASL_GUI_TSValter(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.parent = parent
+        self.config = parent.config
         self.target_dir = self.parent.le_modjob.text()
         self.setWindowFlag(Qt.Window)
         self.setWindowTitle("Alter participants.tsv contents")
@@ -511,10 +512,16 @@ class xASL_GUI_TSValter(QWidget):
         self.hlay_dandcols.addLayout(self.vlay_covcols)
         self.hlay_dandcols.addLayout(self.vlay_tsvcols)
         # Third section, just the main button
+
+        self.tbtn_garbage = QToolButton(self)
+        self.tbtn_garbage.setIcon(QIcon(os.path.join(self.config["ScriptsDir"], "media", "garbage_icon.svg")))
+        self.tbtn_garbage.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.tbtn_garbage.setMinimumHeight(50)
         self.btn_altertsv = QPushButton("Commit changes", self, clicked=self.commit_changes)
 
         self.mainlay.addLayout(self.formlay_covfile)
         self.mainlay.addLayout(self.hlay_dandcols)
+        self.mainlay.addWidget(self.tbtn_garbage)
         self.mainlay.addWidget(self.btn_altertsv)
 
         # Once the widget UI is set up, load in the tsv data
@@ -621,10 +628,3 @@ class ColnamesDragDrop_ListWidget(QListWidget):
                 self.addItem(item.text())
         else:
             event.ignore()
-
-
-if __name__ == '__main__':
-    with open(r'C:\Users\Maurice\Documents\22q11_no_sep_M0\analysis\DataPar.json') as foo:
-        bar = json.load(foo)
-
-    calculate_anticipated_workload(parmsdict=bar, run_options="Both")

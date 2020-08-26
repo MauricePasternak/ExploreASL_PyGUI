@@ -111,11 +111,10 @@ def get_dicom_value(data: pydicom.Dataset, tags: list, default=None):
     return default
 
 
-def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
+def get_additional_dicom_parms(dcm_dir: str):
     """
     Retrieves some additional important dicom headers that dcm2niix may not capture and which may be important for
     processing
-    :param manufacturer: the string detailing which MRI scanner manufacturer corresponds to this DICOM directory
     :param dcm_dir: absolute path to the dicom directory, where the first dicom will be used to determine parameters
     :return: additional_dcm_info: a dict of the additional parameters as keys and their values as the dict values.
     """
@@ -126,31 +125,18 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
         return None
 
     dcm_data = pydicom.read_file(next(dcm_files))
-
-    if manufacturer == 'Philips':
-        tags_dict = {
-            "AcquisitionMatrix": [(0x0018, 0x1310)],
-            "SoftwareVersions": [(0x0018, 0x1020)],
-            "NumberOfAverages": [(0x0018, 0x0083)],
-            "RescaleSlope": [(0x0028, 0x1053), (0x2005, 0x110A)],
-            "RescaleIntercept": [(0x0028, 0x1052)],
-            "MRScaleSlope": [(0x2005, 0x120E), (0x2005, 0x110E), (0x2005, 0x100E)],
-            "RealWorldValueSlope": [(0x0040, 0x9096, 0x0040, 0x9225)],
-        }
-        defaults = [None, None, 1, 1, 0, 1, None, None]
-    else:
-        tags_dict = {
-            "AcquisitionMatrix": [(0x0018, 0x1310)],
-            "SoftwareVersions": [(0x0018, 0x1020)],
-            "NumberOfAverages": [(0x0018, 0x0083)],
-            "RescaleSlope": [(0x0028, 0x1053), (0x2005, 0x110A)],
-            "RescaleIntercept": [(0x0028, 0x1052)]
-        }
-        defaults = [None, None, 1, 1, 0]
-
+    tags_dict = {
+        "AcquisitionMatrix": [(0x0018, 0x1310)],
+        "NumberOfAverages": [(0x0018, 0x0083)],
+        "RescaleSlope": [(0x0028, 0x1053), (0x2005, 0x110A)],
+        "RescaleIntercept": [(0x0028, 0x1052)],
+        "MRScaleSlope": [(0x2005, 0x120E), (0x2005, 0x110E), (0x2005, 0x100E)],
+        "RealWorldValueSlope": [(0x0040, 0x9096, 0x0040, 0x9225)],
+        "SpectrallySelectedSuppression": [(0x2005, 0x110F, 0x0018, 0x9025)]
+    }
     additional_dcm_info = {}.fromkeys(tags_dict.keys())
     for (key, value), default in zip(tags_dict.items(),
-                                     defaults  # Default values
+                                     [None, 1, 1, 0, 1, None, None]  # Default values
                                      ):
         result = get_dicom_value(dcm_data, value, default)
 
@@ -169,30 +155,26 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
 
         additional_dcm_info[key] = result
 
-        # Final corrections for Philips scans in particular
-        if manufacturer == "Philips":
-            # First correction - disagreeing values between RescaleSlope and RealWorldValueSlope if they ended up in the
-            # same dicom. Choose the small value of the two and set it for both
-            if all([additional_dcm_info["RescaleSlope"] is not None,
-                    additional_dcm_info["RealWorldValueSlope"] is not None,
-                    additional_dcm_info["RescaleSlope"] != 1,
-                    additional_dcm_info["RealWorldValueSlope"] != 1,
-                    additional_dcm_info["RescaleSlope"] != additional_dcm_info["RealWorldValueSlope"]
-                    ]):
-                additional_dcm_info["RescaleSlope"] = min([additional_dcm_info["RescaleSlope"],
-                                                           additional_dcm_info["RealWorldValueSlope"]])
-                additional_dcm_info["RealWorldValueSlope"] = min([additional_dcm_info["RescaleSlope"],
-                                                                  additional_dcm_info["RealWorldValueSlope"]])
+        # Final corrections
+        # First correction - disagreeing values between RescaleSlope and RealWorldValueSlope if they ended up in the
+        # same dicom. Choose the small value of the two and set it for both
+        if all([additional_dcm_info["RescaleSlope"] is not None,
+                additional_dcm_info["RealWorldValueSlope"] is not None,
+                additional_dcm_info["RescaleSlope"] != 1,
+                additional_dcm_info["RealWorldValueSlope"] != 1,
+                additional_dcm_info["RescaleSlope"] != additional_dcm_info["RealWorldValueSlope"]
+                ]):
+            additional_dcm_info["RescaleSlope"] = min([additional_dcm_info["RescaleSlope"],
+                                                       additional_dcm_info["RealWorldValueSlope"]])
+            additional_dcm_info["RealWorldValueSlope"] = min([additional_dcm_info["RescaleSlope"],
+                                                              additional_dcm_info["RealWorldValueSlope"]])
 
-            # Second correction - just to ease things on the side of ExploreASL; if RescaleSlope could not be determined
-            # while "RealWorldValueSlope" could be, copy over the latter's value for the former
-            if all([additional_dcm_info["RealWorldValueSlope"] is not None,
-                    additional_dcm_info["RealWorldValueSlope"] != 1,
-                    additional_dcm_info["RescaleSlope"] == 1]):
-                additional_dcm_info["RescaleSlope"] = additional_dcm_info["RealWorldValueSlope"]
-
-    # remove the "RealWorldValueSlope" as it is no longer needed
-    del additional_dcm_info["RealWorldValueSlope"]
+        # Second correction - just to ease things on the side of ExploreASL; if RescaleSlope could not be determined
+        # while "RealWorldValueSlope" could be, copy over the latter's value for the former
+        if all([additional_dcm_info["RealWorldValueSlope"] is not None,
+                additional_dcm_info["RealWorldValueSlope"] != 1,
+                additional_dcm_info["RescaleSlope"] == 1]):
+            additional_dcm_info["RescaleSlope"] = additional_dcm_info["RealWorldValueSlope"]
 
     return additional_dcm_info
 
@@ -231,49 +213,29 @@ def get_structure_components(dcm_dir: str, config: dict):
     return subject, session_dst_name, scan_dst_name
 
 
-def get_dst_dirname(raw_dir: str, subject: str, session: str, scan: str, legacy_mode: bool = False):
+def get_dst_dirname(raw_dir: str, subject: str, session: str, scan: str):
     """
     Creates the essential destination directory for nifti and json files to be created in during the conversion process
     :param raw_dir: the absolute path to the raw folder directory
     :param subject: the string representing the current subject
     :param session: the string representing the current session
     :param scan: the string representing the scan. Is either ASL4D, T1, M0, FLAIR, or WMH_SEGM
-    :param legacy_mode: whether to format things in the old ExploreASL analysis directory structure or not
     :return: a string representation of the output directory for dcm2niix to create nifti files in
     """
-    # NON-BIDS FORMAT
-    if legacy_mode:
-        try:
-            analysis_dir = os.path.join(os.path.dirname(raw_dir), "analysis")
-            if session is None:
-                if scan not in ["T1", "FLAIR"]:
-                    dst_dir = os.path.join(analysis_dir, subject, "ASL_1", "TEMP")
-                else:
-                    dst_dir = os.path.join(analysis_dir, subject, "TEMP")
+    try:
+        analysis_dir = os.path.join(os.path.dirname(raw_dir), "analysis")
+        if session is None:
+            if scan not in ["T1", "FLAIR", "WHM_SEGM"]:
+                dst_dir = os.path.join(analysis_dir, subject, "perf", "TEMP")
             else:
-                if scan not in ["T1", "FLAIR"]:
-                    dst_dir = os.path.join(analysis_dir, subject, session, "TEMP")
-                else:
-                    dst_dir = os.path.join(analysis_dir, subject, "TEMP")
-        except NotADirectoryError:
-            return False, None
-
-    # BIDS FORMAT
-    else:
-        try:
-            analysis_dir = os.path.join(os.path.dirname(raw_dir), "analysis")
-            if session is None:
-                if scan not in ["T1", "FLAIR", "WHM_SEGM"]:
-                    dst_dir = os.path.join(analysis_dir, subject, "perf", "TEMP")
-                else:
-                    dst_dir = os.path.join(analysis_dir, subject, "anat", "TEMP")
+                dst_dir = os.path.join(analysis_dir, subject, "anat", "TEMP")
+        else:
+            if scan != ["T1", "FLAIR", "WHM_SEGM"]:
+                dst_dir = os.path.join(analysis_dir, subject, session, "perf", "TEMP")
             else:
-                if scan not in ["T1", "FLAIR", "WHM_SEGM"]:
-                    dst_dir = os.path.join(analysis_dir, subject, session, "perf", "TEMP")
-                else:
-                    dst_dir = os.path.join(analysis_dir, subject, session, "anat", "TEMP")
-        except NotADirectoryError:
-            return False, None
+                dst_dir = os.path.join(analysis_dir, subject, session, "anat", "TEMP")
+    except NotADirectoryError:
+        return False, None
 
     try:
         os.makedirs(dst_dir, exist_ok=True)
@@ -345,8 +307,7 @@ def run_dcm2niix(temp_dir: str, dcm_dir: str, subject: str, session, scan: str):
         return False
 
 
-def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, session: str, scan: str,
-                         legacy_mode: bool = False):
+def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, session: str, scan: str):
     """
     Concatenates the niftis, deletes the previous ones, and moves the concatenated one out of the temp dir
     :param temp_dir: the absolute filepath to the TEMP directory where the niftis are present
@@ -355,7 +316,6 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, session: 
     :param subject: the string representing the current subject
     :param session: the string representing the current session alias
     :param scan: the string representing the scan. It is either ASL4D, T1, M0, FLAIR, or WMH_SEGM
-    :param legacy_mode: whether to adjust file naming to the old ExploreASL format or not.
     :return: status: whether the operation was a success or not; the import summary parameters, and the filepath to the
     new nifti created
     """
@@ -475,12 +435,8 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, session: 
     else:
         session = f"ses-{session}_"
 
-    if legacy_mode:
-        final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"{scan}.nii")
-        final_json_filename = os.path.join(os.path.dirname(temp_dir), f"{scan}.json")
-    else:
-        final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.nii")
-        final_json_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.json")
+    final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.nii")
+    final_json_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.json")
 
     nib.save(final_nifti_obj, final_nifti_filename)
 
@@ -510,40 +466,6 @@ def update_json_sidecar(json_file: str, dcm_parms: dict):
 
         parms.update(dcm_parms)
 
-        # First, rename certain elements
-        for old_name, new_name in {"EstimatedEffectiveEchoSpacing": "EffectiveEchoSpacing",
-                                   "EstimatedTotalReadoutTime": "TotalReadoutTime"}.items():
-            if old_name in parms.keys():
-                parms[new_name] = parms.pop(old_name)
-
-        # Next, take care of Philips keys generated in dcm2niix
-        if "PhilipsRescaleSlope" in list(parms.keys()) and "RescaleSlope" in list(parms.keys()):
-            if all([parms["RescaleSlope"] == 1,
-                    isinstance(parms["PhilipsRescaleSlope"], (float, int)),
-                    parms["PhilipsRescaleSlope"] != 1
-                    ]):
-                parms["RescaleSlope"] = parms.pop("PhilipsRescaleSlope")
-            else:
-                del parms["PhilipsRescaleSlope"]
-
-        if "PhilipsRescaleIntercept" in parms.keys() and "RescaleIntercept" in parms.keys():
-            if all([parms["RescaleIntercept"] == 0,
-                    isinstance(parms["PhilipsRescaleIntercept"], (float, int)),
-                    parms["PhilipsRescaleIntercept"] != 1
-                    ]):
-                parms["RescaleIntercept"] = parms.pop("PhilipsRescaleIntercept")
-            else:
-                del parms["PhilipsRescaleIntercept"]
-
-        if "PhilipsScaleSlope" in parms.keys() and "MRScaleSlope" in parms.keys():
-            if all([parms["MRScaleSlope"] == 1,
-                    isinstance(parms["PhilipsScaleSlope"], (float, int)),
-                    parms["PhilipsScaleSlope"] != 1
-                    ]):
-                parms["MRScaleSlope"] = parms.pop("PhilipsScaleSlope")
-            else:
-                del parms["PhilipsScaleSlope"]
-
         with open(json_file, 'w') as w:
             json.dump(parms, w, indent=3)
     except FileNotFoundError:
@@ -552,13 +474,12 @@ def update_json_sidecar(json_file: str, dcm_parms: dict):
     return True, parms
 
 
-def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
+def asl2bids_onedir(dcm_dir: str, config: dict):
     """
     The main function for most ASL-processing steps centered around processing a single dicom directory immediately
     preceding the dicom files.
     :param dcm_dir: the absolute path to the dicom directory
     :param config: the configuration file containing the essential parameters for importing
-    :param legacy_mode: whether to adjust file naming to the old ExploreASL format or not.
     :returns: 3 items: whether the operation was a success; the most recent step performed, and the import summary (or
     None if the import for this directory failed)
     """
@@ -569,7 +490,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
     manufacturer = get_manufacturer(dcm_dir=dcm_dir)
 
     # Retrieve the additional DICOM parameters and include the Philips rescale slope indicator
-    addtional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir, manufacturer=manufacturer)
+    addtional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir)
     if manufacturer == "Philips":
         addtional_dcm_parameters["UsePhilipsFloatNotDisplayScaling"] = 1
 
@@ -577,22 +498,17 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
     successful_run, temp_dst_dir = get_dst_dirname(raw_dir=config["RawDir"],
                                                    subject=subject,
                                                    session=session,
-                                                   scan=scan,
-                                                   legacy_mode=legacy_mode)
+                                                   scan=scan)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT THE DCM2NIIX STEP")
-        return False, f"SUBJECT: {subject}; " \
-                      f"SCAN: {scan}; " \
-                      f"ERROR: Failed at Temp folder generation", None
+        return False, "Failed at Temp folder generation", None
 
     # Run the main program
     successful_run = run_dcm2niix(temp_dir=temp_dst_dir, dcm_dir=dcm_dir,
                                   subject=subject, session=session, scan=scan)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT THE DCM2NIIX STEP")
-        return False, f"SUBJECT: {subject}; " \
-                      f"SCAN: {scan}; " \
-                      f"ERROR: Failed at DCM2NIIX conversion", None
+        return False, "Failed at DCM2NIIX conversion", None
 
     # Clean the niftis in the TEMP directory
     successful_run, \
@@ -602,21 +518,16 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
                                          add_parms=addtional_dcm_parameters,
                                          subject=subject,
                                          session=session,
-                                         scan=scan,
-                                         legacy_mode=legacy_mode)
+                                         scan=scan)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT CLEANING THE NIFTIs IN THE TEMP FOLDER")
-        return False, f"SUBJECT: {subject}; " \
-                      f"SCAN: {scan}; " \
-                      f"ERROR: Failed at post-conversion nifti cleanup", None
+        return False, "Failed at post-conversion nifti cleanup", None
 
     # For ASL4D and M0 scans, the JSON sidecar from dcm2niix must include additional parameters
     successful_run, json_parameters = update_json_sidecar(json_file=json_filepath, dcm_parms=addtional_dcm_parameters)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT CORRECTION THE JSON SIDECAR STEP")
-        return False, f"SUBJECT: {subject}; " \
-                      f"SCAN: {scan}; " \
-                      f"ERROR: Failed at updating json sidecar with additional parms", None
+        return False, "Failed at updating json sidecar with additional parms", None
 
     # If everything was a success, prepare the dict for creating the import summary
     import_summary = {}
@@ -627,13 +538,9 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
     # Finally, delete the TEMP folder
     try:
         shutil.rmtree(temp_dst_dir, ignore_errors=True)
-        return True, f"SUBJECT: {subject}; " \
-                     f"SCAN: {scan}; " \
-                     f"Message: Successful conversion", import_summary
+        return True, "SUCCESS", import_summary
     except FileNotFoundError:
-        return True, f"SUBJECT: {subject}; " \
-                     f"SCAN: {scan}; " \
-                     f"ERROR: Failed at deleting the TEMP folder", import_summary
+        return True, "CHECK TEMP", import_summary
 
 
 def create_import_summary(import_summaries: list, config: dict):
@@ -646,10 +553,10 @@ def create_import_summary(import_summaries: list, config: dict):
     analysis_dir = os.path.join(os.path.dirname(config["RawDir"]), "analysis")
     df = pd.concat([pd.Series(import_summary) for import_summary in import_summaries], axis=1, sort=True).T
     df["dt"] = df["RepetitionTime"]
-    appropriate_ordering = ['subject', 'session', 'scan', 'dx', 'dy', 'dz', 'dt', 'nx', 'ny', 'nz', 'nt',
+    appropriate_ordering = ['subject', 'session', 'scan', 'dx', 'dy', 'dz', 'dt', 'nx', 'ny', 'nt',
                             "RepetitionTime", "EchoTime", "NumberOfAverages", "RescaleSlope", "RescaleIntercept",
-                            "MRScaleSlope", "AcquisitionTime",
-                            "AcquisitionMatrix", "TotalReadoutTime", "EffectiveEchoSpacing"]
+                            "MRScaleSlope", "RealWorldValueSlope", "AcquisitionTime", "AcquisitionMatrix",
+                            "TotalReadoutTime", "EffectiveEchoSpacing"]
     df = df.reindex(columns=appropriate_ordering)
     df = df.sort_values(by=["scan", "subject"]).reset_index(drop=True)
 

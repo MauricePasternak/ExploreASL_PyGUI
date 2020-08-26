@@ -77,7 +77,7 @@ class ExploreASL_Worker(QRunnable):
     # )
 
 
-# noinspection PyCallingNonCallable,PyAttributeOutsideInit
+# noinspection PyCallingNonCallable,PyAttributeOutsideInit,PyCallByClass
 class xASL_Executor(QMainWindow):
     cont_nstudies: QWidget
 
@@ -121,10 +121,8 @@ class xASL_Executor(QMainWindow):
         self.UI_Setup_ProcessModification()
 
     def UI_Setup_Layouts_and_Groups(self):
-
         self.splitter_leftside = QSplitter(Qt.Vertical, self.cw)
         self.splitter_rightside = QSplitter(Qt.Vertical, self.cw)
-        self.vlay_left, self.vlay_right = QVBoxLayout(self.cw), QVBoxLayout(self.cw)
 
         # Group Boxes
         self.grp_taskschedule = QGroupBox("Task Scheduler", self.cw)
@@ -218,7 +216,8 @@ class xASL_Executor(QMainWindow):
     # Rare exception of a UI function that is also technically a setter; this will dynamically alter the number of
     # rows present in the task scheduler form layout to allow for ExploreASL analysis of multiple studies at once
     def UI_Setup_TaskScheduler_FormUpdate(self, n_studies):
-        if n_studies == "Select": return  # Don't do anything if the user selects Select again by accident
+        if n_studies == "Select":
+            return  # Don't do anything if the user selects Select again by accident
         n_studies = int(n_studies)
         diff = n_studies - self.formlay_nrows  # The difference between the current n_rows and n_studies
 
@@ -309,6 +308,7 @@ class xASL_Executor(QMainWindow):
         self.vlay_procmod.addWidget(self.btn_runmodjob)
 
     # Runs the selected modification widget
+    # noinspection PyCallByClass
     def run_modjob(self):
         selected_job = self.cmb_modjob.currentText()
         modjob_widget = None
