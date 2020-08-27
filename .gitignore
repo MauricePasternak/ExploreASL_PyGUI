@@ -1,5 +1,5 @@
 .DS_Store
-*.json
+ExploreASL_GUI_masterconfig.json
 *.xlsx
 *.xls
 *.txt
