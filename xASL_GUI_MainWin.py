@@ -11,6 +11,8 @@ import os
 import sys
 import json
 import platform
+import subprocess
+import re
 
 # Explore ASL Main Window
 # by Maurice Pasternak @ 2020
@@ -43,6 +45,8 @@ class xASL_MainWin(QMainWindow):
             self.load_config()
         else:
             self.config = config
+            self.save_config()
+
         self.load_tooltips()
         # Window Size and initial visual setup
         # self.setWindowFlags(Qt.WindowStaysOnTopHint)
@@ -293,6 +297,7 @@ class xASL_MainWin(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    regex = re.compile("'(.*)'")
     # Get the appropriate default style based on the user's operating system
     if platform.system() == "Windows":  # Windows
         app.setStyle("Fusion")
@@ -301,16 +306,45 @@ if __name__ == '__main__':
     elif platform.system() == "Linux":  # Linux
         app.setStyle("Fusion")
     else:
-        print("This program does not support your operating system")
+        QMessageBox().warning(None, "Unsupported Operating System",
+                              f"The operating system identified as: {platform.system()} "
+                              f"is not compatible with this program. "
+                              f"Please run this program on any of the following:\n"
+                              f"- Windows 10\n-Mactintosh\n-Linux using Ubuntu Kernel",
+                              QMessageBox.Ok)
         sys.exit()
 
-    # app.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.jpg")))
     # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
     if os.path.exists(os.path.join(os.getcwd(), "ExploreASL_GUI_masterconfig.json")):
         with open("ExploreASL_GUI_masterconfig.json") as reader:
             master_config = json.load(reader)
-            main_win = xASL_MainWin(master_config)
     else:
-        main_win = xASL_MainWin(None)
+        master_config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
+                         "DefaultRootDir": f"{os.getcwd()}",  # The default root for the navigator to watch from
+                         "ScriptsDir": f"{os.getcwd()}",  # The location of where this script is launched from
+                         "Platform": f"{platform.system()}",
+                         "DeveloperMode": False}  # Whether to launch the app in developer mode or not
+        result = subprocess.run(["matlab", "-nosplash", "-nodesktop", "-batch", "matlabroot"],
+                                capture_output=True, text=True)
+        if result.returncode == 0:
+            match = regex.search(result.stdout)
+            if match:
+                master_config["MATLABROOT"] = match.group(1)
+            else:
+                master_config["MATLABROOT"] = None
+        else:
+            QMessageBox().warning(None, "No MATLAB directory found",
+                                  "No path to the MATLAB root directory could be located on this device. "
+                                  "If MATLAB is installed on this device and this message is displaying, "
+                                  "please contact your system administration and check whether MATLAB is "
+                                  "listed in your system's PATH variable.",
+                                  QMessageBox.Ok)
+            sys.exit()
+
+    # Memory cleanup
+    del regex
+
+    # If all was successful, launch the GUI
+    main_win = xASL_MainWin(master_config)
     main_win.show()
     sys.exit(app.exec_())

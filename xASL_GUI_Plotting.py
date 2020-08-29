@@ -16,6 +16,7 @@ class xASL_Plotting(QMainWindow):
     """
     Central Graphing Widget which will act as a "central hub" for other widgets to be placed in
     """
+
     def __init__(self, parent_win=None):
         # Parent window is fed into the constructor to allow for communication with parent window devices
         super().__init__(parent=parent_win)
@@ -114,6 +115,10 @@ class xASL_Plotting(QMainWindow):
             self.fig_artist = xASL_GUI_FacetArtist(self)
         elif figure_type == "Scatterplot & MRI View":
             self.fig_manager = xASL_GUI_MRIViewManager(self)
+            # Do NOT proceed if the manager could not be initialized appropriately
+            if self.fig_manager.error_init:
+                self.cmb_figuretypeselection.setCurrentIndex(0)  # This should reset the fig_manager to None by proxy
+                return
             self.fig_artist = xASL_GUI_MRIViewArtist(self)
         else:
             print("set_manager_and_artist: THIS OPTION SHOULD NEVER PRINT")

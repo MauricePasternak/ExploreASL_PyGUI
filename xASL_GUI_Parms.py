@@ -2,10 +2,7 @@ from PySide2.QtWidgets import *
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
-from xASL_GUI_HelperFuncs import set_widget_icon
 from pprint import pprint
-from glob import glob
-import sys
 import json
 import os
 from tdda import rexpy
@@ -232,7 +229,7 @@ class xASL_Parms(QMainWindow):
             "M0_GMScaleFactor": float(self.spinbox_gmscale.value()),
             "readout_dim": self.cmb_readout_dim.currentText(),
             "Vendor": self.cmb_vendor.currentText(),
-            "Sequence": {"3D Spiral": "3D_spiral", "3D GRaSE": "3D_GRaSE", "2D EPI": "2D_EPI"}
+            "Sequence": {"3D Spiral": "3D_spiral", "3D GRaSE": "3D_GRASE", "2D EPI": "2D_EPI"}
             [self.cmb_sequencetype.currentText()],
             "Quality": {"High": 1, "Low": 0}[self.cmb_quality.currentText()],
             "DELETETEMP": int(self.chk_deltempfiles.isChecked()),
@@ -270,9 +267,17 @@ class xASL_Parms(QMainWindow):
             parms_m0_pos_translate = {"M0 is the first ASL control-label pair": "[1 2]",
                                       "M0 is the first ASL scan volume": 1, "M0 is the second ASL scan volume": 2}
             json_parms["M0PositionInASL4D"] = parms_m0_pos_translate[self.cmb_m0_posinasl.currentText()]
+        try:
+            with open(os.path.join(self.le_study_dir.text(), "DataPar.json"), 'w') as w:
+                json.dump(json_parms, w, indent=3)
+        except FileNotFoundError:
+            QMessageBox.warning(self,
+                                "Could not save parameters to json",
+                                f"Check whether the following path exists in your computer:\n"
+                                f"{self.le_study_dir.text()}",
+                                QMessageBox.Ok)
+            return
 
-        with open(os.path.join(self.le_study_dir.text(), "DataPar.json"), 'w') as w:
-            json.dump(json_parms, w, indent=3)
         QMessageBox.information(self,
                                 "DataPar.json successfully saved",
                                 f"The parameter file was successfully saved to:\n"
@@ -354,11 +359,19 @@ class xASL_Parms(QMainWindow):
                         except TypeError as te:
                             print(f"TypeError encountered with key {key} and subkey {subkey}")
                             print(te)
+                        except KeyError as ke:
+                            print(f"TypeError encountered with key {key} and subkey {subkey}")
+                            print(ke)
                 else:
                     if key in to_bool:
                         json_setter[key](bool(call))
                     else:
-                        json_setter[key](call)
+                        try:
+                            json_setter[key](call)
+                        except KeyError as ke:
+                            print(f"TypeError encountered with key {key}")
+                            print(ke)
+
             except TypeError as te:
                 print(f"TypeError encountered with key: {key}")
                 print(te)
@@ -454,7 +467,7 @@ class xASL_Parms(QMainWindow):
         self.cmb_vendor.setCurrentIndex(index)
 
     def get_sequence(self, value):
-        translator = {"3D_spiral": "3D Spiral", "3D_GRaSE": "3D GRaSE", "2D_EPI": "2D EPI"}
+        translator = {"3D_spiral": "3D Spiral", "3D_GRASE": "3D GRaSE", "2D_EPI": "2D EPI"}
         text = translator[value]
         index = self.cmb_sequencetype.findText(text)
         if index == -1:

@@ -124,7 +124,6 @@ class xASL_GUI_Importer(QMainWindow):
         self.formlay_rootdir.addRow("Raw Root Directory", self.hlay_rootdir)
         self.formlay_rootdir.addRow("Use Legacy Import", self.chk_uselegacy)
 
-
         # Next specify the QLabels that can be dragged to have their text copied elsewhere
         self.hlay_placeholders = QHBoxLayout()
         self.lab_holdersub = DraggableLabel("Subject", self.grp_dirstruct)
@@ -632,6 +631,10 @@ class xASL_GUI_Importer(QMainWindow):
         # Create the import summary
         create_import_summary(import_summaries=self.import_summaries, config=self.import_parms)
 
+        # Also create the template for the dataset description
+        analysis_dir = os.path.join(os.path.dirname(self.import_parms["RawDir"]), "analysis")
+        self.create_dataset_description_template(analysis_dir)
+
     @Slot(list)
     def create_failed_runs_summary_file(self, signalled_failed_runs: list):
         """
@@ -650,6 +653,23 @@ class xASL_GUI_Importer(QMainWindow):
         with open(os.path.join(analysis_dir, "import_summary_failed.json")) as failed_writer:
             json.dump(dict(signalled_failed_runs), failed_writer, indent=3)
 
+    def create_dataset_description_template(self, analysis_dir):
+        template = {
+            "BIDSVersion": "0.1.0",
+            "License": "CC0",
+            "Name": "A multi-subject, multi-modal human neuroimaging dataset",
+            "Authors": ["Pasternak, MM", "Mutsaerts, HJ", "Petr, J"],
+            "Acknowledgements": "",
+            "HowToAcknowledge": "This data was obtained from [owner]. "
+                                "Its accession number is [id number]'",
+            "ReferencesAndLinks": ["https://www.ncbi.nlm.nih.gov/pubmed/25977808",
+                                   "https://openfmri.org/dataset/ds000117/"],
+            "Funding": ["UK Medical Research Council (MC_A060_5PR10)"]
+        }
+        with open(os.path.join(analysis_dir, "dataset_description.json"), 'w') as dataset_writer:
+            json.dump(template, dataset_writer, indent=3)
+
+
     ########################
     # SECTION - RUN FUNCTION
     ########################
@@ -660,6 +680,7 @@ class xASL_GUI_Importer(QMainWindow):
         # Set (or reset if this is another run) the essential variables
         self.n_import_workers = 0
         self.import_parms = None
+        self.import_summaries = []
         workers = []
 
         # Disable the run button to prevent accidental re-runs
@@ -678,6 +699,8 @@ class xASL_GUI_Importer(QMainWindow):
 
         # Get the dicom directories
         dicom_dirs = get_dicom_directories(config=self.import_parms)
+        print("\n\n\n\nDICOM DIRECTORIES")
+        pprint(dicom_dirs)
 
         # Create workers
         dicom_dirs = list(divide(4, dicom_dirs))

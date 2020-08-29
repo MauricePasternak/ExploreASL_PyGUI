@@ -447,10 +447,10 @@ class xASL_GUI_RerunPrep(QWidget):
 
         for status in selected_status:
             filepath = [status.text(0)]
-            parent = status.parent_cw()
+            parent = status.parent()
             while parent.text(0) != "lock":
                 filepath.insert(0, parent.text(0))
-                parent = parent.parent_cw()
+                parent = parent.parent()
             filepath.insert(0, "lock")
             filepaths.append(os.path.join(self.target_dir, *filepath))
 

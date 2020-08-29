@@ -3,7 +3,6 @@ import numpy as np
 import shutil
 import subprocess
 from glob import glob, iglob
-from pprint import pprint
 import nibabel as nib
 import pydicom
 import json
@@ -161,7 +160,7 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
 
         # Convert any lingering strings to float
         if key in ["NumberOfAverages", "RescaleIntercept", "RescaleSlope", "MRScaleSlope", "RealWorldValueSlope"]:
-            if result is not None:
+            if result is not None and not isinstance(result, list):
                 try:
                     result = float(result)
                 except ValueError:
@@ -192,7 +191,10 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
                 additional_dcm_info["RescaleSlope"] = additional_dcm_info["RealWorldValueSlope"]
 
     # remove the "RealWorldValueSlope" as it is no longer needed
-    del additional_dcm_info["RealWorldValueSlope"]
+    try:
+        del additional_dcm_info["RealWorldValueSlope"]
+    except KeyError:
+        pass
 
     return additional_dcm_info
 
@@ -262,16 +264,28 @@ def get_dst_dirname(raw_dir: str, subject: str, session: str, scan: str, legacy_
     else:
         try:
             analysis_dir = os.path.join(os.path.dirname(raw_dir), "analysis")
+            # Get rid of illegal characters for subject
+            if "-" in subject:
+                subject = subject.replace("-", "")
+            if "_" in subject:
+                subject = subject.replace("_", "")
+
             if session is None:
                 if scan not in ["T1", "FLAIR", "WHM_SEGM"]:
-                    dst_dir = os.path.join(analysis_dir, subject, "perf", "TEMP")
+                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", "perf", "TEMP")
                 else:
-                    dst_dir = os.path.join(analysis_dir, subject, "anat", "TEMP")
+                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", "anat", "TEMP")
             else:
+                # Get rid of illegal characters for session
+                if "-" in session:
+                    session = session.replace("-", "")
+                if "_" in session:
+                    session = session.replace("_", "")
+                # Determine output directory based on the scan type
                 if scan not in ["T1", "FLAIR", "WHM_SEGM"]:
-                    dst_dir = os.path.join(analysis_dir, subject, session, "perf", "TEMP")
+                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", f"ses-{session}", "perf", "TEMP")
                 else:
-                    dst_dir = os.path.join(analysis_dir, subject, session, "anat", "TEMP")
+                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", f"ses-{session}", "anat", "TEMP")
         except NotADirectoryError:
             return False, None
 
@@ -473,12 +487,24 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, session: 
     if session is None:
         session = ""
     else:
+        # Get rid of illegal characters for session
+        if "-" in session:
+            session = session.replace("-", "")
+        if "_" in session:
+            session = session.replace("_", "")
         session = f"ses-{session}_"
 
     if legacy_mode:
         final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"{scan}.nii")
         final_json_filename = os.path.join(os.path.dirname(temp_dir), f"{scan}.json")
     else:
+        scan = {"ASL4D": "asl", "M0": "m0scan", "T1": "T1w", "FLAIR": "FLAIR"}[scan]
+        # Get rid of illegal characters for subject
+        if "-" in subject:
+            subject = subject.replace("-", "")
+        if "_" in subject:
+            subject = subject.replace("_", "")
+
         final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.nii")
         final_json_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{session}{scan}.json")
 
@@ -505,51 +531,52 @@ def update_json_sidecar(json_file: str, dcm_parms: dict):
     summary file generation)
     """
     try:
-        with open(json_file) as reader:
-            parms: dict = json.load(reader)
+        with open(json_file) as json_sidecar_reader:
+            json_sidecar_parms: dict = json.load(json_sidecar_reader)
 
-        parms.update(dcm_parms)
+        json_sidecar_parms.update(dcm_parms)
 
         # First, rename certain elements
         for old_name, new_name in {"EstimatedEffectiveEchoSpacing": "EffectiveEchoSpacing",
                                    "EstimatedTotalReadoutTime": "TotalReadoutTime"}.items():
-            if old_name in parms.keys():
-                parms[new_name] = parms.pop(old_name)
+            if old_name in json_sidecar_parms.keys():
+                json_sidecar_parms[new_name] = json_sidecar_parms.pop(old_name)
 
         # Next, take care of Philips keys generated in dcm2niix
-        if "PhilipsRescaleSlope" in list(parms.keys()) and "RescaleSlope" in list(parms.keys()):
-            if all([parms["RescaleSlope"] == 1,
-                    isinstance(parms["PhilipsRescaleSlope"], (float, int)),
-                    parms["PhilipsRescaleSlope"] != 1
+        if "PhilipsRescaleSlope" in list(json_sidecar_parms.keys()) and \
+                "RescaleSlope" in list(json_sidecar_parms.keys()):
+            if all([json_sidecar_parms["RescaleSlope"] == 1,
+                    isinstance(json_sidecar_parms["PhilipsRescaleSlope"], (float, int)),
+                    json_sidecar_parms["PhilipsRescaleSlope"] != 1
                     ]):
-                parms["RescaleSlope"] = parms.pop("PhilipsRescaleSlope")
+                json_sidecar_parms["RescaleSlope"] = json_sidecar_parms.pop("PhilipsRescaleSlope")
             else:
-                del parms["PhilipsRescaleSlope"]
+                del json_sidecar_parms["PhilipsRescaleSlope"]
 
-        if "PhilipsRescaleIntercept" in parms.keys() and "RescaleIntercept" in parms.keys():
-            if all([parms["RescaleIntercept"] == 0,
-                    isinstance(parms["PhilipsRescaleIntercept"], (float, int)),
-                    parms["PhilipsRescaleIntercept"] != 1
+        if "PhilipsRescaleIntercept" in json_sidecar_parms.keys() and "RescaleIntercept" in json_sidecar_parms.keys():
+            if all([json_sidecar_parms["RescaleIntercept"] == 0,
+                    isinstance(json_sidecar_parms["PhilipsRescaleIntercept"], (float, int)),
+                    json_sidecar_parms["PhilipsRescaleIntercept"] != 1
                     ]):
-                parms["RescaleIntercept"] = parms.pop("PhilipsRescaleIntercept")
+                json_sidecar_parms["RescaleIntercept"] = json_sidecar_parms.pop("PhilipsRescaleIntercept")
             else:
-                del parms["PhilipsRescaleIntercept"]
+                del json_sidecar_parms["PhilipsRescaleIntercept"]
 
-        if "PhilipsScaleSlope" in parms.keys() and "MRScaleSlope" in parms.keys():
-            if all([parms["MRScaleSlope"] == 1,
-                    isinstance(parms["PhilipsScaleSlope"], (float, int)),
-                    parms["PhilipsScaleSlope"] != 1
+        if "PhilipsScaleSlope" in json_sidecar_parms.keys() and "MRScaleSlope" in json_sidecar_parms.keys():
+            if all([json_sidecar_parms["MRScaleSlope"] == 1,
+                    isinstance(json_sidecar_parms["PhilipsScaleSlope"], (float, int)),
+                    json_sidecar_parms["PhilipsScaleSlope"] != 1
                     ]):
-                parms["MRScaleSlope"] = parms.pop("PhilipsScaleSlope")
+                json_sidecar_parms["MRScaleSlope"] = json_sidecar_parms.pop("PhilipsScaleSlope")
             else:
-                del parms["PhilipsScaleSlope"]
+                del json_sidecar_parms["PhilipsScaleSlope"]
 
         with open(json_file, 'w') as w:
-            json.dump(parms, w, indent=3)
+            json.dump(json_sidecar_parms, w, indent=3)
     except FileNotFoundError:
         return False, None
 
-    return True, parms
+    return True, json_sidecar_parms
 
 
 def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
@@ -676,6 +703,7 @@ def fix_mosaic(mosaic_nifti: nib.Nifti1Image, acq_dims: tuple):
 
     # Get the shape and array values of the mosaic (flatten the latter into a 2D array)
     img_shape = mosaic_nifti.shape
+    # noinspection PyTypeChecker
     img_data = np.rot90(np.squeeze(mosaic_nifti.get_fdata()))
 
     # If this is a square, and the rows perfectly divides the mosaic

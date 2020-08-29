@@ -30,18 +30,39 @@ class xASL_GUI_MRIViewManager(QWidget):
 
         # Key Variables
         self.analysis_dir = self.parent_cw.le_analysis_dir.text()
-        with open(os.path.join(self.analysis_dir, "DataPar.json")) as parms_reader:
-            parms = json.load(parms_reader)
-            self.subject_regex = parms["subject_regexp"].strip("$^")
-        self.axes_arg_x = ''  # Set to '' instead of None because the latter is not supported by lineedits
-        self.axes_arg_y = ''
-        self.axes_arg_hue = ''
-        self.axes_widget = None
+        try:
+            with open(os.path.join(self.analysis_dir, "DataPar.json")) as parms_reader:
+                parms = json.load(parms_reader)
+                self.subject_regex = parms["subject_regexp"].strip("$^")
 
-        self.subject_sessions = self.parent_cw.loader.loaded_wide_data["SUBJECT"].tolist()
+            self.axes_arg_x = ''  # Set to '' instead of None because the latter is not supported by lineedits
+            self.axes_arg_y = ''
+            self.axes_arg_hue = ''
+            self.axes_widget = None
 
-        self.UI_Setup_Tabs()
-        self.UI_Setup_MRIViewParameters()
+            self.subject_sessions = self.parent_cw.loader.loaded_wide_data["SUBJECT"].tolist()
+
+            self.UI_Setup_Tabs()
+            self.UI_Setup_MRIViewParameters()
+            self.error_init = False
+
+        except FileNotFoundError:
+            QMessageBox.warning(self,
+                                "Unable to load Plot & MRI Viewer",
+                                "No DataPar.json was detected in the analysis directory, which is required by the MRI"
+                                " Viewer to be able to select subject images",
+                                QMessageBox.Ok)
+            self.error_init = True
+        except KeyError:
+            QMessageBox.warning(self,
+                                "Unable to load Plot & MRI Viewer",
+                                "The DataPar.json file either did not contain the appropriate regex key or the regex"
+                                " value was corrupt",
+                                QMessageBox.Ok)
+            self.error_init = True
+
+
+
 
     def UI_Setup_Tabs(self):
         self.tab_pltsettings = QTabWidget()

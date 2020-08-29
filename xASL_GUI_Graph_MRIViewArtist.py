@@ -93,9 +93,19 @@ class xASL_GUI_MRIViewArtist(QWidget):
             self.current_cbf_img = np.zeros((121, 145, 121))
             self.current_t1_img = np.zeros((121, 145, 121))
         else:
-            self.current_subject = name
-            self.current_cbf_img = image.load_img(self.subjects_runs_dict[name]["CBF"]).get_fdata()
-            self.current_t1_img = image.load_img(self.subjects_runs_dict[name]["T1"]).get_fdata()
+            try:
+                self.current_cbf_img = image.load_img(self.subjects_runs_dict[name]["CBF"]).get_fdata()
+                self.current_t1_img = image.load_img(self.subjects_runs_dict[name]["T1"]).get_fdata()
+                self.current_subject = name
+            except KeyError:
+                QMessageBox().warning(self,
+                                      "Discrepancy between data and images",
+                                      f"An error occurred while attempting to fetch image data for subject_run:\n"
+                                      f"{name}. Please check whether see if this subject needs to be re-run",
+                                      QMessageBox.Ok)
+                self.current_subject = None
+                self.current_cbf_img = np.zeros((121, 145, 121))
+                self.current_t1_img = np.zeros((121, 145, 121))
 
         self.plotupdate_axialslice(self.manager.slider_axialslice.value())
         self.plotupdate_coronalslice(self.manager.slider_coronalslice.value())

@@ -6,8 +6,6 @@ from itertools import chain
 from time import sleep
 from datetime import date
 from more_itertools import peekable
-import matlab
-import matlab.engine
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
@@ -18,7 +16,11 @@ from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anti
     calculate_missing_STATUS, xASL_GUI_RerunPrep, interpret_statusfile_errors
 from xASL_GUI_HelperFuncs import set_widget_icon
 from pprint import pprint
+import subprocess
 
+
+# import matlab
+# import matlab.engine
 
 class ExploreASL_WorkerSignals(QObject):
     """
@@ -42,39 +44,49 @@ class ExploreASL_Worker(QRunnable):
     # This is called by the threadpool during threadpool.start(worker)
     def run(self):
         exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args
-        print("Inside run")
-        eng = matlab.engine.start_matlab()
-        eng.cd(exploreasl_path)
-        imodules = matlab.int8(imodules)
-        try:
-            _ = eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
-        except matlab.engine.EngineError as e:
-            print(e)
-            self.signals.encountered_fatal_error.emit(f"{e}")
+        # print("Inside run")
+        # eng = matlab.engine.start_matlab()
+        # eng.cd(exploreasl_path)
+        # imodules = matlab.int8(imodules)
+        # try:
+        #     _ = eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
+        # except matlab.engine.EngineError as e:
+        #     print(e)
+        #     self.signals.encountered_fatal_error.emit(f"{e}")
+        #
+        # self.signals.finished_processing.emit()
+        # print("A worker has finished processing")
 
-        self.signals.finished_processing.emit()
-        print("A worker has finished processing")
+        print(f"Inside execute on processor {os.getpid()}")
 
-    #     print(f"Inside execute on processor {os.getpid()}")
-    #
-    # # Generate the string that the command line will feed into the complied MATLAB session
-    # func_line = f"('{par_path}', " \
-    #             f"{process_data}, " \
-    #             f"{skip_pause}, " \
-    #             f"{iworker}, " \
-    #             f"{nworkers}, " \
-    #             f"[{' '.join([str(item) for item in imodules])}])"
-    #
-    # # For troubleshooting and visualization
-    # print(f"Func line: {func_line}")
-    #
-    # # Compile and run MATLAB session from command line
-    # result = subprocess.call(
-    #     ["matlab",
-    #      "-nodesktop",
-    #      "-r",
-    #      f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"]
-    # )
+        # Generate the string that the command line will feed into the complied MATLAB session
+        func_line = f"('{par_path}', " \
+                    f"{process_data}, " \
+                    f"{skip_pause}, " \
+                    f"{iworker}, " \
+                    f"{nworkers}, " \
+                    f"[{' '.join([str(item) for item in imodules])}])"
+
+        # For troubleshooting and visualization
+        print(f"Func line: {func_line}")
+
+        # Compile and run MATLAB session from command line
+        result = subprocess.run(
+            ["matlab",
+             "-nodesktop",
+             "-nosplash",
+             "-batch",
+             f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"],
+            capture_output=True, text=True
+
+        )
+        print(f"RESULT!!!!: {result}")
+        if result.returncode == 0:
+            print("RETURNED")
+            self.signals.finished_processing.emit()
+        else:
+            print(result.stderr)
+            self.signals.encountered_fatal_error.emit("")
 
 
 # noinspection PyCallingNonCallable,PyAttributeOutsideInit,PyCallByClass
