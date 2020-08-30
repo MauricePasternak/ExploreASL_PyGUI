@@ -4,3 +4,5 @@ ExploreASL_GUI_masterconfig.json
 *.xls
 *.todo
 *.pptx
+__pycache__
+.idea
