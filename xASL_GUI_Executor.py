@@ -19,9 +19,6 @@ from pprint import pprint
 import subprocess
 
 
-# import matlab
-# import matlab.engine
-
 class ExploreASL_WorkerSignals(QObject):
     """
     Class for handling the signals sent by an ExploreASL worker
@@ -330,21 +327,21 @@ class xASL_Executor(QMainWindow):
                 if any([self.le_modjob.text() == '',
                         "participants.tsv" not in os.listdir(self.le_modjob.text())  # participants.tsv must be present
                         ]):
-                    QMessageBox.warning(self,
-                                        "participants.tsv not found",
-                                        f"participants.tsv was not located in the study directory you provided:\n"
-                                        f"{self.le_modjob.text()}\n"
-                                        f"Please run the Population module for this study "
-                                        f"to generate the required file",
-                                        QMessageBox.Ok)
+                    QMessageBox().warning(self,
+                                          "participants.tsv not found",
+                                          f"participants.tsv was not located in the study directory you provided:\n"
+                                          f"{self.le_modjob.text()}\n"
+                                          f"Please run the Population module for this study "
+                                          f"to generate the required file",
+                                          QMessageBox.Ok)
                     return
             except FileNotFoundError:
-                QMessageBox.warning(self,
-                                    "participants.tsv not found",
-                                    f"participants.tsv was not located in the study directory you provided:\n"
-                                    f"{self.le_modjob.text()}\n"
-                                    f"Please run the Population module for this study to generate the required file",
-                                    QMessageBox.Ok)
+                QMessageBox().warning(self,
+                                      "participants.tsv not found",
+                                      f"participants.tsv was not located in the study directory you provided:\n"
+                                      f"{self.le_modjob.text()}\n"
+                                      f"Please run the Population module for this study to generate the required file",
+                                      QMessageBox.Ok)
                 return
             modjob_widget = xASL_GUI_TSValter(self)
         elif selected_job == "Prepare a study for a re-run":
@@ -353,20 +350,20 @@ class xASL_Executor(QMainWindow):
                 if any([self.le_modjob.text() == '',
                         'lock' not in os.listdir(self.le_modjob.text())  # lock dirs must be initialized
                         ]):
-                    QMessageBox.warning(self,
-                                        "lock directory system not found",
-                                        f"The study you provided does not have a lock directory system in play.\n"
-                                        f"This would be automatically created if a study was run. Please run your\n"
-                                        f"study first before trying to modify it for a re-run.",
-                                        QMessageBox.Ok)
+                    QMessageBox().warning(self,
+                                          "lock directory system not found",
+                                          f"The study you provided does not have a lock directory system in play.\n"
+                                          f"This would be automatically created if a study was run. Please run your\n"
+                                          f"study first before trying to modify it for a re-run.",
+                                          QMessageBox.Ok)
                     return
             except FileNotFoundError:
-                QMessageBox.warning(self,
-                                    "lock directory system not found",
-                                    f"The study you provided does not have a lock directory system in play.\n"
-                                    f"This would be automatically created if a study was run. Please run your\n"
-                                    f"study first before trying to modify it for a re-run.",
-                                    QMessageBox.Ok)
+                QMessageBox().warning(self,
+                                      "lock directory system not found",
+                                      f"The study you provided does not have a lock directory system in play.\n"
+                                      f"This would be automatically created if a study was run. Please run your\n"
+                                      f"study first before trying to modify it for a re-run.",
+                                      QMessageBox.Ok)
                 return
             modjob_widget = xASL_GUI_RerunPrep(self)
 
@@ -471,20 +468,20 @@ class xASL_Executor(QMainWindow):
                     writer.writelines(msg)
 
             dirs_string = "\n".join(list(postrun_diagnosis.keys()))
-            QMessageBox.warning(self,
-                                f"Errors were encountered during ExploreASL run",
-                                f"The following study directories encountered at least 1 error during their run:\n"
-                                f"{dirs_string}\n"
-                                f"Please review the generated [Date of run] ExploreASL run - errors.txt \n"
-                                f"within each of the listed studies to see which subjects could not be processed",
-                                QMessageBox.Ok)
+            QMessageBox().warning(self,
+                                  f"Errors were encountered during ExploreASL run",
+                                  f"The following study directories encountered at least 1 error during their run:\n"
+                                  f"{dirs_string}\n"
+                                  f"Please review the generated [Date of run] ExploreASL run - errors.txt \n"
+                                  f"within each of the listed studies to see which subjects could not be processed",
+                                  QMessageBox.Ok)
         else:
-            QMessageBox.information(self,
-                                    f"Successful ExploreASL run",
-                                    f"All expected operations successfully took place.\n"
-                                    f"Many thanks for using ExploreASL. If this has been helpful in your study "
-                                    f"please don't forget to cite this program in your manuscript.",
-                                    QMessageBox.Ok)
+            QMessageBox().information(self,
+                                      f"Successful ExploreASL run",
+                                      f"All expected operations successfully took place.\n"
+                                      f"Many thanks for using ExploreASL. If this has been helpful in your study "
+                                      f"please don't forget to cite this program in your manuscript.",
+                                      QMessageBox.Ok)
 
     # This slot is responsible for setting the correct analysis directory to a given task row's lineedit correcting
     @Slot(int)
@@ -587,11 +584,11 @@ class xASL_Executor(QMainWindow):
             try:
                 parms_file = glob(os.path.join(path.text(), "*Par*.json"))[0]
             except IndexError:
-                QMessageBox.warning(self,
-                                    f"Problem prior to starting ExploreASL",
-                                    f"No DataPar file found within study:\n{path.text()}\n"
-                                    f"Please ensure that the study's parameters file is present within the directory",
-                                    QMessageBox.Ok)
+                QMessageBox().warning(self,
+                                      f"Problem prior to starting ExploreASL",
+                                      f"No DataPar file found within study:\n{path.text()}\n"
+                                      f"Please ensure that the study's parameters file is present within the directory",
+                                      QMessageBox.Ok)
 
                 # Remember to re-activate widgets
                 self.set_widgets_activation_states(True)
@@ -608,15 +605,15 @@ class xASL_Executor(QMainWindow):
                     if str_regex.startswith("^") or str_regex.endswith('$'):
                         str_regex = str_regex.strip('^$')
                 except KeyError:
-                    QMessageBox.warning(self,
-                                        f"Problem prior to starting ExploreASL",
-                                        f"Essential parameters not present within the DataPar file for study:"
-                                        f"\n{path.text()}\n"
-                                        f"Please ensure that parameter file contains fields detailing:\n"
-                                        f"1) A MyPath key detailing the path to the Explore ASL directory\n"
-                                        f"2) A subject_regex key representing subjects in the study\n"
-                                        f"3) A SESSIONS key detailing the sessions in the study, if any",
-                                        QMessageBox.Ok)
+                    QMessageBox().warning(self,
+                                          f"Problem prior to starting ExploreASL",
+                                          f"Essential parameters not present within the DataPar file for study:"
+                                          f"\n{path.text()}\n"
+                                          f"Please ensure that parameter file contains fields detailing:\n"
+                                          f"1) A MyPath key detailing the path to the Explore ASL directory\n"
+                                          f"2) A subject_regex key representing subjects in the study\n"
+                                          f"3) A SESSIONS key detailing the sessions in the study, if any",
+                                          QMessageBox.Ok)
 
                     # Remember to re-activate widgets
                     self.set_widgets_activation_states(True)
@@ -629,16 +626,17 @@ class xASL_Executor(QMainWindow):
                     str_regex == '',  # The string used to make the regex cannot be blank
                     parms["D"]["ROOT"] != path.text()  # The study provided must match the one in the parms file
                     ]):
-                QMessageBox.warning(self,
-                                    f"Problem prior to starting ExploreASL",
-                                    f"An error was encountered while preparing study:\n{path.text()}\n"
-                                    f"Please ensure:\n"
-                                    f"1) That the filepath to the study exists\n"
-                                    f"2) That the filepath to the study in the parms file matches the one provided to "
-                                    f"the Task Scheduler\n"
-                                    f"3) That the ExploreASL filepath specified within the parms file exists\n"
-                                    f"4) The subjects within the study are the same as when the parms file was created",
-                                    QMessageBox.Ok)
+                QMessageBox().warning(self,
+                                      f"Problem prior to starting ExploreASL",
+                                      f"An error was encountered while preparing study:\n{path.text()}\n"
+                                      f"Please ensure:\n"
+                                      f"1) That the filepath to the study exists\n"
+                                      f"2) That the filepath to the study in the parms file matches the one provided to"
+                                      f" the Task Scheduler\n"
+                                      f"3) That the ExploreASL filepath specified within the parms file exists\n"
+                                      f"4) The subjects within the study are the same as when the parms file was "
+                                      f"created",
+                                      QMessageBox.Ok)
 
                 # Remember to re-activate widgets
                 self.set_widgets_activation_states(True)
@@ -766,7 +764,7 @@ class ExploreASL_Watcher(QRunnable):
         super().__init__()
         self.signals = ExploreASL_WatcherSignals()
         self.dir_to_watch = os.path.join(target, "lock")
-        self.session_regex = re.compile(regex)
+        self.subject_regex = re.compile(regex)
         self.module_regex = re.compile('module_(ASL|Structural|Population)')
         self.watch_debt = watch_debt
         self.study_idx = study_idx
@@ -795,18 +793,18 @@ class ExploreASL_Watcher(QRunnable):
     @Slot(str)
     def process_message(self, created_path):
         print("\t" * 10 + f"PREPARE MSG HAS RECEIVED A MESSAGE: {created_path}")
-        detected_session = self.session_regex.search(created_path)
+        detected_subject = self.subject_regex.search(created_path)
         detected_module = self.module_regex.search(created_path)
         msg = None
         workload_val = None
 
         if os.path.isdir(created_path):  # Lock dir
-            if detected_module.group(1) == "Structural" and not detected_session.group() in self.sessions_seen_struct:
-                self.sessions_seen_struct.append(detected_session.group())
-                msg = f"Structural Module has started for session: {detected_session.group()}"
-            elif detected_module.group(1) == "ASL" and not detected_session.group() in self.sessions_seen_asl:
-                self.sessions_seen_asl.append(detected_session.group())
-                msg = f"ASL Module has started for session: {detected_session.group()}"
+            if detected_module.group(1) == "Structural" and not detected_subject.group() in self.sessions_seen_struct:
+                self.sessions_seen_struct.append(detected_subject.group())
+                msg = f"Structural Module has started for subject: {detected_subject.group()}"
+            elif detected_module.group(1) == "ASL" and not detected_subject.group() in self.sessions_seen_asl:
+                self.sessions_seen_asl.append(detected_subject.group())
+                msg = f"ASL Module has started for subject: {detected_subject.group()}"
             elif detected_module.group(1) == "Population" and not self.pop_mod_started:
                 self.pop_mod_started = True
                 msg = f"Population Module has started"
@@ -815,14 +813,14 @@ class ExploreASL_Watcher(QRunnable):
 
         elif os.path.isfile(created_path):  # Status file
             basename = os.path.basename(created_path)
-            if detected_module.group(1) == "Structural" and detected_session:
+            if detected_module.group(1) == "Structural" and detected_subject:
                 msg = f"Completed {self.stuct_status_file_translator[basename]} in the Structural module " \
-                      f"for session: {detected_session.group()}"
-            elif detected_module.group(1) == "ASL" and detected_session:
+                      f"for subject: {detected_subject.group()}"
+            elif detected_module.group(1) == "ASL" and detected_subject:
                 msg = f"Completed {self.asl_status_file_translator[basename]} in the ASL module " \
-                      f"for session: {detected_session.group()}"
+                      f"for subject: {detected_subject.group()}"
             elif detected_module.group(1) == "Population":
-                msg = f"Completed {basename} in the Population module"
+                msg = f"Completed {self.pop_status_file_translator[basename]} in the Population module"
 
             workload_val = self.workload_translator[basename]
 

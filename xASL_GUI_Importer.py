@@ -10,11 +10,7 @@ from collections import OrderedDict
 from more_itertools import divide
 import json
 import os
-import shutil
-import re
-import sys
 import platform
-import subprocess
 
 
 class Importer_WorkerSignals(QObject):
@@ -248,11 +244,12 @@ class xASL_GUI_Importer(QMainWindow):
             directories, basenames = zip(*[(directory, os.path.basename(directory)) for directory in iglob(path)
                                            if os.path.isdir(directory)])
         except ValueError:
-            QMessageBox.warning(self,
-                                "Impossible directory depth",
-                                "The directory depth you've indicated does not have directories present at that level."
-                                " Cancelling operation.",
-                                QMessageBox.Ok)
+            QMessageBox().warning(self,
+                                  "Impossible directory depth",
+                                  "The directory depth you've indicated does not have "
+                                  "directories present at that level."
+                                  " Cancelling operation.",
+                                  QMessageBox.Ok)
             # Clear the appropriate lineedit that called this function after the error message
             list(self.levels.values())[level].clear()
             return
@@ -496,11 +493,11 @@ class xASL_GUI_Importer(QMainWindow):
         for name in reversed(dirnames):
             # Cannot have blank lines existing between the important directories
             if name == '' and encountered_nonblank:
-                QMessageBox.warning(QMessageBox(),
-                                    "Invalid directory structure entered",
-                                    "You must indicate filler directories occuring between"
-                                    "\nSubject/Session/Scan directories using the Dummy label provided",
-                                    QMessageBox.Ok)
+                QMessageBox().warning(self,
+                                      "Invalid directory structure entered",
+                                      "You must indicate filler directories occuring between"
+                                      "\nSubject/Session/Scan directories using the Dummy label provided",
+                                      QMessageBox.Ok)
                 return False, []
             elif name == '' and not encountered_nonblank:
                 continue
@@ -511,10 +508,10 @@ class xASL_GUI_Importer(QMainWindow):
         # Sanity check for false user input
         if any(["Subject" not in valid_dirs,
                 "Scan" not in valid_dirs]):
-            QMessageBox.warning(self,
-                                "Invalid directory structure entered",
-                                "A minimum of Session and Scan directories must be present in your study for"
-                                "ExploreASL to import data correctly.")
+            QMessageBox().warning(self,
+                                  "Invalid directory structure entered",
+                                  "A minimum of Session and Scan directories must be present in your study for"
+                                  "ExploreASL to import data correctly.")
             return False, []
 
         valid_dirs = list(reversed(valid_dirs))
@@ -526,11 +523,11 @@ class xASL_GUI_Importer(QMainWindow):
         try:
             if any([self.scan_aliases["ASL4D"] is None,
                     self.scan_aliases["T1"] is None]):
-                QMessageBox.warning(self,
-                                    "Invalid scan aliases entered",
-                                    "At minimum, the aliases corresponding to the ASL and T1-weighted scans "
-                                    "should be specified",
-                                    QMessageBox.Ok)
+                QMessageBox().warning(self,
+                                      "Invalid scan aliases entered",
+                                      "At minimum, the aliases corresponding to the ASL and T1-weighted scans "
+                                      "should be specified",
+                                      QMessageBox.Ok)
                 return False, None
         except KeyError as e:
             print(f'ENCOUNTERED KEYERROR: {e}')
@@ -553,10 +550,10 @@ class xASL_GUI_Importer(QMainWindow):
         # First, make sure that every number is unique:
         current_orderset = [cmb.currentText() for cmb in self.cmb_sessionaliases_dict.values()]
         if len(current_orderset) != len(set(current_orderset)):
-            QMessageBox.warning(self,
-                                "Invalid sessions alias ordering entered",
-                                "Please check for accidental doublings",
-                                QMessageBox.Ok)
+            QMessageBox().warning(self,
+                                  "Invalid sessions alias ordering entered",
+                                  "Please check for accidental doublings",
+                                  QMessageBox.Ok)
 
         basename_keys = list(self.le_sessionaliases_dict.keys())
         aliases = list(le.text() for le in self.le_sessionaliases_dict.values())
@@ -589,7 +586,8 @@ class xASL_GUI_Importer(QMainWindow):
                 not directory_status,  # Getting the directory structure must have been successful
                 not scanalias_status,  # Getting the scan aliases must have been successful
                 not sessionalias_status  # Getting the session aliases must have been successful
-                ]): return None
+                ]):
+            return None
 
         # Otherwise, green light to create the import parameters
         import_parms["RawDir"] = self.le_rootdir.text()
@@ -653,12 +651,17 @@ class xASL_GUI_Importer(QMainWindow):
         with open(os.path.join(analysis_dir, "import_summary_failed.json")) as failed_writer:
             json.dump(dict(signalled_failed_runs), failed_writer, indent=3)
 
-    def create_dataset_description_template(self, analysis_dir):
+    @staticmethod
+    def create_dataset_description_template(analysis_dir):
+        """
+        Creates a template for the dataset description file for the user to complete at a later point in time
+        :param analysis_dir: The analysis directory where the dataset description will be saved to.
+        """
         template = {
             "BIDSVersion": "0.1.0",
             "License": "CC0",
             "Name": "A multi-subject, multi-modal human neuroimaging dataset",
-            "Authors": ["Pasternak, MM", "Mutsaerts, HJ", "Petr, J"],
+            "Authors": [],
             "Acknowledgements": "",
             "HowToAcknowledge": "This data was obtained from [owner]. "
                                 "Its accession number is [id number]'",
@@ -668,7 +671,6 @@ class xASL_GUI_Importer(QMainWindow):
         }
         with open(os.path.join(analysis_dir, "dataset_description.json"), 'w') as dataset_writer:
             json.dump(template, dataset_writer, indent=3)
-
 
     ########################
     # SECTION - RUN FUNCTION
@@ -687,7 +689,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.set_widgets_on_or_off(state=False)
 
         # Ensure the dcm2niix path is visible
-        os.chdir(os.path.join(self.config["ScriptsDir"], f"DCM2NIIX_{platform.system()}"))
+        os.chdir(os.path.join(self.config["ScriptsDir"], "External", "DCM2NIIX", f"DCM2NIIX_{platform.system()}"))
 
         # Get the import parameters
         self.import_parms = self.get_import_parms()
@@ -699,7 +701,7 @@ class xASL_GUI_Importer(QMainWindow):
 
         # Get the dicom directories
         dicom_dirs = get_dicom_directories(config=self.import_parms)
-        print("\n\n\n\nDICOM DIRECTORIES")
+        print("Detected the following dicom directories:")
         pprint(dicom_dirs)
 
         # Create workers
@@ -714,6 +716,7 @@ class xASL_GUI_Importer(QMainWindow):
             self.n_import_workers += 1
 
         # Launch them
+        print("Launching Importer workers")
         for worker in workers:
             self.threadpool.start(worker)
 
@@ -730,7 +733,8 @@ class DraggableLabel(QLabel):
                            "border-width: 2px;"
                            "border-color: black;"
                            "border-radius: 10px;"
-                           "background-color: white;")
+                           "background-color: white;"
+                           "margin-bottom: 5px;")
         font = QFont()
         font.setPointSize(16)
         self.setFont(font)

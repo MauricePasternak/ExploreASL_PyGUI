@@ -2,7 +2,6 @@ from PySide2.QtWidgets import *
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
-from pprint import pprint
 import json
 import os
 from tdda import rexpy
@@ -271,18 +270,18 @@ class xASL_Parms(QMainWindow):
             with open(os.path.join(self.le_study_dir.text(), "DataPar.json"), 'w') as w:
                 json.dump(json_parms, w, indent=3)
         except FileNotFoundError:
-            QMessageBox.warning(self,
-                                "Could not save parameters to json",
-                                f"Check whether the following path exists in your computer:\n"
-                                f"{self.le_study_dir.text()}",
-                                QMessageBox.Ok)
+            QMessageBox().warning(self,
+                                  "Could not save parameters to json",
+                                  f"Check whether the following path exists in your computer:\n"
+                                  f"{self.le_study_dir.text()}",
+                                  QMessageBox.Ok)
             return
 
-        QMessageBox.information(self,
-                                "DataPar.json successfully saved",
-                                f"The parameter file was successfully saved to:\n"
-                                f"{self.le_study_dir.text()}",
-                                QMessageBox.Ok)
+        QMessageBox().information(self,
+                                  "DataPar.json successfully saved",
+                                  f"The parameter file was successfully saved to:\n"
+                                  f"{self.le_study_dir.text()}",
+                                  QMessageBox.Ok)
 
     def loadjson2parms(self):
         self.import_error_logger.clear()
@@ -290,13 +289,14 @@ class xASL_Parms(QMainWindow):
                                                        "Select the JSON parameters file",
                                                        self.config["DefaultRootDir"],
                                                        "Json files (*.json)")
-        if json_filepath == '': return
+        if json_filepath == '':
+            return
         if not os.path.exists(json_filepath) and json_filepath != '':
-            QMessageBox.warning(self,
-                                "Incorrect File Selected",
-                                "The file selected was either not a json file "
-                                "or did not contain the essential parameters",
-                                QMessageBox.Ok)
+            QMessageBox().warning(self,
+                                  "Incorrect File Selected",
+                                  "The file selected was either not a json file "
+                                  "or did not contain the essential parameters",
+                                  QMessageBox.Ok)
             return
 
         with open(json_filepath, 'r') as reader:
@@ -378,9 +378,10 @@ class xASL_Parms(QMainWindow):
 
         if len(self.import_error_logger) > 0:
             errors = "\n -".join(self.import_error_logger)
-            QMessageBox.warning(self,
-                                "Errors were encountered importing certain values",
-                                f"The following fields could not be properly imported:\n -{errors}")
+            QMessageBox().warning(self,
+                                  "Errors were encountered importing certain values",
+                                  f"The following fields could not be properly imported:\n -{errors}",
+                                  QMessageBox.Ok)
 
     #############################################
     # Convenience methods for translation to json
@@ -403,10 +404,10 @@ class xASL_Parms(QMainWindow):
                 all([x in ['1', '0'] for x in parms_logvec])]):  # Check that all are 1s or 0s
             return [int(option) for option in parms_logvec]
         else:
-            QMessageBox.warning(self,
-                                "Incorrect Input for Quantification Settings",
-                                "Must be a series of five 1s or 0s separated by single spaces",
-                                QMessageBox.Ok)
+            QMessageBox().warning(self,
+                                  "Incorrect Input for Quantification Settings",
+                                  "Must be a series of five 1s or 0s separated by single spaces",
+                                  QMessageBox.Ok)
 
     ###############################################
     # Convenience methods for translation from json

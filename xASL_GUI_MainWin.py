@@ -306,7 +306,8 @@ if __name__ == '__main__':
     elif platform.system() == "Linux":  # Linux
         app.setStyle("Fusion")
     else:
-        QMessageBox().warning(None, "Unsupported Operating System",
+        QMessageBox().warning(None,
+                              "Unsupported Operating System",
                               f"The operating system identified as: {platform.system()} "
                               f"is not compatible with this program. "
                               f"Please run this program on any of the following:\n"
@@ -333,7 +334,8 @@ if __name__ == '__main__':
             else:
                 master_config["MATLABROOT"] = None
         else:
-            QMessageBox().warning(None, "No MATLAB directory found",
+            QMessageBox().warning(None,
+                                  "No MATLAB directory found",
                                   "No path to the MATLAB root directory could be located on this device. "
                                   "If MATLAB is installed on this device and this message is displaying, "
                                   "please contact your system administration and check whether MATLAB is "
