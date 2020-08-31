@@ -2,7 +2,7 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary
+from xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary, bids_m0_followup
 from glob import iglob
 from tdda import rexpy
 from pprint import pprint
@@ -622,6 +622,26 @@ class xASL_GUI_Importer(QMainWindow):
         if self.n_import_workers > 0 or self.import_parms is None:
             return
 
+        # Otherwise, proceed to post-import processing
+        self.import_postprocessing()
+
+    @Slot(list)
+    def update_failed_runs_log(self, signalled_failed_runs: list):
+        """
+        Updates the attribute failed_runs in order to write the json file summarizing failed runs once everything is
+        complete
+        :param signalled_failed_runs: A list of dicts, each dict being the name of the DICOM directory attempted for
+        conversion and the value being a description of the step in DCM2BIDS that it failed on.
+        """
+        self.failed_runs.extend(signalled_failed_runs)
+
+
+    def import_postprocessing(self):
+        """
+        Performs the bulk of the post-import work, especially if the import type was specified to be BIDS
+        """
+        analysis_dir = os.path.join(os.path.dirname(self.import_parms["RawDir"]), "analysis")
+
         # Re-enable widgets and change the cwd back to the scripts directory
         self.set_widgets_on_or_off(state=True)
         os.chdir(self.config["ScriptsDir"])
@@ -630,26 +650,29 @@ class xASL_GUI_Importer(QMainWindow):
         create_import_summary(import_summaries=self.import_summaries, config=self.import_parms)
 
         # Also create the template for the dataset description
-        analysis_dir = os.path.join(os.path.dirname(self.import_parms["RawDir"]), "analysis")
         self.create_dataset_description_template(analysis_dir)
 
-    @Slot(list)
-    def create_failed_runs_summary_file(self, signalled_failed_runs: list):
-        """
-        Creates a json file detailing the subjects/sessions/scans that could not be converted and the step at which
-        that process crashed
-        :param signalled_failed_runs: A list of dicts, each dict being the name of the DICOM directory attempted for
-        conversion and the value being a description of the step in DCM2BIDS that it failed on.
-        """
-        self.failed_runs.extend(signalled_failed_runs)
+        # If there were any failures, write them to disk now
+        if len(self.failed_runs) > 0:
+            with open(os.path.join(analysis_dir, "import_summary_failed.json")) as failed_writer:
+                json.dump(dict(self.failed_runs), failed_writer, indent=3)
 
-        # Don't proceed until all importer workers are finished
-        if self.n_import_workers > 0 or self.import_parms is None:
-            return
+        # If the settings is BIDS...
+        if not self.chk_uselegacy.isChecked():
+            # Ensure all M0 jsons have the appropriate "IntendedFor" field if this is in BIDS
+            bids_m0_followup(analysis_dir=analysis_dir)
 
-        analysis_dir = os.path.join(os.path.dirname(self.import_parms["RawDir"]), "analysis")
-        with open(os.path.join(analysis_dir, "import_summary_failed.json")) as failed_writer:
-            json.dump(dict(signalled_failed_runs), failed_writer, indent=3)
+            # Create the "bidsignore" file
+            with open(os.path.join(analysis_dir, ".bidsignore"), 'w') as ignore_writer:
+                ignore_writer.writelines(["import_summary.tsv\n", "DataPar.json\n"])
+
+            # Create a placeholder for the root-level asl.json
+            # M0 key is not listed here, as it will be defined at the terminal level _asl.json
+            asl_placeholder = {"LabelingType": None, "PostLabelingDelay": None, "BackgroundSuppression": None}
+            with open(os.path.join(analysis_dir, "asl.json"), 'w') as asl_placeholder_writer:
+                json.dump(asl_placeholder, asl_placeholder_writer, indent=3)
+
+
 
     @staticmethod
     def create_dataset_description_template(analysis_dir):
@@ -711,7 +734,7 @@ class xASL_GUI_Importer(QMainWindow):
                                      self.import_parms,  # The import parameters
                                      self.chk_uselegacy.isChecked())  # Whether to use legacy mode or not
             worker.signals.signal_send_summaries.connect(self.create_import_summary_file)
-            worker.signals.signal_send_errors.connect(self.create_failed_runs_summary_file)
+            worker.signals.signal_send_errors.connect(self.update_failed_runs_log)
             workers.append(worker)
             self.n_import_workers += 1
 

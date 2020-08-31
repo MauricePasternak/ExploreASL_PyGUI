@@ -685,8 +685,35 @@ def create_import_summary(import_summaries: list, config: dict):
     try:
         df.to_csv(os.path.join(analysis_dir, "import_summary.tsv"), sep='\t', index=False, na_rep='n/a')
     except PermissionError:
-        os.remove(os.path.join(analysis_dir, "import_summary.tsv"))
-        df.to_csv(os.path.join(analysis_dir, "import_summary.tsv"), sep='\t', index=False, na_rep='n/a')
+        df.to_csv(os.path.join(analysis_dir, "import_summary_backup.tsv"), sep='\t', index=False, na_rep='n/a')
+
+
+def bids_m0_followup(analysis_dir):
+    """
+    In a BIDS import, this function will run through the imported dataset and adjust any BIDS-standard fields that
+    should be present in the m0scan.json sidecar, such as "IntendedFor"
+    :param analysis_dir: the absolute path to the analysis directory
+    """
+    m0_jsons = iglob(os.path.join(analysis_dir, "**", "*_m0scan.json"), recursive=True)
+    for m0_json in m0_jsons:
+        asl_json = m0_json.replace("_m0scan.json", "_asl.json")
+        asl_nifti = m0_json.replace("_m0scan.json", "_asl.nii")
+
+        # Ensure that the asl json sidecar and nifti images actually exist adjacent to the m0scan.json
+        if os.path.exists(asl_json) and os.path.exists(asl_nifti):
+
+            # BIDS standard: the "IntendedFor" filepath must be relative to the subject and contain forward slashes
+            truncated_asl_json = asl_nifti.replace(analysis_dir, "")
+            if '\\' in truncated_asl_json:
+                truncated_asl_json = truncated_asl_json.replace("\\", "/")
+
+            with open(m0_json) as m0_json_reader:
+                m0_parms = json.load(m0_json_reader)
+            m0_parms["IntendedFor"] = truncated_asl_json
+            with open(m0_json, 'w') as m0_json_writer:
+                json.dump(m0_parms, m0_json_writer, indent=3)
+
+
 
 
 def fix_mosaic(mosaic_nifti: nib.Nifti1Image, acq_dims: tuple):

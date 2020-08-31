@@ -269,6 +269,17 @@ class xASL_Parms(QMainWindow):
         try:
             with open(os.path.join(self.le_study_dir.text(), "DataPar.json"), 'w') as w:
                 json.dump(json_parms, w, indent=3)
+
+            # Also, if this is BIDS, write to the root level asl.json
+            asl_json = os.path.join(self.le_study_dir.text(), "asl.json")
+            if os.path.exists(asl_json):
+                asl_parms = {
+                    "LabelingType": json_parms["Q"]["LabelingType"],
+                    "PostLabelingDelay": json_parms["Q"]["Initial_PLD"],
+                    "BackgroundSuppression": json_parms["Q"]["BackGrSupprPulses"] == 0}
+                with open(asl_json, 'w') as asl_json_writer:
+                    json.dump(asl_parms, asl_json_writer, indent=3)
+
         except FileNotFoundError:
             QMessageBox().warning(self,
                                   "Could not save parameters to json",
