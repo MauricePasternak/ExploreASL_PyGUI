@@ -24,7 +24,7 @@ class ExploreASL_WorkerSignals(QObject):
     Class for handling the signals sent by an ExploreASL worker
     """
     finished_processing = Signal()  # Signal sent by worker to watcher to help indicate it when to stop watching
-    encountered_fatal_error = Signal(str)  # Signal sent by worker to raise a dialogue informing the user of an error
+    encountered_fatal_error = Signal()  # Signal sent by worker to raise a dialogue informing the user of an error
 
 
 class ExploreASL_Worker(QRunnable):
@@ -75,15 +75,15 @@ class ExploreASL_Worker(QRunnable):
              "-batch",
              f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"],
             capture_output=True, text=True
-
         )
-        print(f"RESULT!!!!: {result}")
+        print(f"RESULTs for IWorker {iworker} of {nworkers}: \nReturn code = {result.returncode}")
+        print(result.stdout)
         if result.returncode == 0:
-            print("RETURNED")
+            print("EMITTING FINISHED PROCESSING SIGNAL")
             self.signals.finished_processing.emit()
         else:
-            print(result.stderr)
-            self.signals.encountered_fatal_error.emit("")
+            print("EMITTING ENCOUNTERED ERROR SIGNAL")
+            self.signals.encountered_fatal_error.emit()
 
 
 # noinspection PyCallingNonCallable,PyAttributeOutsideInit,PyCallByClass
@@ -101,7 +101,7 @@ class xASL_Executor(QMainWindow):
 
         # Window Size and initial visual setup
         self.setMinimumSize(1080, 720)
-        self.resize(1920 / 2, 720)
+        self.resize(1920 // 2, 720)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QHBoxLayout(self.cw)
@@ -508,7 +508,7 @@ class xASL_Executor(QMainWindow):
         :param val_to_inc_by: the value of the .STATUS file that was just completed
         :param study_idx: the index of the progressbar contained within formlay_progbars_list to be selected
         """
-        print(f"update_progressbar received a signal from watcher {study_idx} to increase the progressbar value by"
+        print(f"update_progressbar received a signal from watcher {study_idx} to increase the progressbar value by "
               f"{val_to_inc_by}")
         selected_progbar: QProgressBar = self.formlay_progbars_list[study_idx]
         print(f"The progressbar's value before update: {selected_progbar.value()} "
@@ -677,7 +677,6 @@ class xASL_Executor(QMainWindow):
             if locked_dirs:
                 print(f"Detected locked direcorties in {path.text()} prior to starting ExploreASL. "
                       f"Removing them first.")
-                pprint(locked_dirs)
                 for lock_dir in locked_dirs:
                     os.removedirs(lock_dir)
 
@@ -686,6 +685,8 @@ class xASL_Executor(QMainWindow):
             # maxvalue from that
             workload, expected_status_files = calculate_anticipated_workload(parms, run_opts.currentText())
             if not workload or len(expected_status_files) == 0:
+                # Remember to re-activate widgets
+                self.set_widgets_activation_states(True)
                 return
             progressbar.reset()
             progressbar.setMaximum(workload)
@@ -723,9 +724,11 @@ class xASL_Executor(QMainWindow):
             for idx, worker in enumerate(inner_worker_block):
                 # Connect the finished signal to the watcher debt to help it understand when it should stop watching
                 worker.signals.finished_processing.connect(watcher.increment_debt)
+                worker.signals.encountered_fatal_error.connect(watcher.increment_debt)
                 # Connect the finished signal to the run btn reactivator so that the run button may be reactivated
                 # via debt repayment counter
                 worker.signals.finished_processing.connect(self.reactivate_widgets_postrun)
+                worker.signals.encountered_fatal_error.connect(self.reactivate_widgets_postrun)
 
                 self.textedit_textoutput.append(f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study: "
                                                 f"{path.text()}")

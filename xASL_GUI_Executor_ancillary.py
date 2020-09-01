@@ -76,32 +76,45 @@ def calculate_anticipated_workload(parmsdict, run_options):
     def get_structural_workload(analysis_directory, study_subjects, structuralmod_dict,
                                 skip_if_no_asl, skip_if_no_m0, skip_if_no_flair):
         workload_translator = {
-            "010_LinearReg_T1w2MNI.status": 1, "020_LinearReg_FLAIR2T1w.status": 2,
-            "030_Resample_FLAIR2T1w.status": 1, "040_Segment_FLAIR.status": 3, "050_LesionFilling.status": 1,
-            "060_Segment_T1w.status": 10, "070_GetWMHvol.status": 1, "080_Resample2StandardSpace.status": 2,
-            "090_GetVolumetrics.status": 1, "100_VisualQC_Structural.status": 1, "999_ready.status": 0
+            "010_LinearReg_T1w2MNI.status": 1,
+            "020_LinearReg_FLAIR2T1w.status": 2,
+            "030_FLAIR_BiasfieldCorrection.status": 1,
+            "040_LST_Segment_FLAIR_WMH.status": 3,
+            "050_LST_T1w_LesionFilling_WMH.status": 1,
+            "060_Segment_T1w.status": 10,
+            "070_CleanUpWMH_SEGM.status": 1,
+            "080_Resample2StandardSpace.status": 2,
+            "090_GetVolumetrics.status": 1,
+            "100_VisualQC_Structural.status": 1,
+            "999_ready.status": 0
         }
-        default_workload = ["010_LinearReg_T1w2MNI.status", "060_Segment_T1w.status",
-                            "080_Resample2StandardSpace.status", "090_GetVolumetrics.status",
-                            "100_VisualQC_Structural.status", "999_ready.status"]
-        flair_workload = ["020_LinearReg_FLAIR2T1w.status", "030_Resample_FLAIR2T1w.status",
-                          "040_Segment_FLAIR.status", "050_LesionFilling.status", "070_GetWMHvol.status"]
+        default_workload = ["010_LinearReg_T1w2MNI.status",
+                            "060_Segment_T1w.status",
+                            "080_Resample2StandardSpace.status",
+                            "090_GetVolumetrics.status",
+                            "100_VisualQC_Structural.status",
+                            "999_ready.status"]
+        flair_workload = ["020_LinearReg_FLAIR2T1w.status",
+                          "030_FLAIR_BiasfieldCorrection.status",
+                          "040_LST_Segment_FLAIR_WMH.status",
+                          "050_LST_T1w_LesionFilling_WMH.status",
+                          "070_CleanUpWMH_SEGM.status"]
         status_files = []
         for subject in study_subjects:
 
             # Ascertain if there are any FLAIR images and compare their presence/absence to the FLAIR skip flag
-            path_to_flair = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
+            path_to_flair = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii*"))
             try:
                 has_flair_img = os.path.exists(path_to_flair[0])
             except IndexError:
                 has_flair_img = False
 
-            path_to_m0 = glob(os.path.join(analysis_directory, subject, "*", "*M0.nii"))
+            path_to_m0 = glob(os.path.join(analysis_directory, subject, "*", "*M0.nii*"))
             try:
                 has_m0_img = os.path.exists(path_to_m0[0])
             except IndexError:
                 has_m0_img = False
-            path_to_asl = glob(os.path.join(analysis_directory, subject, "*", "*ASL4D.nii"))
+            path_to_asl = glob(os.path.join(analysis_directory, subject, "*", "*ASL4D.nii*"))
             try:
                 has_asl_img = os.path.exists(path_to_asl[0])
             except IndexError:
@@ -137,9 +150,15 @@ def calculate_anticipated_workload(parmsdict, run_options):
     def get_asl_workload(analysis_directory, study_subjects, session_names, aslmod_dict,
                          skip_if_no_asl, skip_if_no_m0, skip_if_no_flair):
         workload_translator = {
-            "020_RealignASL.status": 1, "030_RegisterASL.status": 2, "040_ResampleASL.status": 1,
-            "050_PreparePV.status": 1, "060_ProcessM0.status": 1, "070_Quantification.status": 2,
-            "080_CreateAnalysisMask.status": 1, "090_VisualQC_ASL.status": 1, "999_ready.status": 0
+            "020_RealignASL.status": 1,
+            "030_RegisterASL.status": 2,
+            "040_ResampleASL.status": 1,
+            "050_PreparePV.status": 1,
+            "060_ProcessM0.status": 1,
+            "070_Quantification.status": 2,
+            "080_CreateAnalysisMask.status": 1,
+            "090_VisualQC_ASL.status": 1,
+            "999_ready.status": 0
         }
         default_workload = ["020_RealignASL.status", "030_RegisterASL.status", "040_ResampleASL.status",
                             "050_PreparePV.status", "060_ProcessM0.status", "070_Quantification.status",
@@ -149,17 +168,17 @@ def calculate_anticipated_workload(parmsdict, run_options):
         status_files = []
         for subject in study_subjects:
             for session in session_names:
-                path_to_m0 = glob(os.path.join(analysis_directory, subject, session, "*M0.nii"))
+                path_to_m0 = glob(os.path.join(analysis_directory, subject, session, "*M0.nii*"))
                 try:
                     has_m0_img = os.path.exists(path_to_m0[0])
                 except IndexError:
                     has_m0_img = False
-                path_to_asl = glob(os.path.join(analysis_directory, subject, session, "*ASL4D.nii"))
+                path_to_asl = glob(os.path.join(analysis_directory, subject, session, "*ASL4D.nii*"))
                 try:
                     has_asl_img = os.path.exists(path_to_asl[0])
                 except IndexError:
                     has_asl_img = False
-                path_to_flair = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii"))
+                path_to_flair = glob(os.path.join(analysis_directory, subject, "*FLAIR.nii*"))
                 try:
                     has_flair_img = os.path.exists(path_to_flair[0])
                 except IndexError:
@@ -236,9 +255,6 @@ def calculate_anticipated_workload(parmsdict, run_options):
                                                              skipifnoasl, skipifnom0, skipifnoflair)
         asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict,
                                                 skipifnoasl, skipifnom0, skipifnoflair)
-
-        pprint(struct_status)
-        pprint(asl_status)
 
         struct_totalworkload = sum(struct_dict.values())
         asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
@@ -628,3 +644,9 @@ class ColnamesDragDrop_ListWidget(QListWidget):
                 self.addItem(item.text())
         else:
             event.ignore()
+
+
+if __name__ == '__main__':
+    analysis_directory = r'D:\GENFI_representative\TestDataSet\analysis'
+    subject = "Sub-001"
+    print(glob(os.path.join(analysis_directory, subject, "*FLAIR.nii*")))
