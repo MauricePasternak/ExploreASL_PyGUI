@@ -8,9 +8,9 @@
 
 ## Graphics and Examples
 
-> GIFs and Video Links
+> Drag and Drop your variables of interest, then view the subject to which a datapoint corresponds!
 
-Coming in a future update
+![MRI_Viewer_movie](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/MRI_viewer.gif)
 
 ---
 ## Table of Contents
