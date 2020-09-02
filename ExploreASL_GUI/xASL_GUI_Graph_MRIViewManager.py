@@ -2,9 +2,9 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 import seaborn as sns
-from xASL_GUI_Graph_MRIViewArtist import xASL_GUI_MRIViewArtist
-from xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
-from xASL_GUI_HelperFuncs import connect_widget_to_signal
+from ExploreASL_GUI.xASL_GUI_Graph_MRIViewArtist import xASL_GUI_MRIViewArtist
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
+from ExploreASL_GUI.xASL_GUI_HelperFuncs import connect_widget_to_signal
 import json
 import os
 

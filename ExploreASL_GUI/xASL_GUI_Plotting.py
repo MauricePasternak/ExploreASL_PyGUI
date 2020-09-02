@@ -1,13 +1,13 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorerFile2LineEdit
-from xASL_GUI_Graph_Subsetter import xASL_GUI_Subsetter
-from xASL_GUI_Graph_Loader import xASL_GUI_Data_Loader
-from xASL_GUI_Graph_FacetManager import xASL_GUI_FacetManager
-from xASL_GUI_Graph_FacetArtist import xASL_GUI_FacetArtist
-from xASL_GUI_Graph_MRIViewManager import xASL_GUI_MRIViewManager
-from xASL_GUI_Graph_MRIViewArtist import xASL_GUI_MRIViewArtist
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorerFile2LineEdit
+from ExploreASL_GUI.xASL_GUI_Graph_Subsetter import xASL_GUI_Subsetter
+from ExploreASL_GUI.xASL_GUI_Graph_Loader import xASL_GUI_Data_Loader
+from ExploreASL_GUI.xASL_GUI_Graph_FacetManager import xASL_GUI_FacetManager
+from ExploreASL_GUI.xASL_GUI_Graph_FacetArtist import xASL_GUI_FacetArtist
+from ExploreASL_GUI.xASL_GUI_Graph_MRIViewManager import xASL_GUI_MRIViewManager
+from ExploreASL_GUI.xASL_GUI_Graph_MRIViewArtist import xASL_GUI_MRIViewArtist
 import os
 
 

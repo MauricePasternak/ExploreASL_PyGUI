@@ -3,7 +3,7 @@ import json
 from PySide2.QtGui import QIcon
 from PySide2.QtCore import QSize
 from PySide2.QtWidgets import QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QCheckBox
-from xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
 
 
 def set_widget_icon(widget, config, icon_name, size=None):

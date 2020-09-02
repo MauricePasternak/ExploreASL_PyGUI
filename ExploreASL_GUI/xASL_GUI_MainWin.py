@@ -1,11 +1,11 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from xASL_GUI_Parms import xASL_Parms
-from xASL_GUI_Executor import xASL_Executor
-from xASL_GUI_Plotting import xASL_Plotting
-from xASL_GUI_Importer import xASL_GUI_Importer
-from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from ExploreASL_GUI.xASL_GUI_Parms import xASL_Parms
+from ExploreASL_GUI.xASL_GUI_Executor import xASL_Executor
+from ExploreASL_GUI.xASL_GUI_Plotting import xASL_Plotting
+from ExploreASL_GUI.xASL_GUI_Importer import xASL_GUI_Importer
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from collections import deque
 import os
 import sys
@@ -287,7 +287,6 @@ class xASL_MainWin(QMainWindow):
         self.config["ExploreASLRoot"] = directory
         self.save_config()
 
-
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     current_dir = os.getcwd()
@@ -328,7 +327,7 @@ if __name__ == '__main__':
         master_config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
                          "DefaultRootDir": current_dir,  # The default root for the navigator to watch from
                          "ScriptsDir": current_dir,  # The location of where this script is launched from
-                         "ProjectDir": os.path.dirname(current_dir),  # The location of the ExploreASL_GUI main dir
+                         "ProjectDir": project_dir,  # The location of the ExploreASL_GUI main dir
                          "Platform": f"{platform.system()}",
                          "DeveloperMode": False  # Whether to launch the app in developer mode or not
                          }

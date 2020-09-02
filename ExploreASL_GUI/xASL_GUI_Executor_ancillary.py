@@ -5,7 +5,7 @@ import json
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
-from xASL_GUI_HelperClasses import DandD_FileExplorerFile2LineEdit
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorerFile2LineEdit
 import pandas as pd
 import platform
 from itertools import chain

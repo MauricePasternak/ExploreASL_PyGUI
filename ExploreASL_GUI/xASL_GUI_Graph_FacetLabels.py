@@ -1,7 +1,7 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from xASL_GUI_HelperFuncs import connect_widget_to_signal, disconnect_widget_and_reset
+from ExploreASL_GUI.xASL_GUI_HelperFuncs import connect_widget_to_signal, disconnect_widget_and_reset
 
 
 class xASL_GUI_FacetLabels(QWidget):

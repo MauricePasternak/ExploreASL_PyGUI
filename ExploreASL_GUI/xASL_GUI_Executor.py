@@ -11,10 +11,10 @@ from PySide2.QtGui import *
 from PySide2.QtWidgets import *
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter, \
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from ExploreASL_GUI.xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter, \
     calculate_missing_STATUS, xASL_GUI_RerunPrep, interpret_statusfile_errors
-from xASL_GUI_HelperFuncs import set_widget_icon
+from ExploreASL_GUI.xASL_GUI_HelperFuncs import set_widget_icon
 from pprint import pprint
 import subprocess
 
@@ -158,7 +158,8 @@ class xASL_Executor(QMainWindow):
         self.splitter_leftside.setSizes([520, 200])
         self.splitter_rightside.setHandleWidth(25)
         self.splitter_leftside.setHandleWidth(25)
-        handle_style = 'QSplitter::handle {image: url(media/3_dots_horizontal.svg);}'
+        handle_path = os.path.join(self.config["ProjectDir"], "media", "3_dots_horizontal.svg").replace('\\', '/')
+        handle_style = 'QSplitter::handle {image: url(' + handle_path + ');}'
         self.splitter_rightside.setStyleSheet(handle_style)
         self.splitter_leftside.setStyleSheet(handle_style)
 

@@ -2,12 +2,12 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 import seaborn as sns
-from xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
-from xASL_GUI_HelperFuncs import connect_widget_to_signal
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
+from ExploreASL_GUI.xASL_GUI_HelperFuncs import connect_widget_to_signal
 import json
 import os
-from xASL_GUI_Graph_FacetArtist import xASL_GUI_FacetArtist
-from xASL_GUI_Graph_FacetLabels import xASL_GUI_FacetLabels
+from ExploreASL_GUI.xASL_GUI_Graph_FacetArtist import xASL_GUI_FacetArtist
+from ExploreASL_GUI.xASL_GUI_Graph_FacetLabels import xASL_GUI_FacetLabels
 # from pprint import pprint
 
 

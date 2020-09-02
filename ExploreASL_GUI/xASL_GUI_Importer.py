@@ -1,8 +1,8 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary, bids_m0_followup
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from ExploreASL_GUI.xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary, bids_m0_followup
 from glob import iglob
 from tdda import rexpy
 from pprint import pprint
