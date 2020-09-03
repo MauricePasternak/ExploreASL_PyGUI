@@ -1,5 +1,4 @@
 from PySide2.QtWidgets import *
-from PySide2.QtCore import *
 from PySide2.QtGui import *
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
 import json
@@ -52,9 +51,11 @@ class xASL_Parms(QMainWindow):
     def UI_Setup_Basic(self):
         self.formlay_basic = QFormLayout(self.cont_basic)
         self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = self.make_droppable_clearable_le(
+            btn_connect_to=self.set_exploreasl_dir,
             default=self.config['ExploreASLRoot'])
         self.le_studyname = QLineEdit(text="My Study")
         self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = self.make_droppable_clearable_le(
+            btn_connect_to=self.set_study_dir,
             default=self.config["DefaultRootDir"])
         self.le_subjectregex = QLineEdit(text='\\d+')
         self.le_subjectregex.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -188,6 +189,10 @@ class xASL_Parms(QMainWindow):
                                 [self.chk_detectfsl, self.chk_outputcbfmaps]):
             self.formlay_envparms.addRow(desc, widget)
 
+    ################
+    # Misc Functions
+    ################
+
     # Clears the currently-included subjects list and resets the regex
     def clear_included(self):
         self.lst_included_subjects.clear()
@@ -210,6 +215,68 @@ class xASL_Parms(QMainWindow):
         if inferred_regex:
             self.le_subjectregex.setText(inferred_regex)
 
+    def set_exploreasl_dir(self):
+        exploreasl_filepath = QFileDialog.getExistingDirectory(self,
+                                                               "Select ExploreASL directory",
+                                                               self.config["DefaultRootDir"],
+                                                               QFileDialog.ShowDirsOnly)
+        # Return if the user has cancelled the operation
+        if exploreasl_filepath == '':
+            return
+
+        # Quality control
+        if os.path.exists(exploreasl_filepath):
+            if any([not os.path.isdir(exploreasl_filepath),  # Path must be a directory
+                    "ExploreASL_Master.m" not in os.listdir(exploreasl_filepath)  # Must contain the master script
+                    ]):
+                QMessageBox().warning(self,
+                                      "Invalid Directory Selected",
+                                      "Either the path you have specified is not a directory or if it is an ExploreASL"
+                                      "directory, it does not contain the required scripts for processing a study",
+                                      QMessageBox.Ok)
+                return
+            else:
+                self.le_easl_dir.setText(exploreasl_filepath)
+        else:
+            QMessageBox().warning(self,
+                                  "The filepath you specified does not exist",
+                                  "Please select an existent ExploreASL directory",
+                                  QMessageBox.Ok)
+            return
+
+    def set_study_dir(self):
+        analysisdir_filepath = QFileDialog.getExistingDirectory(self,
+                                                                "Select the study's analysis directory",
+                                                                self.config["DefaultRootDir"],
+                                                                QFileDialog.ShowDirsOnly)
+        # Return if the user has cancelled the operation
+        if analysisdir_filepath == '':
+            return
+
+        # Quality control
+        if os.path.exists(analysisdir_filepath):
+            if any([not os.path.isdir(analysisdir_filepath),  # Path must be a directory
+                    os.path.basename(analysisdir_filepath) != "analysis"  # The basename must be the analysis directory
+                    ]):
+                QMessageBox().warning(self,
+                                      "Invalid Directory Selected",
+                                      "Either the path you have specified is not a directory or it does not match"
+                                      "ExploreASL specification (i.e select the actual 'analysis' directory of your "
+                                      "study",
+                                      QMessageBox.Ok)
+                return
+            else:
+                self.le_study_dir.setText(analysisdir_filepath)
+        else:
+            QMessageBox().warning(self,
+                                  "The filepath you specified does not exist",
+                                  "Please select an existent ExploreASL directory",
+                                  QMessageBox.Ok)
+            return
+
+    #######################################################################
+    # Main Functions for this module - saving to json and loading from json
+    #######################################################################
     def saveparms2json(self):
         json_parms = {
             "MyPath": self.le_easl_dir.text(),
@@ -562,6 +629,7 @@ class xASL_Parms(QMainWindow):
         hlay = QHBoxLayout()
         le = DandD_FileExplorer2LineEdit()
         le.setText(default)
+        le.setClearButtonEnabled(True)
         if le_connect_to is not None:
             le.textChanged.connect(le_connect_to)
         btn = QPushButton("...", )

@@ -6,3 +6,4 @@ ExploreASL_GUI_masterconfig.json
 *.pptx
 __pycache__
 .idea
+*MRI_viewer.mp4

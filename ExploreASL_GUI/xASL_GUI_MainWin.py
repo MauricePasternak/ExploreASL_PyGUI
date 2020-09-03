@@ -48,6 +48,7 @@ class xASL_MainWin(QMainWindow):
         # Window Size and initial visual setup
         # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.setMinimumSize(800, 480)
+        self.resize(self.config["ScreenSize"][0]//2, self.config["ScreenSize"][1]//2.5)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         # Main Icon setup
@@ -79,7 +80,7 @@ class xASL_MainWin(QMainWindow):
         self.dock_navigator = QDockWidget("Explore ASL Navigator", self)
         self.dock_navigator.setFeatures(QDockWidget.AllDockWidgetFeatures)
         self.dock_navigator.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_navigator.setMinimumSize(360, 480)
+        self.dock_navigator.setMinimumSize(400, 480)
         self.dock_navigator.setWindowIcon(self.icon_main)
         # The main container and the main layout of the dock
         self.cont_navigator = QWidget(self.dock_navigator)
@@ -265,7 +266,7 @@ class xASL_MainWin(QMainWindow):
 
     # Sets the ExploreASL directory of the user from the push button
     def set_exploreasl_dir_frombtn(self):
-        directory: str = QFileDialog.getExistingDirectory(QFileDialog(),
+        directory: str = QFileDialog.getExistingDirectory(self,
                                                           "Select the path to ExploreASL",  # Window title
                                                           os.getcwd(),  # Default dir
                                                           QFileDialog.ShowDirsOnly)  # Display options
@@ -286,6 +287,7 @@ class xASL_MainWin(QMainWindow):
         self.le_exploreasl_dir.setText(directory)
         self.config["ExploreASLRoot"] = directory
         self.save_config()
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
@@ -319,6 +321,10 @@ if __name__ == '__main__':
                               QMessageBox.Ok)
         sys.exit()
 
+    # Get the screen credentials
+    screen = app.primaryScreen()
+    screen_size = screen.availableSize()
+
     # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
     if os.path.exists(os.path.join(json_logic_dir, "ExploreASL_GUI_masterconfig.json")):
         with open(os.path.join(json_logic_dir, "ExploreASL_GUI_masterconfig.json")) as master_config_reader:
@@ -329,6 +335,7 @@ if __name__ == '__main__':
                          "ScriptsDir": current_dir,  # The location of where this script is launched from
                          "ProjectDir": project_dir,  # The location of the ExploreASL_GUI main dir
                          "Platform": f"{platform.system()}",
+                         "ScreenSize": (screen_size.width(), screen_size.height()),  # Screen dimensions
                          "DeveloperMode": False  # Whether to launch the app in developer mode or not
                          }
         result = subprocess.run(["matlab", "-nosplash", "-nodesktop", "-batch", "matlabroot"],

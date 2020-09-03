@@ -24,6 +24,7 @@ class xASL_Plotting(QMainWindow):
 
         # Window Size and initial visual setup
         self.setMinimumSize(1920, 1000)
+        # self.resize(self.config["ScreenSize"][0], self.config["ScreenSize"][1])
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
@@ -53,8 +54,11 @@ class xASL_Plotting(QMainWindow):
         # Set up the directory settings - what analysis folder
         self.grp_directories = QGroupBox("Directory settings", self.cont_maindock)
         self.formlay_directories = QFormLayout(self.grp_directories)
-        self.le_analysis_dir = DandD_FileExplorer2LineEdit(self.grp_directories)
-        self.le_analysis_dir.setText(self.parent().config["DefaultRootDir"])
+        self.hlay_analysis_dir, self.le_analysis_dir, self.btn_analysis_dir = self.make_droppable_clearable_le(
+            btn_connect_to=self.set_analysis_dir,
+            default=self.config["DefaultRootDir"])
+        # self.le_analysis_dir = DandD_FileExplorer2LineEdit(self.grp_directories)
+        # self.le_analysis_dir.setText(self.parent().config["DefaultRootDir"])
         self.le_demographics_file = DandD_FileExplorerFile2LineEdit([".tsv", ".csv", ".xlsx"], self.grp_directories)
         self.le_demographics_file.setPlaceholderText("Drag & Drap a supporting .tsv/.csv/.xlsx file")
         self.cmb_atlas_selection = QComboBox(self.grp_directories)
@@ -69,7 +73,7 @@ class xASL_Plotting(QMainWindow):
         self.btn_load_in_data.clicked.connect(self.loader.load_exploreasl_data)
         self.btn_load_in_data.clicked.connect(self.full_reset)
 
-        self.formlay_directories.addRow("Analysis Directory", self.le_analysis_dir)
+        self.formlay_directories.addRow("Analysis Directory", self.hlay_analysis_dir)
         self.formlay_directories.addRow("Ancillary Study Dataframe", self.le_demographics_file)
         self.formlay_directories.addRow("Which Atlas to Utilize", self.cmb_atlas_selection)
         self.formlay_directories.addRow("Which Partial-Volume Stats to View", self.cmb_pvc_selection)
@@ -143,3 +147,52 @@ class xASL_Plotting(QMainWindow):
             self.fig_manager.setParent(None)
             self.fig_artist = None
             self.fig_manager = None
+
+    def set_analysis_dir(self):
+        analysisdir_filepath = QFileDialog.getExistingDirectory(self,
+                                                                "Select the study's analysis directory",
+                                                                self.config["DefaultRootDir"],
+                                                                QFileDialog.ShowDirsOnly)
+        # Return if the user has cancelled the operation
+        if analysisdir_filepath == '':
+            return
+
+        # Quality control
+        if os.path.exists(analysisdir_filepath):
+            if any([not os.path.isdir(analysisdir_filepath),  # Path must be a directory
+                    os.path.basename(analysisdir_filepath) != "analysis"  # The basename must be the analysis directory
+                    ]):
+                QMessageBox().warning(self,
+                                      "Invalid Directory Selected",
+                                      "Either the path you have specified is not a directory or it does not match"
+                                      "ExploreASL specification (i.e select the actual 'analysis' directory of your "
+                                      "study",
+                                      QMessageBox.Ok)
+                return
+            else:
+                self.le_analysis_dir.setText(analysisdir_filepath)
+        else:
+            QMessageBox().warning(self,
+                                  "The filepath you specified does not exist",
+                                  "Please select an existent ExploreASL directory",
+                                  QMessageBox.Ok)
+            return
+
+    ############################################
+    # Convenience methods for generating widgets
+    ############################################
+
+    @staticmethod
+    def make_droppable_clearable_le(le_connect_to=None, btn_connect_to=None, default=''):
+        hlay = QHBoxLayout()
+        le = DandD_FileExplorer2LineEdit()
+        le.setText(default)
+        le.setClearButtonEnabled(True)
+        if le_connect_to is not None:
+            le.textChanged.connect(le_connect_to)
+        btn = QPushButton("...", )
+        if btn_connect_to is not None:
+            btn.clicked.connect(btn_connect_to)
+        hlay.addWidget(le)
+        hlay.addWidget(btn)
+        return hlay, le, btn

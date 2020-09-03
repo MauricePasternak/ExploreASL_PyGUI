@@ -1,8 +1,7 @@
 import os
-import json
 from PySide2.QtGui import QIcon
 from PySide2.QtCore import QSize
-from PySide2.QtWidgets import QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QCheckBox
+from PySide2.QtWidgets import QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QCheckBox
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
 
 

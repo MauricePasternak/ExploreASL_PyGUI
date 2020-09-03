@@ -40,6 +40,10 @@ if __name__ == '__main__':
                               QMessageBox.Ok)
         sys.exit()
 
+    # Get the screen credentials
+    screen = app.primaryScreen()
+    screen_size = screen.availableSize()
+
     # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
     if os.path.exists(os.path.join(json_logic_dir, "ExploreASL_GUI_masterconfig.json")):
         with open(os.path.join(json_logic_dir, "ExploreASL_GUI_masterconfig.json")) as master_config_reader:
@@ -50,6 +54,7 @@ if __name__ == '__main__':
                          "ScriptsDir": scripts_dir,  # The location of where this script is launched from
                          "ProjectDir": project_dir,  # The location of the ExploreASL_GUI main dir
                          "Platform": f"{platform.system()}",
+                         "ScreenSize": (screen_size.width(), screen_size.height()),  # Screen dimensions
                          "DeveloperMode": False  # Whether to launch the app in developer mode or not
                          }
         result = subprocess.run(["matlab", "-nosplash", "-nodesktop", "-batch", "matlabroot"],

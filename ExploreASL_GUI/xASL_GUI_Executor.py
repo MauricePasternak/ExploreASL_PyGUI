@@ -90,18 +90,14 @@ class ExploreASL_Worker(QRunnable):
 class xASL_Executor(QMainWindow):
     cont_nstudies: QWidget
 
-    def __init__(self, parent_win=None):
+    def __init__(self, parent_win):
         # Parent window is fed into the constructor to allow for communication with parent window devices
         super().__init__(parent=parent_win)
-        if parent_win is not None:
-            self.config = self.parent().config
-        else:
-            with open("ExploreASL_GUI_masterconfig.json") as f:
-                self.config = json.load(f)
+        self.config = self.parent().config
 
         # Window Size and initial visual setup
         self.setMinimumSize(1080, 720)
-        self.resize(1920 // 2, 720)
+        self.resize(self.config["ScreenSize"][0] // 2, self.config["ScreenSize"][1] // 2)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QHBoxLayout(self.cw)
@@ -684,7 +680,9 @@ class xASL_Executor(QMainWindow):
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
             # maxvalue from that
-            workload, expected_status_files = calculate_anticipated_workload(parms, run_opts.currentText())
+            workload, expected_status_files = calculate_anticipated_workload(parmsdict=parms,
+                                                                             run_options=run_opts.currentText(),
+                                                                             translators=self.executor_translators)
             if not workload or len(expected_status_files) == 0:
                 # Remember to re-activate widgets
                 self.set_widgets_activation_states(True)
@@ -796,7 +794,7 @@ class ExploreASL_Watcher(QRunnable):
     # Processes the information sent from the event hander and emits signals to update widgets in the main Executor
     @Slot(str)
     def process_message(self, created_path):
-        print("\t" * 10 + f"PREPARE MSG HAS RECEIVED A MESSAGE: {created_path}")
+        print(f"Watcher process_message received message: {created_path}")
         detected_subject = self.subject_regex.search(created_path)
         detected_module = self.module_regex.search(created_path)
         msg = None

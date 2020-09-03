@@ -1,7 +1,6 @@
 import os
 from glob import glob
 import re
-import json
 from PySide2.QtCore import *
 from PySide2.QtGui import *
 from PySide2.QtWidgets import *
@@ -64,30 +63,18 @@ def initialize_all_lock_dirs(analysis_dir, regex, run_options, session_names):
 
 # Must be called after the lock dirs have been created; this function will attempt to calculate all the status files
 # that should be created in the run process
-def calculate_anticipated_workload(parmsdict, run_options):
+def calculate_anticipated_workload(parmsdict, run_options, translators):
     """
     Convenience function for calculating the anticipated workload
     :param parmsdict: the parameter file of the study; given parameters such as the regex are used from this
     :param run_options: "Structural", "ASL", "Both" or "Population"; which module is being run
+    :param translators: The ExecutorTranslators, primarily for calculating the workload
     :return: workload; a numerical representation of the cumulative value of all status files made; these will be
     used to determine the appropriate maximum value for the progressbar
     """
 
     def get_structural_workload(analysis_directory, study_subjects, structuralmod_dict,
-                                skip_if_no_asl, skip_if_no_m0, skip_if_no_flair):
-        workload_translator = {
-            "010_LinearReg_T1w2MNI.status": 1,
-            "020_LinearReg_FLAIR2T1w.status": 2,
-            "030_FLAIR_BiasfieldCorrection.status": 1,
-            "040_LST_Segment_FLAIR_WMH.status": 3,
-            "050_LST_T1w_LesionFilling_WMH.status": 1,
-            "060_Segment_T1w.status": 10,
-            "070_CleanUpWMH_SEGM.status": 1,
-            "080_Resample2StandardSpace.status": 2,
-            "090_GetVolumetrics.status": 1,
-            "100_VisualQC_Structural.status": 1,
-            "999_ready.status": 0
-        }
+                                skip_if_no_asl, skip_if_no_m0, skip_if_no_flair, workload_translator):
         default_workload = ["010_LinearReg_T1w2MNI.status",
                             "060_Segment_T1w.status",
                             "080_Resample2StandardSpace.status",
@@ -148,21 +135,16 @@ def calculate_anticipated_workload(parmsdict, run_options):
         return structuralmod_dict, status_files
 
     def get_asl_workload(analysis_directory, study_subjects, session_names, aslmod_dict,
-                         skip_if_no_asl, skip_if_no_m0, skip_if_no_flair):
-        workload_translator = {
-            "020_RealignASL.status": 1,
-            "030_RegisterASL.status": 2,
-            "040_ResampleASL.status": 1,
-            "050_PreparePV.status": 1,
-            "060_ProcessM0.status": 1,
-            "070_Quantification.status": 2,
-            "080_CreateAnalysisMask.status": 1,
-            "090_VisualQC_ASL.status": 1,
-            "999_ready.status": 0
-        }
-        default_workload = ["020_RealignASL.status", "030_RegisterASL.status", "040_ResampleASL.status",
-                            "050_PreparePV.status", "060_ProcessM0.status", "070_Quantification.status",
-                            "080_CreateAnalysisMask.status", "090_VisualQC_ASL.status", "999_ready.status"]
+                         skip_if_no_asl, skip_if_no_m0, skip_if_no_flair, workload_translator):
+        default_workload = ["020_RealignASL.status",
+                            "030_RegisterASL.status",
+                            "040_ResampleASL.status",
+                            "050_PreparePV.status",
+                            "060_ProcessM0.status",
+                            "070_Quantification.status",
+                            "080_CreateAnalysisMask.status",
+                            "090_VisualQC_ASL.status",
+                            "999_ready.status"]
 
         # Must iterate through both the subject level listing AND the session level (ASL_1, ASL_2, etc.) listing
         status_files = []
@@ -208,19 +190,17 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
         return aslmod_dict, status_files
 
-    def get_population_workload(analysis_directory):
-        workload_translator = {
-            "010_CreatePopulationTemplates.status": 1, "020_CreateAnalysisMask.status": 1,
-            "030_CreateBiasfield.status": 1, "040_GetDICOMStatistics.status": 1,
-            "050_GetVolumeStatistics.status": 1, "060_GetMotionStatistics.status": 1,
-            "070_GetROIstatistics.status": 20, "080_SortBySpatialCoV.status": 1, "090_DeleteAndZip.status": 1,
-            "999_ready.status": 0
-        }
-        default_workload = ["010_CreatePopulationTemplates.status", "020_CreateAnalysisMask.status",
-                            "030_CreateBiasfield.status", "040_GetDICOMStatistics.status",
-                            "050_GetVolumeStatistics.status", "060_GetMotionStatistics.status",
-                            "070_GetROIstatistics.status", "080_SortBySpatialCoV.status",
-                            "090_DeleteAndZip.status", "999_ready.status"]
+    def get_population_workload(analysis_directory, workload_translator):
+        default_workload = ["010_CreatePopulationTemplates.status",
+                            "020_CreateAnalysisMask.status",
+                            "030_CreateBiasfield.status",
+                            "040_GetDICOMStatistics.status",
+                            "050_GetVolumeStatistics.status",
+                            "060_GetMotionStatistics.status",
+                            "070_GetROIstatistics.status",
+                            "080_SortBySpatialCoV.status",
+                            "090_DeleteAndZip.status",
+                            "999_ready.status"]
 
         directory = os.path.join(analysis_directory, "lock", "xASL_module_Population", "xASL_module_Population")
         current_status_files = os.listdir(directory)
@@ -231,6 +211,9 @@ def calculate_anticipated_workload(parmsdict, run_options):
         numerical_representation = sum([workload_translator[stat_file] for stat_file in filtered_workload])
         # No need for flattening the status_files for this one; not nested
         return numerical_representation, status_files
+
+    # Define the individual translators
+    filename2workload = translators["ExploreASL_Filename2Workload"]
 
     # First get all the subjects
     analysis_dir: str = parmsdict["D"]["ROOT"]
@@ -251,10 +234,21 @@ def calculate_anticipated_workload(parmsdict, run_options):
 
     # Update the dicts as appropriate
     if run_options == "Both":
-        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict,
-                                                             skipifnoasl, skipifnom0, skipifnoflair)
-        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict,
-                                                skipifnoasl, skipifnom0, skipifnoflair)
+        struct_dict, struct_status = get_structural_workload(analysis_dir,
+                                                             subjects,
+                                                             struct_dict,
+                                                             skipifnoasl,
+                                                             skipifnom0,
+                                                             skipifnoflair,
+                                                             workload_translator=filename2workload)
+        asl_dict, asl_status = get_asl_workload(analysis_dir,
+                                                subjects,
+                                                sess_names,
+                                                asl_dict,
+                                                skipifnoasl,
+                                                skipifnom0,
+                                                skipifnoflair,
+                                                workload_translator=filename2workload)
 
         struct_totalworkload = sum(struct_dict.values())
         asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
@@ -265,18 +259,28 @@ def calculate_anticipated_workload(parmsdict, run_options):
         return struct_totalworkload + asl_totalworkload, struct_status + asl_status
 
     elif run_options == "ASL":
-        asl_dict, asl_status = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict,
-                                                skipifnoasl, skipifnom0, skipifnoflair)
-        # pprint(asl_dict)
-        asl_totalworkload = {subject: sum(asl_dict[subject].values()) for subject in subjects}
+        asl_dict, asl_status = get_asl_workload(analysis_dir,
+                                                subjects,
+                                                sess_names,
+                                                asl_dict,
+                                                skipifnoasl,
+                                                skipifnom0,
+                                                skipifnoflair,
+                                                workload_translator=filename2workload)
+        asl_totalworkload = {asl_subject: sum(asl_dict[asl_subject].values()) for asl_subject in subjects}
         asl_totalworkload = sum(asl_totalworkload.values())
         print(f"ASL Calculated Workload: {asl_totalworkload}")
         # Return the numerical sum of the workload and the list of expected status files
         return asl_totalworkload, asl_status
 
     elif run_options == "Structural":
-        struct_dict, struct_status = get_structural_workload(analysis_dir, subjects, struct_dict,
-                                                             skipifnoasl, skipifnom0, skipifnoflair)
+        struct_dict, struct_status = get_structural_workload(analysis_dir,
+                                                             subjects,
+                                                             struct_dict,
+                                                             skipifnoasl,
+                                                             skipifnom0,
+                                                             skipifnoflair,
+                                                             workload_translator=filename2workload)
         # pprint(struct_dict)
         struct_totalworkload = sum(struct_dict.values())
         print(f"Structural Calculated Workload: {struct_totalworkload}")
@@ -284,7 +288,7 @@ def calculate_anticipated_workload(parmsdict, run_options):
         return struct_totalworkload, struct_status
 
     elif run_options == "Population":
-        pop_totalworkload, pop_status = get_population_workload(analysis_dir)
+        pop_totalworkload, pop_status = get_population_workload(analysis_dir, workload_translator=filename2workload)
         print(f"Population Calculated Workload: {pop_totalworkload}")
         # Return the numerical sum of the workload and the list of expected status files
         return pop_totalworkload, pop_status
@@ -644,9 +648,3 @@ class ColnamesDragDrop_ListWidget(QListWidget):
                 self.addItem(item.text())
         else:
             event.ignore()
-
-
-if __name__ == '__main__':
-    analysis_directory = r'D:\GENFI_representative\TestDataSet\analysis'
-    subject = "Sub-001"
-    print(glob(os.path.join(analysis_directory, subject, "*FLAIR.nii*")))
