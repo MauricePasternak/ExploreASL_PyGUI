@@ -16,7 +16,7 @@
 ## Table of Contents
 - [Installation](#installation)
 - [Features](#features)
-- [Team](#ExploreASL Team)
+- [Team](#exploreasl-team)
 - [Support](#support)
 - [FAQ](#faq)
 - [License](#license)
