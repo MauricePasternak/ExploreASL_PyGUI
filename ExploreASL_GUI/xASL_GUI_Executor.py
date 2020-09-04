@@ -25,7 +25,8 @@ class ExploreASL_WorkerSignals(QObject):
     Class for handling the signals sent by an ExploreASL worker
     """
     finished_processing = Signal()  # Signal sent by worker to watcher to help indicate it when to stop watching
-    processing_error = Signal(dict)  # Signal sent by a worker to update the main errors dict
+    stdout_processing_error = Signal(dict)  # Signal sent by a worker to update the main stdout errors dict
+    stderr_processing_error = Signal(dict)  # Signal sent by a worker to update the main stderr errors dict
     encountered_fatal_error = Signal()  # Signal sent by worker to raise a dialogue informing the user of an error
 
 
@@ -72,32 +73,40 @@ class ExploreASL_Worker(QRunnable):
         )
         print(f"RESULTs for IWorker {iworker} of {nworkers}:"
               f"\n\tReturn code = {result.returncode}")
+        worker_analysis_dir = re.search(r'.*analysis', par_path).group()
         stdout = result.stdout
-        error_dict = {}
-        # print(f'{stdout=}')
+        stderr = result.stderr
+        stdout_error_dict = {}
+        stderr_error_dict = {}
+        print(f'stdout:\n{stdout}')
+        print(f'stderr:\n{stderr}')
 
-        #############################################
-        # ATTEMPT TO CATCH ERRORS FOR TROUBLESHOOTING
-        #############################################
+        ####################################################
+        # ATTEMPT TO CATCH STDOUT ERRORS FOR TROUBLESHOOTING
+        ####################################################
         if imodules == [3]:  # Population module
-            error_regex = re.compile(r"ERROR: Job iteration terminated![\n\s]+ans ="
-                                     r"([\n\s\w'\/()|;,><=%^&*$#!@~`:\[\]]+)"
-                                     r"CONT: but continue with next iteration")
-            captured_errors = error_regex.findall(stdout)
-            if len(captured_errors) == 1:
-                error_dict[re.search(r'.*analysis', par_path).group()] = {"Population": captured_errors[0]}
-                self.signals.processing_error.emit(error_dict)
+            stdout_error_regex = re.compile(r"ERROR: Job iteration terminated![\n\s]+ans ="
+                                            r"([\n\s\w'\/()|;,><=%^&*$#!@~`:.\[\]]+)"
+                                            r"CONT: but continue with next iteration")
+            captured_stdout_errors = stdout_error_regex.findall(stdout)
+            if len(captured_stdout_errors) == 1:
+                stdout_error_dict[worker_analysis_dir] = {"Population": captured_stdout_errors[0]}
+                self.signals.stdout_processing_error.emit(stdout_error_dict)
 
         else:  # Anything other than the Population module
-            error_regex = re.compile(f"({subject_regex_str})" +
-                                     r"[\n\s\w_.]+ERROR: Job iteration terminated![\n\s]+ans ="
-                                     r"([\n\s\w'\/()|;,><=%^&*$#!@~`:\[\]]+)"
-                                     r"CONT: but continue with next iteration")
-            captured_errors = error_regex.findall(stdout)
-            if len(captured_errors) > 0:
-                captured_errors = dict(captured_errors)
-                error_dict[re.search(r'.*analysis', par_path).group()] = captured_errors
-                self.signals.processing_error.emit(error_dict)
+            stdout_error_regex = re.compile(
+                f"({subject_regex_str})" +
+                r"(?:.*)"
+                r"ERROR: Job iteration terminated![\n\s]+ans ="
+                r"([\n\s\w'\/()|;,><=%^&*$#!@~`:.\[\]]+)"
+                r"CONT: but continue with next iteration", re.DOTALL)
+            print(stdout_error_regex.pattern)
+            captured_stdout_errors = stdout_error_regex.findall(stdout)
+            print(f"CAPTURED STDOUT ERRORS:\n\n\n{captured_stdout_errors}")
+            if len(captured_stdout_errors) > 0:
+                captured_stdout_errors = dict(captured_stdout_errors)
+                stdout_error_dict[worker_analysis_dir] = captured_stdout_errors
+                self.signals.stdout_processing_error.emit(stdout_error_dict)
 
         #################################
         # SEND THE APPROPRIATE END SIGNAL
@@ -107,6 +116,8 @@ class ExploreASL_Worker(QRunnable):
             self.signals.finished_processing.emit()
         else:
             print("EMITTING ENCOUNTERED ERROR SIGNAL")
+            stderr_error_dict[re.search(r'.*analysis', par_path).group()] = stderr
+            self.signals.stderr_processing_error.emit(stderr_error_dict)
             self.signals.encountered_fatal_error.emit()
 
 
@@ -456,23 +467,34 @@ class xASL_Executor(QMainWindow):
         else:
             self.btn_runExploreASL.setEnabled(False)
 
-    def assess_STATUS_completion(self):
+    def post_run_assessment(self):
         """
-        This function is responsible for comparing the produced STATUS files versus the expected STATUS files and create
-        a report for each run.
-        It is also responsible for detecting errors collected over the period of the processing.
+        1) Assesses any stdout errors that were captured during the run. That is, processes that finish successfully
+        with code 0 may have still experienced errors that stopped an iteration. These must be captured.
+        2) Assesses any stderr errors that were captured during the run. That is, processes that did not finish
+        correctly (i.e MATLAB crashed)
+        3) Assess the STATUS files that were generated against the expected files
+        4) Joins all the aforementioned together in an error file for that study
         """
-        # First, assess the status of the errorsdict_list
-        master_err_dict = defaultdict(list)
-        if len(self.errordicts_list) > 0:
+        # First, assess the status of the stdout_errordicts_list
+        master_stdout_err_dict = defaultdict(list)
+        if len(self.stdout_errordicts_list) > 0:
             # Must convert from a list of dicts to a dict of lists
-            for errordict in self.errordicts_list:
-                for study_path, study_errors in errordict.items():
-                    master_err_dict[study_path].append(study_errors)
+            for stdout_errordict in self.stdout_errordicts_list:
+                for study_path, study_errors in stdout_errordict.items():
+                    master_stdout_err_dict[study_path].append(study_errors)
             # print("MASTER ERROR DICT")
             # pprint(master_err_dict)
 
-        #
+        # Same deal for the stderr_errordicts_list
+        master_stderr_err_dict = defaultdict(list)
+        if len(self.stderr_errordicts_list) > 0:
+            # Must convert from a list of dicts to a dict of lists
+            for stderr_errordict in self.stderr_errordicts_list:
+                for study_path, study_errors in stderr_errordict.items():
+                    master_stderr_err_dict[study_path].append(study_errors)
+
+        # Next, assess the status files
         postrun_diagnosis = {}
         for study_dir, expected_files in self.expected_status_files.items():
             all_completed, incomplete_status_files = calculate_missing_STATUS(study_dir, expected_files)
@@ -491,14 +513,21 @@ class xASL_Executor(QMainWindow):
                 aslmod_msgs, \
                 popmod_msgs = interpret_statusfile_errors(incomplete_files, self.executor_translators)
 
-                specific_msg = []
+                specific_stdout_msg = []
                 # Extract the specific error messages
                 forward_study_dir = study_dir.replace("\\", "/")
-                if forward_study_dir in list(master_err_dict.keys()):
-                    study_errs = master_err_dict[forward_study_dir]
+                if forward_study_dir in list(master_stdout_err_dict.keys()):
+                    study_errs = master_stdout_err_dict[forward_study_dir]
                     for err_dict in study_errs:
                         for subject, err in err_dict.items():
-                            specific_msg.append(f"{subject}:\n{err.strip()}\n\n")
+                            specific_stdout_msg.append(f"{subject}:\n{err.strip()}\n\n")
+
+                specific_stderr_msg = []
+                # Extract the specific stderr messages
+                if forward_study_dir in list(master_stderr_err_dict.keys()):
+                    study_errs = master_stderr_err_dict[forward_study_dir]
+                    for std_err_msg in study_errs:
+                        specific_stderr_msg.append(std_err_msg)
 
                 msg = ["The following could not be completed during the run:\n"] + \
                       ["\n########################", "\nIn the Structural Module:\n"] + \
@@ -507,7 +536,8 @@ class xASL_Executor(QMainWindow):
                       [file + '\n' for file in aslmod_msgs] + \
                       ["\n########################", "\nIn the Population Module:\n"] + \
                       [file + '\n' for file in popmod_msgs] + \
-                      ["\n########################", "\nSpecific Errors:\n"] + specific_msg
+                      ["\n########################", "\nSpecific Stdout Errors:\n"] + specific_stdout_msg + \
+                      ["\n########################", "\nSpecific Stderr Errors:\n"] + specific_stderr_msg
 
                 with open(os.path.join(study_dir, f"{date.today()} ExploreASL run - errors.txt"), 'w') as writer:
                     writer.writelines(msg)
@@ -547,9 +577,14 @@ class xASL_Executor(QMainWindow):
         self.textedit_textoutput.append(msg)
 
     @Slot(dict)
-    def update_error_dicts(self, error_dict):
-        self.errordicts_list.append(error_dict)
-        print("update_error_dict got a signal")
+    def update_stdout_error_dicts(self, stdout_error_dict):
+        self.stdout_errordicts_list.append(stdout_error_dict)
+        print("update_stdout_error_dicts got a signal")
+
+    @Slot(dict)
+    def update_stderr_error_dicts(self, stderr_error_dict):
+        self.stderr_errordicts_list.append(stderr_error_dict)
+        print("update_stderr_error_dicts got a signal")
 
     # This slot is responsible for updating the progressbar based on signals set from the watcher
     @Slot(int, int)
@@ -579,7 +614,7 @@ class xASL_Executor(QMainWindow):
             self.set_widgets_activation_states(True)
 
             # Check if all expected operations took place
-            self.assess_STATUS_completion()
+            self.post_run_assessment()
 
             # Check the progressbars
             for progbar in self.formlay_progbars_list:
@@ -608,7 +643,8 @@ class xASL_Executor(QMainWindow):
         self.watchers = []
         self.total_process_dbt = 0
         self.expected_status_files = {}
-        self.errordicts_list = []
+        self.stdout_errordicts_list = []
+        self.stderr_errordicts_list = []
 
         # Disable widgets
         self.set_widgets_activation_states(False)
@@ -785,7 +821,8 @@ class xASL_Executor(QMainWindow):
                 worker.signals.encountered_fatal_error.connect(self.reactivate_widgets_postrun)
                 # Connect the error encountered signal to the slot that updates the executor's track record of the
                 # accounted for errors
-                worker.signals.processing_error.connect(self.update_error_dicts)
+                worker.signals.stdout_processing_error.connect(self.update_stdout_error_dicts)
+                worker.signals.stderr_processing_error.connect(self.update_stderr_error_dicts)
 
                 self.textedit_textoutput.append(f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study: "
                                                 f"{path.text()}")
