@@ -29,7 +29,7 @@ class xASL_Plotting(QMainWindow):
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
         self.setWindowTitle("Explore ASL - Post Processing Visualization")
-        self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "media", "ExploreASL_logo.png")))
+        self.setWindowIcon(QIcon(os.path.join(self.config["ProjectDir"], "media", "ExploreASL_logo.png")))
 
         # Central Classes
         self.subsetter = xASL_GUI_Subsetter(self)

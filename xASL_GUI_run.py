@@ -1,5 +1,6 @@
 from ExploreASL_GUI.xASL_GUI_MainWin import xASL_MainWin
 from PySide2.QtWidgets import *
+from PySide2.QtGui import QIcon
 import os
 import sys
 import json
@@ -86,6 +87,7 @@ if __name__ == '__main__':
     del regex, current_dir
 
     # If all was successful, launch the GUI
+    app.setWindowIcon(QIcon(os.path.join(master_config["ProjectDir"], "media", "ExploreASL_logo.ico")))
     os.chdir(scripts_dir)
     main_win = xASL_MainWin(master_config)
     main_win.show()

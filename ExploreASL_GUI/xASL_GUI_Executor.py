@@ -12,10 +12,11 @@ from PySide2.QtWidgets import *
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from ExploreASL_GUI.xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, xASL_GUI_TSValter, \
-    calculate_missing_STATUS, xASL_GUI_RerunPrep, interpret_statusfile_errors
+from ExploreASL_GUI.xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, \
+    xASL_GUI_TSValter, calculate_missing_STATUS, xASL_GUI_RerunPrep, interpret_statusfile_errors
 from ExploreASL_GUI.xASL_GUI_HelperFuncs import set_widget_icon
 from pprint import pprint
+from collections import defaultdict
 import subprocess
 
 
@@ -24,6 +25,7 @@ class ExploreASL_WorkerSignals(QObject):
     Class for handling the signals sent by an ExploreASL worker
     """
     finished_processing = Signal()  # Signal sent by worker to watcher to help indicate it when to stop watching
+    processing_error = Signal(dict)  # Signal sent by a worker to update the main errors dict
     encountered_fatal_error = Signal()  # Signal sent by worker to raise a dialogue informing the user of an error
 
 
@@ -39,22 +41,14 @@ class ExploreASL_Worker(QRunnable):
         print(f"Initialized Worker with args {self.args}")
 
     # This is called by the threadpool during threadpool.start(worker)
+    # noinspection RegExpRedundantEscape
     def run(self):
-        exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args
-        # print("Inside run")
-        # eng = matlab.engine.start_matlab()
-        # eng.cd(exploreasl_path)
-        # imodules = matlab.int8(imodules)
-        # try:
-        #     _ = eng.ExploreASL_Master(par_path, process_data, skip_pause, iworker, nworkers, imodules)
-        # except matlab.engine.EngineError as e:
-        #     print(e)
-        #     self.signals.encountered_fatal_error.emit(f"{e}")
-        #
-        # self.signals.finished_processing.emit()
-        # print("A worker has finished processing")
+        ##################################################
+        # PREPARE ARGUMENTS AND RUN THE UNDERLYING PROGRAM
+        ##################################################
 
-        print(f"Inside execute on processor {os.getpid()}")
+        exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args[0:-1]
+        subject_regex_str = self.args[-1]
 
         # Generate the string that the command line will feed into the complied MATLAB session
         func_line = f"('{par_path}', " \
@@ -76,8 +70,38 @@ class ExploreASL_Worker(QRunnable):
              f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"],
             capture_output=True, text=True
         )
-        print(f"RESULTs for IWorker {iworker} of {nworkers}: \nReturn code = {result.returncode}")
-        print(result.stdout)
+        print(f"RESULTs for IWorker {iworker} of {nworkers}:"
+              f"\n\tReturn code = {result.returncode}")
+        stdout = result.stdout
+        error_dict = {}
+        # print(f'{stdout=}')
+
+        #############################################
+        # ATTEMPT TO CATCH ERRORS FOR TROUBLESHOOTING
+        #############################################
+        if imodules == [3]:  # Population module
+            error_regex = re.compile(r"ERROR: Job iteration terminated![\n\s]+ans ="
+                                     r"([\n\s\w'\/()|;,><=%^&*$#!@~`:\[\]]+)"
+                                     r"CONT: but continue with next iteration")
+            captured_errors = error_regex.findall(stdout)
+            if len(captured_errors) == 1:
+                error_dict[re.search(r'.*analysis', par_path).group()] = {"Population": captured_errors[0]}
+                self.signals.processing_error.emit(error_dict)
+
+        else:  # Anything other than the Population module
+            error_regex = re.compile(f"({subject_regex_str})" +
+                                     r"[\n\s\w_.]+ERROR: Job iteration terminated![\n\s]+ans ="
+                                     r"([\n\s\w'\/()|;,><=%^&*$#!@~`:\[\]]+)"
+                                     r"CONT: but continue with next iteration")
+            captured_errors = error_regex.findall(stdout)
+            if len(captured_errors) > 0:
+                captured_errors = dict(captured_errors)
+                error_dict[re.search(r'.*analysis', par_path).group()] = captured_errors
+                self.signals.processing_error.emit(error_dict)
+
+        #################################
+        # SEND THE APPROPRIATE END SIGNAL
+        #################################
         if result.returncode == 0:
             print("EMITTING FINISHED PROCESSING SIGNAL")
             self.signals.finished_processing.emit()
@@ -432,9 +456,23 @@ class xASL_Executor(QMainWindow):
         else:
             self.btn_runExploreASL.setEnabled(False)
 
-    # This function is responsible for comparing the produced STATUS files versus the expected STATUS files and create
-    # a report for each run
     def assess_STATUS_completion(self):
+        """
+        This function is responsible for comparing the produced STATUS files versus the expected STATUS files and create
+        a report for each run.
+        It is also responsible for detecting errors collected over the period of the processing.
+        """
+        # First, assess the status of the errorsdict_list
+        master_err_dict = defaultdict(list)
+        if len(self.errordicts_list) > 0:
+            # Must convert from a list of dicts to a dict of lists
+            for errordict in self.errordicts_list:
+                for study_path, study_errors in errordict.items():
+                    master_err_dict[study_path].append(study_errors)
+            # print("MASTER ERROR DICT")
+            # pprint(master_err_dict)
+
+        #
         postrun_diagnosis = {}
         for study_dir, expected_files in self.expected_status_files.items():
             all_completed, incomplete_status_files = calculate_missing_STATUS(study_dir, expected_files)
@@ -448,18 +486,28 @@ class xASL_Executor(QMainWindow):
 
         # If at least one study had an issue, print out a warning and generate a log file in that study directory
         if len(postrun_diagnosis) > 0:
-
             for study_dir, incomplete_files in postrun_diagnosis.items():
                 structmod_msgs, \
                 aslmod_msgs, \
                 popmod_msgs = interpret_statusfile_errors(incomplete_files, self.executor_translators)
+
+                specific_msg = []
+                # Extract the specific error messages
+                forward_study_dir = study_dir.replace("\\", "/")
+                if forward_study_dir in list(master_err_dict.keys()):
+                    study_errs = master_err_dict[forward_study_dir]
+                    for err_dict in study_errs:
+                        for subject, err in err_dict.items():
+                            specific_msg.append(f"{subject}:\n{err.strip()}\n\n")
+
                 msg = ["The following could not be completed during the run:\n"] + \
                       ["\n########################", "\nIn the Structural Module:\n"] + \
                       [file + '\n' for file in structmod_msgs] + \
                       ["\n########################", "\nIn the ASL Module:\n"] + \
                       [file + '\n' for file in aslmod_msgs] + \
                       ["\n########################", "\nIn the Population Module:\n"] + \
-                      [file + '\n' for file in popmod_msgs]
+                      [file + '\n' for file in popmod_msgs] + \
+                      ["\n########################", "\nSpecific Errors:\n"] + specific_msg
 
                 with open(os.path.join(study_dir, f"{date.today()} ExploreASL run - errors.txt"), 'w') as writer:
                     writer.writelines(msg)
@@ -497,6 +545,11 @@ class xASL_Executor(QMainWindow):
     @Slot(str)
     def update_text(self, msg):
         self.textedit_textoutput.append(msg)
+
+    @Slot(dict)
+    def update_error_dicts(self, error_dict):
+        self.errordicts_list.append(error_dict)
+        print("update_error_dict got a signal")
 
     # This slot is responsible for updating the progressbar based on signals set from the watcher
     @Slot(int, int)
@@ -549,12 +602,13 @@ class xASL_Executor(QMainWindow):
     # This is the main function; prepares arguments; spawns workers; feeds in arguments to the workers during their
     # initialization; then begins the programs
     def run_Explore_ASL(self):
-        print("%" * 40)
+        print("%" * 60)
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
         self.workers = []
         self.watchers = []
         self.total_process_dbt = 0
         self.expected_status_files = {}
+        self.errordicts_list = []
 
         # Disable widgets
         self.set_widgets_activation_states(False)
@@ -651,7 +705,8 @@ class xASL_Executor(QMainWindow):
                         1,  # Skip the pause
                         ii + 1,  # iWorker
                         int(box.currentText()),  # nWorkers
-                        translator[run_opts.currentText()]  # Processing options
+                        translator[run_opts.currentText()],  # Processing options
+                        str_regex  # For catching errors for particular subjects
                     )
 
                     inner_worker_block.append(worker)
@@ -728,6 +783,9 @@ class xASL_Executor(QMainWindow):
                 # via debt repayment counter
                 worker.signals.finished_processing.connect(self.reactivate_widgets_postrun)
                 worker.signals.encountered_fatal_error.connect(self.reactivate_widgets_postrun)
+                # Connect the error encountered signal to the slot that updates the executor's track record of the
+                # accounted for errors
+                worker.signals.processing_error.connect(self.update_error_dicts)
 
                 self.textedit_textoutput.append(f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study: "
                                                 f"{path.text()}")
@@ -845,7 +903,7 @@ class ExploreASL_Watcher(QRunnable):
 
     def run(self):
         self.observer.start()
-        print("\t" * 10 + "THE OBSERVER HAS STARTED")
+        print("THE OBSERVER HAS STARTED")
         while self.watch_debt < 0:
             sleep(10)
         print("THE OBSERVER HAS STOPPED")

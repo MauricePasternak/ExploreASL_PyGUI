@@ -170,7 +170,7 @@ class xASL_MainWin(QMainWindow):
                           self.btn_open_parmsmaker, self.btn_open_postanalysis]
 
         imgs = [os.path.join(self.config["ProjectDir"], "media", "importer_icon.svg"),
-                os.path.join(self.config["ProjectDir"], "media", "postrun_analysis_icon.svg"),
+                os.path.join(self.config["ProjectDir"], "media", "parmsmaker_icon.svg"),
                 os.path.join(self.config["ProjectDir"], "media", "run_exploreasl_icon.svg"),
                 os.path.join(self.config["ProjectDir"], "media", "postrun_analysis_icon.svg")]
         txt_labels = ["Import DCM to NIFTI",
