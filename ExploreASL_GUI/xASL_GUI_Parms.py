@@ -95,11 +95,11 @@ class xASL_Parms(QMainWindow):
     def UI_Setup_Advanced(self):
         # First, set up the groupboxes and add them to the advanced tab layout
         self.vlay_advanced = QVBoxLayout(self.cont_advanced)
-        self.grp_sequenceparms = QGroupBox("Sequence Parameters")
-        self.grp_quantparms = QGroupBox("Quantification Parameters")
-        self.grp_m0parms = QGroupBox("M0 Parameters")
-        self.grp_procparms = QGroupBox("Processing Parameters")
-        self.grp_envparms = QGroupBox("Environment Parameters")
+        self.grp_sequenceparms = QGroupBox(title="Sequence Parameters")
+        self.grp_quantparms = QGroupBox(title="Quantification Parameters")
+        self.grp_m0parms = QGroupBox(title="M0 Parameters")
+        self.grp_procparms = QGroupBox(title="Processing Parameters")
+        self.grp_envparms = QGroupBox(title="Environment Parameters")
         for grp in [self.grp_sequenceparms, self.grp_quantparms, self.grp_m0parms,
                     self.grp_procparms, self.grp_envparms]:
             self.vlay_advanced.addWidget(grp)

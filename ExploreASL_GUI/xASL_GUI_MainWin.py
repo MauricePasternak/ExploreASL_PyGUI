@@ -6,7 +6,8 @@ from ExploreASL_GUI.xASL_GUI_Executor import xASL_Executor
 from ExploreASL_GUI.xASL_GUI_Plotting import xASL_Plotting
 from ExploreASL_GUI.xASL_GUI_Importer import xASL_GUI_Importer
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from collections import deque
+from ExploreASL_GUI.xASL_GUI_HelperFuncs_StringOps import set_os_dependent_text
+from ExploreASL_GUI.xASL_GUI_FileExplorer import xASL_FileExplorer
 import os
 import sys
 import json
@@ -48,7 +49,7 @@ class xASL_MainWin(QMainWindow):
         # Window Size and initial visual setup
         # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.setMinimumSize(800, 480)
-        self.resize(self.config["ScreenSize"][0]//2, self.config["ScreenSize"][1]//2.5)
+        self.resize(self.config["ScreenSize"][0] // 2, self.config["ScreenSize"][1] // 2.5)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         # Main Icon setup
@@ -59,7 +60,7 @@ class xASL_MainWin(QMainWindow):
         self.setWindowTitle("Explore ASL GUI")
 
         # Misc Players
-        self.file_history = deque(maxlen=10)
+        self.file_explorer = xASL_FileExplorer(self)
 
         # Set up each of the subcomponents of the main window program
         self.UI_Setup_Navigator()
@@ -77,10 +78,10 @@ class xASL_MainWin(QMainWindow):
     # subwidgets within the program; should also be dockable within any of them.
     def UI_Setup_Navigator(self):
         # Initialize the navigator and essential characteristics
-        self.dock_navigator = QDockWidget("Explore ASL Navigator", self)
+        self.dock_navigator = QDockWidget(windowTitle="Explore ASL Navigator", parent=self)
         self.dock_navigator.setFeatures(QDockWidget.AllDockWidgetFeatures)
         self.dock_navigator.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_navigator.setMinimumSize(400, 480)
+        self.dock_navigator.setMinimumSize(600, 480)
         self.dock_navigator.setWindowIcon(self.icon_main)
         # The main container and the main layout of the dock
         self.cont_navigator = QWidget(self.dock_navigator)
@@ -91,8 +92,10 @@ class xASL_MainWin(QMainWindow):
 
         # Essential Widgets
         # First, the lineedit for the ExploreASL directory
-        self.le_exploreasl_dir = DandD_FileExplorer2LineEdit()
-        self.le_exploreasl_dir.setText(self.config["ExploreASLRoot"])
+        self.le_exploreasl_dir = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
+        set_os_dependent_text(linedit=self.le_exploreasl_dir,
+                              config_ossystem=self.config["Platform"],
+                              text_to_set=self.config["ExploreASLRoot"])
         self.le_exploreasl_dir.textChanged.connect(self.set_exploreasl_dir)
         self.le_exploreasl_dir.setReadOnly(True)
         self.btn_exploreasl_dir = QPushButton("...", clicked=self.set_exploreasl_dir_frombtn)
@@ -101,8 +104,10 @@ class xASL_MainWin(QMainWindow):
         self.hlay_exploreasl_dir.addWidget(self.btn_exploreasl_dir)
 
         # Second, the lineedit for the study analysis directory
-        self.le_currentanalysis_dir = DandD_FileExplorer2LineEdit(self.cont_navigator)
-        self.le_currentanalysis_dir.setText(self.config["DefaultRootDir"])
+        self.le_currentanalysis_dir = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
+        set_os_dependent_text(linedit=self.le_currentanalysis_dir,
+                              config_ossystem=self.config["Platform"],
+                              text_to_set=self.config["DefaultRootDir"])
         self.le_currentanalysis_dir.textChanged.connect(self.set_analysis_dir)
         self.btn_currentanalysis_dir = QPushButton("...", self.cont_navigator, clicked=self.set_analysis_dir_frombtn)
         self.hlay_currentanalysis_dir = QHBoxLayout()
@@ -118,21 +123,8 @@ class xASL_MainWin(QMainWindow):
         self.formlay_navigator.addRow("Current Analysis Directory", self.hlay_currentanalysis_dir)
         self.formlay_navigator.addRow("Set selected directory as default?", self.chk_makedefault_analysisdir)
 
-        # Finally, the main player will be a treeview with a FileSystemModel
-        self.treev_navigator = QTreeView(self.cont_navigator)
-        self.filemodel_navigator = QFileSystemModel(self.cont_navigator)
-        self.filemodel_navigator.setRootPath(self.config["DefaultRootDir"])
-        self.treev_navigator.setModel(self.filemodel_navigator)
-        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(self.config["DefaultRootDir"]))
-        self.treev_navigator.header().resizeSection(0, 250)
-        self.treev_navigator.setDragEnabled(True)
-        self.treev_navigator.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.treev_navigator.setSortingEnabled(True)
-        self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
-
-        # Add all essential widgets to the dock's main layout
         self.vlay_navigator.addLayout(self.formlay_navigator)
-        self.vlay_navigator.addWidget(self.treev_navigator)
+        self.vlay_navigator.addWidget(self.file_explorer)
 
     # Setup the standard Menu
     def UI_Setup_MenuBar(self):
@@ -250,15 +242,10 @@ class xASL_MainWin(QMainWindow):
         # Abort if the provided directory is actually not a directory
         if not os.path.isdir(directory):
             return
-        # Alter filepath display in accordance with operating system
-        if '/' in directory and platform.system() == "Windows":
-            directory = directory.replace("/", "\\")
-        # Change the display and have the navigator adjust according
-        self.le_currentanalysis_dir.setText(directory)
-        self.filemodel_navigator.setRootPath(directory)
-        self.treev_navigator.setRootIndex(self.filemodel_navigator.index(directory))
-        self.treev_navigator.sortByColumn(1, Qt.AscendingOrder)
-
+        # Change the lineedit
+        set_os_dependent_text(linedit=self.le_currentanalysis_dir,
+                              config_ossystem=self.config["Platform"],
+                              text_to_set=directory)
         # Update user config to have a new default analysis dir to refer to in on future startups
         if self.chk_makedefault_analysisdir.isChecked():
             self.config["DefaultRootDir"] = directory
@@ -279,94 +266,10 @@ class xASL_MainWin(QMainWindow):
         # Abort if the provided directory is actually not a directory
         if not os.path.isdir(directory):
             return
-        # Alter filepath display in accordance with operating system
-        if '/' in directory and platform.system() == "Windows":
-            directory = directory.replace("/", "\\")
-
-        # Update the lineedit text and the config directory
-        self.le_exploreasl_dir.setText(directory)
+        # Change the lineedit
+        set_os_dependent_text(linedit=self.le_exploreasl_dir,
+                              config_ossystem=self.config["Platform"],
+                              text_to_set=directory)
+        # Update user config to have a new ExploreASL directory specified
         self.config["ExploreASLRoot"] = directory
         self.save_config()
-
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    current_dir = os.getcwd()
-    project_dir = os.path.dirname(current_dir)
-    json_logic_dir = os.path.join(project_dir, "JSON_LOGIC")
-
-    regex = re.compile("'(.*)'")
-    # Get the appropriate default style based on the user's operating system
-    if platform.system() == "Windows":  # Windows
-        app.setStyle("Fusion")
-    elif platform.system() == "Darwin":  # Mac
-        app.setStyle("macintosh")
-    elif platform.system() == "Linux":  # Linux
-        app.setStyle("Fusion")
-    else:
-        QMessageBox().warning(QWidget(),
-                              "Unsupported Operating System",
-                              f"The operating system identified as: {platform.system()} "
-                              f"is not compatible with this program. "
-                              f"Please run this program on any of the following:\n"
-                              f"- Windows 10\n-Mactintosh\n-Linux using Ubuntu Kernel",
-                              QMessageBox.Ok)
-        sys.exit()
-
-    if not os.path.exists(json_logic_dir):
-        QMessageBox().warning(QWidget(),
-                              "No JSON_LOGIC directory found",
-                              f"The program directory structure is compromised. No JSON_LOGIC directory was located"
-                              f"in {project_dir}",
-                              QMessageBox.Ok)
-        sys.exit()
-
-    # Get the screen credentials
-    screen = app.primaryScreen()
-    screen_size = screen.availableSize()
-
-    # Check if the master config file exists; if it doesn't, the app will initialize one on the first startup
-    if os.path.exists(os.path.join(json_logic_dir, "ExploreASL_GUI_masterconfig.json")):
-        with open(os.path.join(json_logic_dir, "ExploreASL_GUI_masterconfig.json")) as master_config_reader:
-            master_config = json.load(master_config_reader)
-    else:
-        master_config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
-                         "DefaultRootDir": current_dir,  # The default root for the navigator to watch from
-                         "ScriptsDir": current_dir,  # The location of where this script is launched from
-                         "ProjectDir": project_dir,  # The location of the ExploreASL_GUI main dir
-                         "Platform": f"{platform.system()}",
-                         "ScreenSize": (screen_size.width(), screen_size.height()),  # Screen dimensions
-                         "DeveloperMode": False  # Whether to launch the app in developer mode or not
-                         }
-        result = subprocess.run(["matlab", "-nosplash", "-nodesktop", "-batch", "matlabroot"],
-                                capture_output=True, text=True)
-        if result.returncode == 0:
-            match = regex.search(result.stdout)
-            if match:
-                master_config["MATLABROOT"] = match.group(1)
-            else:
-                QMessageBox().warning(QWidget(),
-                                      "No MATLAB directory found",
-                                      "No path to the MATLAB root directory could be located on this device. "
-                                      "If MATLAB is installed on this device and this message is displaying, "
-                                      "please contact your system administration and check whether MATLAB is "
-                                      "listed in your system's PATH variable.",
-                                      QMessageBox.Ok)
-                sys.exit()
-        else:
-            QMessageBox().warning(QWidget(),
-                                  "No MATLAB directory found",
-                                  "No path to the MATLAB root directory could be located on this device. "
-                                  "If MATLAB is installed on this device and this message is displaying, "
-                                  "please contact your system administration and check whether MATLAB is "
-                                  "listed in your system's PATH variable.",
-                                  QMessageBox.Ok)
-            sys.exit()
-
-    # Memory cleanup
-    del regex, current_dir
-
-    # If all was successful, launch the GUI
-    main_win = xASL_MainWin(master_config)
-    main_win.show()
-    sys.exit(app.exec_())

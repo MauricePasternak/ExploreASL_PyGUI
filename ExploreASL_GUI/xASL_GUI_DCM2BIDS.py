@@ -714,8 +714,6 @@ def bids_m0_followup(analysis_dir):
                 json.dump(m0_parms, m0_json_writer, indent=3)
 
 
-
-
 def fix_mosaic(mosaic_nifti: nib.Nifti1Image, acq_dims: tuple):
     """
     Fixes incorrectly-processed NIFTIs by dcm2niix where they still remain mosaics due to a lack of

@@ -21,9 +21,9 @@ class xASL_GUI_PlotLabels(QWidget):
         self.setWindowTitle("Axis Labels Settings")
         self.setMinimumSize(300, 480)
         self.mainlay = QVBoxLayout(self)
-        self.grp_xaxislabel = QGroupBox("X-Axis Label Settings", self)
-        self.grp_yaxislabel = QGroupBox("Y-Axis Label Settings", self)
-        self.grp_title = QGroupBox("Title Settings", self)
+        self.grp_xaxislabel = QGroupBox(title="X-Axis Label Settings")
+        self.grp_yaxislabel = QGroupBox(title="Y-Axis Label Settings")
+        self.grp_title = QGroupBox(title="Title Settings")
         self.formlay_xaxislabel = QFormLayout(self.grp_xaxislabel)
         self.formlay_yaxislabel = QFormLayout(self.grp_yaxislabel)
         self.formlay_title = QFormLayout(self.grp_title)
@@ -35,7 +35,6 @@ class xASL_GUI_PlotLabels(QWidget):
         self.mainlay.addWidget(self.grp_title)
         self.mainlay.addWidget(self.grp_xaxislabel)
         self.mainlay.addWidget(self.grp_yaxislabel)
-
 
     def Setup_UI_XAxisLabelParms(self):
         # X-Axis Label Properties

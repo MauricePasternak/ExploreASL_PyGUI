@@ -1,7 +1,7 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorerFile2LineEdit
+from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from ExploreASL_GUI.xASL_GUI_Graph_Subsetter import xASL_GUI_Subsetter
 from ExploreASL_GUI.xASL_GUI_Graph_Loader import xASL_GUI_Data_Loader
 from ExploreASL_GUI.xASL_GUI_Graph_FacetManager import xASL_GUI_FacetManager
@@ -43,7 +43,7 @@ class xASL_Plotting(QMainWindow):
         self.UI_Setup_Docker()
 
     def UI_Setup_Docker(self):
-        self.dock = QDockWidget("Data Visualization Settings", self.cw)
+        self.dock = QDockWidget(windowTitle="Data Visualization Settings", parent=self.cw)
         self.dock.setMinimumWidth(480)
         self.dock.setFeatures(QDockWidget.AllDockWidgetFeatures)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.dock)
@@ -52,14 +52,16 @@ class xASL_Plotting(QMainWindow):
         self.dock.setWidget(self.cont_maindock)
 
         # Set up the directory settings - what analysis folder
-        self.grp_directories = QGroupBox("Directory settings", self.cont_maindock)
+        self.grp_directories = QGroupBox(title="Directory settings", parent=self.cont_maindock)
         self.formlay_directories = QFormLayout(self.grp_directories)
         self.hlay_analysis_dir, self.le_analysis_dir, self.btn_analysis_dir = self.make_droppable_clearable_le(
             btn_connect_to=self.set_analysis_dir,
-            default=self.config["DefaultRootDir"])
-        # self.le_analysis_dir = DandD_FileExplorer2LineEdit(self.grp_directories)
-        # self.le_analysis_dir.setText(self.parent().config["DefaultRootDir"])
-        self.le_demographics_file = DandD_FileExplorerFile2LineEdit([".tsv", ".csv", ".xlsx"], self.grp_directories)
+            default=self.config["DefaultRootDir"],
+            acceptable_path_type="Directory"
+        )
+
+        self.le_demographics_file = DandD_FileExplorer2LineEdit(acceptable_path_type="File",
+                                                                supported_extensions=[".tsv", ".csv", ".xlsx"])
         self.le_demographics_file.setPlaceholderText("Drag & Drap a supporting .tsv/.csv/.xlsx file")
         self.cmb_atlas_selection = QComboBox(self.grp_directories)
         self.cmb_atlas_selection.addItems(["MNI", "Hammers"])
@@ -86,7 +88,7 @@ class xASL_Plotting(QMainWindow):
         self.le_demographics_file.textChanged.connect(self.subsetter.clear_contents)
 
         # Setup the main Variable Viewer
-        self.grp_varview = QGroupBox("Variables", self.cont_maindock)
+        self.grp_varview = QGroupBox(title="Variables", parent=self.cont_maindock)
         self.vlay_varview = QVBoxLayout(self.grp_varview)
         self.lst_varview = QListWidget(self.grp_varview)
         self.lst_varview.setFixedHeight(250)
@@ -94,7 +96,7 @@ class xASL_Plotting(QMainWindow):
         self.vlay_varview.addWidget(self.lst_varview)
 
         # Setup the start of Plotting Settings
-        self.grp_pltsettings = QGroupBox("Plotting Settings", self.cont_maindock)
+        self.grp_pltsettings = QGroupBox(title="Plotting Settings", parent=self.cont_maindock)
         self.vlay_pltsettings = QVBoxLayout(self.grp_pltsettings)
         self.cmb_figuretypeselection = QComboBox(self.grp_pltsettings)
         self.cmb_figuretypeselection.addItems(["Select an option", "Facet Grid", "Scatterplot & MRI View"])
@@ -183,9 +185,9 @@ class xASL_Plotting(QMainWindow):
     ############################################
 
     @staticmethod
-    def make_droppable_clearable_le(le_connect_to=None, btn_connect_to=None, default=''):
+    def make_droppable_clearable_le(le_connect_to=None, btn_connect_to=None, default='', **kwargs):
         hlay = QHBoxLayout()
-        le = DandD_FileExplorer2LineEdit()
+        le = DandD_FileExplorer2LineEdit(**kwargs)
         le.setText(default)
         le.setClearButtonEnabled(True)
         if le_connect_to is not None:

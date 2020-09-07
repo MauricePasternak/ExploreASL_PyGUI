@@ -5,7 +5,7 @@ from PySide2.QtWidgets import QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QC
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_Graphing_ListWidget2LineEdit
 
 
-def set_widget_icon(widget, config, icon_name, size=None):
+def set_widget_icon(widget, config: dict, icon_name: str, size: tuple = None):
     """
     Convenience function for setting a widget to contain an icon of a particular size
     :param widget: the widget for which an icon should be set

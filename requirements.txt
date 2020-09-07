@@ -9,3 +9,4 @@ seaborn~=0.10.1
 pyside2~=5.15.0
 tdda~=1.0.31
 watchdog~=0.10.3
+more_itertools~=8.5.0

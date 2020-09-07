@@ -1,7 +1,7 @@
 from PySide2.QtWidgets import QLineEdit, QAbstractItemView, QListWidget
 from PySide2.QtCore import Qt, Signal, QModelIndex
-from platform import platform
 import os
+from ExploreASL_GUI.xASL_GUI_HelperFuncs_StringOps import set_os_dependent_text
 
 
 class DandD_Graphing_ListWidget2LineEdit(QLineEdit):
@@ -9,12 +9,12 @@ class DandD_Graphing_ListWidget2LineEdit(QLineEdit):
     Modified QLineEdit to support accepting text drops from a QListWidget or QAbstractItemModel derivatives
     """
 
-    def __init__(self, PostProc_widget, dtype_list, parent=None):
+    def __init__(self, postproc_widget, dtype_list, parent=None):
         # print(dtype_list)
         super().__init__(parent)
         self.permitted_dtypes = dtype_list
         self.setAcceptDrops(True)
-        self.PostProc_widget = PostProc_widget
+        self.PostProc_widget = postproc_widget
 
     def dragEnterEvent(self, event) -> None:
         # print(event.mimeData().formats())
@@ -57,51 +57,29 @@ class DandD_Graphing_ListWidget2LineEdit(QLineEdit):
 class DandD_FileExplorer2LineEdit(QLineEdit):
     """
     Modified QLineEdit to support accepting text drops from a file explorer
+
+    Signature: DandD_FileExplorer2LineEdit(parent, acceptable_path_type, supported_extensions)
+        - parent = the parent widget
+        - acceptable_path_type = the type of filepath it will accept.
+            - "File",
+            - "Directory"
+            - "Both"
+        - supported_extensions
+
     """
 
-    def __init__(self, parent=None, id=None):
+    def __init__(self, parent=None, acceptable_path_type: str = "Both", supported_extensions: list = None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.id = id
-
-    def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasUrls():
-            event.accept()
+        self.path_type = acceptable_path_type
+        if supported_extensions is None or supported_extensions == "All":
+            self.supported_ext = []
         else:
-            event.ignore()
+            self.supported_ext = supported_extensions
 
-    def dragMoveEvent(self, event) -> None:
-        if event.mimeData().hasUrls():
-            event.setDropAction(Qt.CopyAction)
-            event.accept()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event) -> None:
-        if event.mimeData().hasUrls():
-            event.accept()
-            for url in event.mimeData().urls():
-                if url.isLocalFile():
-                    dir_string = str(url.toLocalFile())
-                    if '/' in dir_string and "windows" in platform().lower():
-                        dir_string = dir_string.replace("/", "\\")
-                    self.setText(dir_string)
-                    return  # Only return the first local url instance if this was a from a multi-selection
-        else:
-            event.ignore()
-
-
-class DandD_FileExplorerFile2LineEdit(QLineEdit):
-    """
-    Modified QLineEdit to support accepting text drops from a file explorer specifically for files, not directories.
-    Has a required field to specify the filetypes it allows (specify a list of extensions, period included).
-    """
-
-    def __init__(self, supported_extensions, parent=None, id=None):
-        super().__init__(parent)
-        self.supported_extensions: list = supported_extensions
-        self.setAcceptDrops(True)
-        self.id = id
+        # Quality Control
+        if acceptable_path_type not in ["File", "Directory", "Both"]:
+            raise ValueError("acceptable_path_type must be one of: 'File', 'Directory', or 'Both'")
 
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
@@ -122,21 +100,39 @@ class DandD_FileExplorerFile2LineEdit(QLineEdit):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     path_string = str(url.toLocalFile())
-                    if '/' in path_string and "windows" in platform().lower():
-                        path_string = path_string.replace("/", "\\")
 
-                    # print(f"Path: {path_string}\n"
-                    #       f"Exists?: {os.path.exists(path_string)}\n"
-                    #       f"Is file? {os.path.isfile(path_string)}\n"
-                    #       f"Supported extensions: {self.supported_extensions}\n"
-                    #       f"Detected extensions: {os.path.splitext(path_string)[1]}")
+                    # Scenario 1: Accept all filetypes
+                    if self.path_type == "Both" and os.path.exists(path_string):
+                        set_os_dependent_text(linedit=self,
+                                              config_ossystem='',
+                                              text_to_set=path_string)
+                        return
 
-                    if all([os.path.exists(path_string),
-                            os.path.isfile(path_string),
-                            os.path.splitext(path_string)[1] in self.supported_extensions
-                            ]):
-                        self.setText(path_string)
-                        return  # Only return the first local url instance if this was a from a multi-selection
+                    # Scenario 2: Accept only Files
+                    elif self.path_type == "File" and os.path.isfile(path_string):
+                        if len(self.supported_ext) == 0:
+                            set_os_dependent_text(linedit=self,
+                                                  config_ossystem='',
+                                                  text_to_set=path_string)
+                            return
+                        else:
+                            if os.path.splitext(path_string)[1] in self.supported_ext:
+                                set_os_dependent_text(linedit=self,
+                                                      config_ossystem='',
+                                                      text_to_set=path_string)
+                                return
+                            else:
+                                event.ignore()
+
+                    # Scenario 3: Accept only Direcories
+                    elif self.path_type == "Directory" and os.path.isdir(path_string):
+                        set_os_dependent_text(linedit=self,
+                                              config_ossystem='',
+                                              text_to_set=path_string)
+                        return
+
+                    else:
+                        event.ignore()
         else:
             event.ignore()
 

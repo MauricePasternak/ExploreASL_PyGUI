@@ -13,8 +13,10 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from ExploreASL_GUI.xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, \
-    xASL_GUI_TSValter, calculate_missing_STATUS, xASL_GUI_RerunPrep, interpret_statusfile_errors
+    calculate_missing_STATUS, interpret_statusfile_errors, xASL_ImagePlayer
+from ExploreASL_GUI.xASL_GUI_Executor_Modjobs import xASL_GUI_RerunPrep, xASL_GUI_TSValter
 from ExploreASL_GUI.xASL_GUI_HelperFuncs import set_widget_icon
+from ExploreASL_GUI.xASL_GUI_HelperFuncs_StringOps import set_os_dependent_text
 from pprint import pprint
 from collections import defaultdict
 import subprocess
@@ -78,8 +80,8 @@ class ExploreASL_Worker(QRunnable):
         stderr = result.stderr
         stdout_error_dict = {}
         stderr_error_dict = {}
-        print(f'stdout:\n{stdout}')
-        print(f'stderr:\n{stderr}')
+        # print(f'stdout:\n{stdout}')
+        # print(f'stderr:\n{stderr}')
 
         ####################################################
         # ATTEMPT TO CATCH STDOUT ERRORS FOR TROUBLESHOOTING
@@ -100,9 +102,8 @@ class ExploreASL_Worker(QRunnable):
                 r"ERROR: Job iteration terminated![\n\s]+ans ="
                 r"([\n\s\w'\/()|;,><=%^&*$#!@~`:.\[\]]+)"
                 r"CONT: but continue with next iteration", re.DOTALL)
-            print(stdout_error_regex.pattern)
+
             captured_stdout_errors = stdout_error_regex.findall(stdout)
-            print(f"CAPTURED STDOUT ERRORS:\n\n\n{captured_stdout_errors}")
             if len(captured_stdout_errors) > 0:
                 captured_stdout_errors = dict(captured_stdout_errors)
                 stdout_error_dict[worker_analysis_dir] = captured_stdout_errors
@@ -139,12 +140,14 @@ class xASL_Executor(QMainWindow):
         self.setLayout(self.mainlay)
         self.setWindowTitle("Explore ASL - Executor")
         self.setWindowIcon(QIcon(os.path.join(self.config["ProjectDir"], "media", "ExploreASL_logo.png")))
-        # Main run button must be defined early, since connections will be dynamically made to it
+
+        # Other instance variables
         self.threadpool = QThreadPool()
+        self.processing_movieplayer = xASL_ImagePlayer(os.path.join(self.config["ProjectDir"],
+                                                                    "media",
+                                                                    "processing.gif"))
 
         # MISC VARIABLES
-        # Create a "debt" variable that will be used to reactivate the ExploreASL button; will decrement when a process
-        # begins, and increment back towards zero when said process ends. At zero, the button will be re-activated
         self.red_palette = QPalette()
         self.red_palette.setColor(QPalette.Highlight, Qt.red)
         self.green_palette = QPalette()
@@ -165,9 +168,9 @@ class xASL_Executor(QMainWindow):
         self.splitter_rightside = QSplitter(Qt.Vertical, self.cw)
 
         # Group Boxes
-        self.grp_taskschedule = QGroupBox("Task Scheduler", self.cw)
-        self.grp_textoutput = QGroupBox("Output", self.cw)
-        self.grp_procmod = QGroupBox("Process Modifier", self.cw)
+        self.grp_taskschedule = QGroupBox(title="Task Scheduler")
+        self.grp_textoutput = QGroupBox(title="Output")
+        self.grp_procmod = QGroupBox(title="Process Modifier")
 
         # Run Button
         self.btn_runExploreASL = QPushButton("Run Explore ASL", self.cw, clicked=self.run_Explore_ASL)
@@ -200,14 +203,14 @@ class xASL_Executor(QMainWindow):
     # Left side setup; define the number of studies
     def UI_Setup_TaskScheduler(self):
         self.vlay_taskschedule = QVBoxLayout(self.grp_taskschedule)
-        self.lab_coresinfo = QLabel(f"CPU Count: A total of {os.cpu_count() // 2} "
-                                    f"processors are available on this machine",
-                                    self.grp_taskschedule)
+        self.lab_coresinfo = QLabel(text=f"CPU Count: A total of {os.cpu_count() // 2} "
+                                         f"processors are available on this machine")
         self.ncores_left = os.cpu_count() // 2
-        self.lab_coresleft = QLabel(f"You are permitted to set up to {self.ncores_left} more core(s)")
+        self.lab_coresleft = QLabel(text=f"You are permitted to set up to {self.ncores_left} more core(s)")
         self.cont_nstudies = QWidget(self.grp_taskschedule)
         self.hlay_nstudies = QHBoxLayout(self.cont_nstudies)
-        self.lab_nstudies = QLabel(f"Indicate the number of studies you wish to process:", self.cont_nstudies)
+        self.lab_nstudies = QLabel(text=f"Indicate the number of studies you wish to process:",
+                                   parent=self.cont_nstudies)
         self.cmb_nstudies = QComboBox(self.cont_nstudies)
         self.nstudies_options = ["Select"] + list(map(str, range(1, (os.cpu_count() // 2 + 1))))
         self.cmb_nstudies.addItems(self.nstudies_options)
@@ -219,7 +222,7 @@ class xASL_Executor(QMainWindow):
 
         self.cont_filler = QWidget(self.grp_taskschedule)
         self.formlay_filler = QFormLayout(self.cont_filler)
-        self.formlay_filler.addRow("Number of Cores to Allocate ||", QLabel("Filepaths to Analysis Directories"))
+        self.formlay_filler.addRow("Number of Cores to Allocate ||", QLabel(text="Filepaths to Analysis Directories"))
 
         self.cont_tasks = QWidget(self.grp_taskschedule)
         self.formlay_tasks = QFormLayout(self.cont_tasks)
@@ -252,7 +255,6 @@ class xASL_Executor(QMainWindow):
         self.textedit_textoutput = QTextEdit(self.grp_textoutput)
         self.textedit_textoutput.setPlaceholderText("Processing Progress will appear within this window")
         self.vlay_textoutput.addWidget(self.textedit_textoutput)
-        # self.vlay_right.addWidget(self.btn_runExploreASL)
 
     # Rare exception of a UI function that is also technically a setter; this will dynamically alter the number of
     # rows present in the task scheduler form layout to allow for ExploreASL analysis of multiple studies at once
@@ -273,7 +275,7 @@ class xASL_Executor(QMainWindow):
                 inner_cmb.currentTextChanged.connect(self.set_ncores_selectable)
                 inner_cmb.currentTextChanged.connect(self.set_nstudies_selectable)
                 inner_cmb.currentTextChanged.connect(self.is_ready_to_run)
-                inner_le = DandD_FileExplorer2LineEdit()
+                inner_le = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
                 inner_le.setPlaceholderText("Select the analysis directory to your study")
                 inner_le.textChanged.connect(self.is_ready_to_run)
                 inner_btn = RowAwareQPushButton(self.formlay_nrows, "...")
@@ -331,7 +333,7 @@ class xASL_Executor(QMainWindow):
         # Set up the widgets in this section
         self.cmb_modjob = QComboBox(self.grp_procmod)
         self.cmb_modjob.addItems(["Alter participants.tsv", "Prepare a study for a re-run"])
-        self.le_modjob = DandD_FileExplorer2LineEdit(self.grp_procmod)
+        self.le_modjob = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
         self.le_modjob.setPlaceholderText("Drag & Drop analysis directory here")
         self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod, clicked=self.run_modjob)
 
@@ -402,6 +404,10 @@ class xASL_Executor(QMainWindow):
         if modjob_widget is not None:
             modjob_widget.show()
 
+    ##########################
+    # TASK SCHEDULER FUNCTIONS
+    ##########################
+
     # Function responsible for adjusting the label of how many cores are still accessible
     def set_ncores_left(self):
         self.ncores_left = os.cpu_count() // 2 - sum([int(cmb.currentText()) for cmb in self.formlay_cmbs_ncores_list])
@@ -442,6 +448,21 @@ class xASL_Executor(QMainWindow):
             else:
                 self.cmb_nstudies.model().item(idx).setEnabled(False)
 
+    # This slot is responsible for setting the correct analysis directory to a given task row's lineedit correcting
+    @Slot(int)
+    def set_analysis_directory(self, row_idx):
+        """
+        :param row_idx: The index of the row from the pushbutton calling this slot. It is a non-pythonic index, so it
+        must be reduced by 1 to index properly
+        """
+        dir_path = QFileDialog.getExistingDirectory(self.cw,
+                                                    "Select the analysis directory of your study",
+                                                    self.parent().config["DefaultRootDir"],
+                                                    QFileDialog.ShowDirsOnly)
+        set_os_dependent_text(linedit=self.formlay_lineedits_list[row_idx - 1],
+                              config_ossystem=self.config["Platform"],
+                              text_to_set=dir_path)
+
     # Define whether the run Explore ASL button should be enabled
     def is_ready_to_run(self):
         # First check: all lineedits must have an appropriate analysis directory with a par file
@@ -467,7 +488,29 @@ class xASL_Executor(QMainWindow):
         else:
             self.btn_runExploreASL.setEnabled(False)
 
-    def post_run_assessment(self):
+    ###################################
+    # CONCURRENT AND POST-RUN FUNCTIONS
+    ###################################
+
+    def post_run_main(self):
+        """
+        Main wrapper function for all post-run followup
+        """
+        # Re-activate all relevant widgets
+        self.set_widgets_activation_states(True)
+
+        # Stop the movie
+        self.end_movie()
+
+        # Check if all expected operations took place
+        self.post_run_statusfile_and_error_assessment()
+
+        # Check the progressbars
+        for progbar in self.formlay_progbars_list:
+            if progbar.value() != progbar.maximum():
+                progbar.setPalette(self.red_palette)
+
+    def post_run_statusfile_and_error_assessment(self):
         """
         1) Assesses any stdout errors that were captured during the run. That is, processes that finish successfully
         with code 0 may have still experienced errors that stopped an iteration. These must be captured.
@@ -558,19 +601,6 @@ class xASL_Executor(QMainWindow):
                                       f"please don't forget to cite this program in your manuscript.",
                                       QMessageBox.Ok)
 
-    # This slot is responsible for setting the correct analysis directory to a given task row's lineedit correcting
-    @Slot(int)
-    def set_analysis_directory(self, row_idx):
-        """
-        :param row_idx: The index of the row from the pushbutton calling this slot. It is a non-pythonic index, so it
-        must be reduced by 1 to index properly
-        """
-        dir_path = QFileDialog.getExistingDirectory(self.cw,
-                                                    "Select the analysis directory of your study",
-                                                    self.parent().config["DefaultRootDir"],
-                                                    QFileDialog.ShowDirsOnly)
-        self.formlay_lineedits_list[row_idx - 1].setText(dir_path)
-
     # Based on signal outout, this receives messages from watchers and outputs text feedback to the user
     @Slot(str)
     def update_text(self, msg):
@@ -604,22 +634,18 @@ class xASL_Executor(QMainWindow):
 
     # This slot is responsible for re-activating the Run ExploreASL button
     @Slot()
-    def reactivate_widgets_postrun(self):
+    def update_process_debt_and_check_done(self):
+        """
+        Receives a signal that a process has finished, regardless of whether it was a success or crash, updates the
+        total debt accordingly, and launches the post-run function if the debt is cleared
+        """
         self.total_process_dbt += 1
-        print(f"reactivate_runbtn received a signal and incremented the debt. "
+        print(f"update_process_debt_and_check_done received a signal and incremented the debt. "
               f"The debt at this time is: {self.total_process_dbt}")
 
-        # Re-activate all widgets associated with the Executor when the run is done
+        # If the debt is cleared, proceed to the post-run assessments and widget processing
         if self.total_process_dbt == 0:
-            self.set_widgets_activation_states(True)
-
-            # Check if all expected operations took place
-            self.post_run_assessment()
-
-            # Check the progressbars
-            for progbar in self.formlay_progbars_list:
-                if progbar.value() != progbar.maximum():
-                    progbar.setPalette(self.red_palette)
+            self.post_run_main()
 
     # Convenience function; deactivates all widgets associated with running exploreASL
     def set_widgets_activation_states(self, state: bool):
@@ -634,8 +660,27 @@ class xASL_Executor(QMainWindow):
             btn.setEnabled(state)
             runopt_cmb.setEnabled(state)
 
-    # This is the main function; prepares arguments; spawns workers; feeds in arguments to the workers during their
-    # initialization; then begins the programs
+    # Convenience function; adds a gif indicating processing below the textoutput and starts the gif
+    def begin_movie(self):
+        """
+        Convenience function; adds a gif indicating processing below the textoutput and starts the gif
+        """
+        self.processing_movieplayer.movie.start()
+        self.processing_movieplayer.setVisible(True)
+        self.vlay_textoutput.addWidget(self.processing_movieplayer)
+
+    # Convenience function; removes the gif below the textoutput and stops the gif
+    def end_movie(self):
+        """
+        Convenience function; removes the gif below the textoutput and stops the gif
+        """
+        self.processing_movieplayer.movie.stop()
+        self.processing_movieplayer.setVisible(False)
+        self.vlay_textoutput.removeWidget(self.processing_movieplayer)
+
+    ###################################################################################################################
+    #                                              THE MAIN RUN FUNCTION
+    ###################################################################################################################
     def run_Explore_ASL(self):
         print("%" * 60)
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
@@ -817,8 +862,8 @@ class xASL_Executor(QMainWindow):
                 worker.signals.encountered_fatal_error.connect(watcher.increment_debt)
                 # Connect the finished signal to the run btn reactivator so that the run button may be reactivated
                 # via debt repayment counter
-                worker.signals.finished_processing.connect(self.reactivate_widgets_postrun)
-                worker.signals.encountered_fatal_error.connect(self.reactivate_widgets_postrun)
+                worker.signals.finished_processing.connect(self.update_process_debt_and_check_done)
+                worker.signals.encountered_fatal_error.connect(self.update_process_debt_and_check_done)
                 # Connect the error encountered signal to the slot that updates the executor's track record of the
                 # accounted for errors
                 worker.signals.stdout_processing_error.connect(self.update_stdout_error_dicts)
@@ -836,6 +881,8 @@ class xASL_Executor(QMainWindow):
         # Launch all threads in one go
         for runnable in self.workers + self.watchers:
             self.threadpool.start(runnable)
+
+        self.begin_movie()
 
 
 class ExploreASL_WatcherSignals(QObject):

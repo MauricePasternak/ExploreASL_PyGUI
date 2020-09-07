@@ -2,7 +2,8 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from ExploreASL_GUI.xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary, bids_m0_followup
+from ExploreASL_GUI.xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary, \
+    bids_m0_followup
 from glob import iglob
 from tdda import rexpy
 from pprint import pprint
@@ -101,14 +102,14 @@ class xASL_GUI_Importer(QMainWindow):
         self.mainsplit.setSizes([150, 250, 300, 50])
 
     def Setup_UI_UserSpecifyDirStuct(self):
-        self.grp_dirstruct = QGroupBox("Specify Directory Structure", self.cw)
+        self.grp_dirstruct = QGroupBox(title="Specify Directory Structure")
         self.grp_dirstruct.setMaximumHeight(225)
         self.vlay_dirstruct = QVBoxLayout(self.grp_dirstruct)
 
         # First specify the root directory
         self.formlay_rootdir = QFormLayout()
         self.hlay_rootdir = QHBoxLayout()
-        self.le_rootdir = DandD_FileExplorer2LineEdit(self.grp_dirstruct)
+        self.le_rootdir = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
         self.le_rootdir.setPlaceholderText("Drag and drop your study's raw directory here")
         self.le_rootdir.setReadOnly(True)
         self.le_rootdir.textChanged.connect(self.set_rootdir_variable)
@@ -131,7 +132,7 @@ class xASL_GUI_Importer(QMainWindow):
 
         # Next specify the QLineEdits that will be receiving the dragged text
         self.hlay_receivers = QHBoxLayout()
-        self.lab_rootlabel = QLabel("raw", self)
+        self.lab_rootlabel = QLabel(text="source")
         self.lab_rootlabel.setFont(self.labfont)
         self.levels = {}
         for idx, (level, func) in enumerate(zip(["Level1", "Level2", "Level3", "Level4", "Level5"],
@@ -147,14 +148,14 @@ class xASL_GUI_Importer(QMainWindow):
             separator = '\\'
         else:
             separator = '/'
-        lab_sep = QLabel(separator, self.grp_dirstruct)
+        lab_sep = QLabel(text=separator)
         lab_sep.setFont(self.labfont)
         self.hlay_receivers.addWidget(lab_sep)
         for ii, level in enumerate(self.levels.values()):
             level.setFont(self.labfont)
             self.hlay_receivers.addWidget(level)
             if ii < 4:
-                lab_sep = QLabel(separator, self.grp_dirstruct)
+                lab_sep = QLabel(text=separator)
                 lab_sep.setFont(self.labfont)
                 self.hlay_receivers.addWidget(lab_sep)
 
@@ -171,7 +172,7 @@ class xASL_GUI_Importer(QMainWindow):
 
     def Setup_UI_UserSpecifyScanAliases(self):
         # Next specify the scan aliases
-        self.grp_scanaliases = QGroupBox("Specify Scan Aliases", self.cw)
+        self.grp_scanaliases = QGroupBox(title="Specify Scan Aliases")
         self.cmb_scanaliases_dict = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
         self.formlay_scanaliases = QFormLayout(self.grp_scanaliases)
         for description, scantype in zip(["ASL scan alias:\n(Mandatory)", "T1 scan alias:\n(Mandatory)",
@@ -189,7 +190,7 @@ class xASL_GUI_Importer(QMainWindow):
 
     def Setup_UI_UserSpecifySessionAliases(self):
         # Define the groupbox and its main layout
-        self.grp_sessionaliases = QGroupBox("Specify Session Aliases and Ordering", self.cw)
+        self.grp_sessionaliases = QGroupBox(title="Specify Session Aliases and Ordering")
         self.vlay_sessionaliases = QVBoxLayout(self.grp_sessionaliases)
         self.scroll_sessionaliases = QScrollArea(self.grp_sessionaliases)
         self.cont_sessionaliases = QWidget()
@@ -635,7 +636,6 @@ class xASL_GUI_Importer(QMainWindow):
         """
         self.failed_runs.extend(signalled_failed_runs)
 
-
     def import_postprocessing(self):
         """
         Performs the bulk of the post-import work, especially if the import type was specified to be BIDS
@@ -671,8 +671,6 @@ class xASL_GUI_Importer(QMainWindow):
             asl_placeholder = {"LabelingType": None, "PostLabelingDelay": None, "BackgroundSuppression": None}
             with open(os.path.join(analysis_dir, "asl.json"), 'w') as asl_placeholder_writer:
                 json.dump(asl_placeholder, asl_placeholder_writer, indent=3)
-
-
 
     @staticmethod
     def create_dataset_description_template(analysis_dir):

@@ -62,9 +62,6 @@ class xASL_GUI_MRIViewManager(QWidget):
                                 QMessageBox.Ok)
             self.error_init = True
 
-
-
-
     def UI_Setup_Tabs(self):
         self.tab_pltsettings = QTabWidget()
         self.cont_scatterparms, self.cont_mriparms = QWidget(), QWidget()
