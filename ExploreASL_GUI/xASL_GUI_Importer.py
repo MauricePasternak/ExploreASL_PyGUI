@@ -72,7 +72,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.session_regex = None
         self.scan_regex = None
         self.session_aliases = OrderedDict()
-        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
+        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
         self.cmb_sessionaliases_dict = {}
         self.threadpool = QThreadPool()
         self.import_summaries = []
@@ -86,6 +86,10 @@ class xASL_GUI_Importer(QMainWindow):
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
         self.mainsplit = QSplitter(Qt.Vertical, self.cw)
+        handle_path = os.path.join(self.config["ProjectDir"], "media", "3_dots_horizontal.svg").replace('\\', '/')
+        handle_style = 'QSplitter::handle {image: url(' + handle_path + ');}'
+        self.mainsplit.setStyleSheet(handle_style)
+        self.mainsplit.setHandleWidth(20)
         self.cw.setLayout(self.mainlay)
         self.mainlay.addWidget(self.mainsplit)
 
@@ -99,7 +103,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.btn_run_importer.setEnabled(False)
         self.mainsplit.addWidget(self.btn_run_importer)
 
-        self.mainsplit.setSizes([150, 250, 300, 50])
+        self.mainsplit.setSizes([150, 225, 300, 50])
 
     def Setup_UI_UserSpecifyDirStuct(self):
         self.grp_dirstruct = QGroupBox(title="Specify Directory Structure")
@@ -173,11 +177,12 @@ class xASL_GUI_Importer(QMainWindow):
     def Setup_UI_UserSpecifyScanAliases(self):
         # Next specify the scan aliases
         self.grp_scanaliases = QGroupBox(title="Specify Scan Aliases")
-        self.cmb_scanaliases_dict = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
+        self.cmb_scanaliases_dict = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
         self.formlay_scanaliases = QFormLayout(self.grp_scanaliases)
-        for description, scantype in zip(["ASL scan alias:\n(Mandatory)", "T1 scan alias:\n(Mandatory)",
-                                          "M0 scan alias:\n(Optional)", "FLAIR scan alias:\n(Optional)",
-                                          "WHM Segmentation image alias:\n(Optional)"],
+        for description, scantype in zip(["ASL scan alias:\n(Mandatory)",
+                                          "T1 scan alias:\n(Mandatory)",
+                                          "M0 scan alias:\n(Optional)",
+                                          "FLAIR scan alias:\n(Optional)"],
                                          self.cmb_scanaliases_dict.keys()):
             cmb = QComboBox(self.grp_scanaliases)
             cmb.addItems(["Select an alias"])
@@ -305,7 +310,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.clear_session_alias_cmbs_and_les()
         self.reset_scan_alias_cmbs(basenames=[])
         self.session_aliases = OrderedDict()
-        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
+        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
 
     def check_if_reset_needed(self):
         """
@@ -326,7 +331,7 @@ class xASL_GUI_Importer(QMainWindow):
 
         if "Scan" not in used_directories and self.scan_regex is not None:
             self.scan_regex = None
-            self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR", "WMH_SEGM"])
+            self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
             self.reset_scan_alias_cmbs(basenames=[])
 
     def clear_receivers(self):

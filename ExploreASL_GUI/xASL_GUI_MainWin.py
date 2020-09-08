@@ -48,7 +48,6 @@ class xASL_MainWin(QMainWindow):
         self.load_tooltips()
         # Window Size and initial visual setup
         # self.setWindowFlags(Qt.WindowStaysOnTopHint)
-        self.setMinimumSize(800, 480)
         self.resize(self.config["ScreenSize"][0] // 2, self.config["ScreenSize"][1] // 2.5)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
@@ -56,7 +55,7 @@ class xASL_MainWin(QMainWindow):
         self.icon_main = QIcon(os.path.join(self.config["ProjectDir"], "media", "ExploreASL_logo.png"))
         self.setWindowIcon(self.icon_main)
         # Main Layout Setup
-        self.mainlay = QHBoxLayout(self.cw)
+        self.mainlay = QGridLayout(self.cw)
         self.setWindowTitle("Explore ASL GUI")
 
         # Misc Players
@@ -77,18 +76,9 @@ class xASL_MainWin(QMainWindow):
     # This dockable navigator will contain the most essential parameters and will be repeatedly accessed by other
     # subwidgets within the program; should also be dockable within any of them.
     def UI_Setup_Navigator(self):
-        # Initialize the navigator and essential characteristics
-        self.dock_navigator = QDockWidget(windowTitle="Explore ASL Navigator", parent=self)
-        self.dock_navigator.setFeatures(QDockWidget.AllDockWidgetFeatures)
-        self.dock_navigator.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.dock_navigator.setMinimumSize(600, 480)
-        self.dock_navigator.setWindowIcon(self.icon_main)
         # The main container and the main layout of the dock
-        self.cont_navigator = QWidget(self.dock_navigator)
+        self.cont_navigator = QWidget()
         self.vlay_navigator = QVBoxLayout(self.cont_navigator)
-        # Finish up initial dock setup
-        self.dock_navigator.setWidget(self.cont_navigator)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.dock_navigator)
 
         # Essential Widgets
         # First, the lineedit for the ExploreASL directory
@@ -98,6 +88,7 @@ class xASL_MainWin(QMainWindow):
                               text_to_set=self.config["ExploreASLRoot"])
         self.le_exploreasl_dir.textChanged.connect(self.set_exploreasl_dir)
         self.le_exploreasl_dir.setReadOnly(True)
+        self.le_exploreasl_dir.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.btn_exploreasl_dir = QPushButton("...", clicked=self.set_exploreasl_dir_frombtn)
         self.hlay_exploreasl_dir = QHBoxLayout()
         self.hlay_exploreasl_dir.addWidget(self.le_exploreasl_dir)
@@ -109,6 +100,7 @@ class xASL_MainWin(QMainWindow):
                               config_ossystem=self.config["Platform"],
                               text_to_set=self.config["DefaultRootDir"])
         self.le_currentanalysis_dir.textChanged.connect(self.set_analysis_dir)
+        self.le_currentanalysis_dir.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.btn_currentanalysis_dir = QPushButton("...", self.cont_navigator, clicked=self.set_analysis_dir_frombtn)
         self.hlay_currentanalysis_dir = QHBoxLayout()
         self.hlay_currentanalysis_dir.addWidget(self.le_currentanalysis_dir)
@@ -126,6 +118,11 @@ class xASL_MainWin(QMainWindow):
         self.vlay_navigator.addLayout(self.formlay_navigator)
         self.vlay_navigator.addWidget(self.file_explorer)
 
+        # Finally add this whole widget group to the main layout
+        self.mainlay.addWidget(self.cont_navigator, 0, 0, 2, 2)
+        self.cont_navigator.setMinimumWidth(600)
+        self.cont_navigator.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
     # Setup the standard Menu
     def UI_Setup_MenuBar(self):
         # Main menubar and main submenus setup
@@ -134,7 +131,7 @@ class xASL_MainWin(QMainWindow):
         self.menu_file, self.menu_edit, self.menu_settings, self.menu_about = [self.menubar_main.addMenu(name) for name
                                                                                in menu_names]
         # Setup the actions of the File menu
-        self.menu_file.addAction("Show Navigator", self.dock_navigator.show)
+        # self.menu_file.addAction("Show Navigator", self.dock_navigator.show)
         self.menu_file.addAction("Save Master Config", self.save_config)
         self.menu_file.addAction("Select Analysis Directory", self.set_analysis_dir_frombtn)
         self.menu_file.addAction("About ExploreASL", self.show_AboutExploreASL)
@@ -144,30 +141,29 @@ class xASL_MainWin(QMainWindow):
 
     # Setup the main selection
     def UI_Setup_MainSelections(self):
-        self.vlay_left = QVBoxLayout()
-        self.vlay_right = QVBoxLayout()
-        for layout in [self.vlay_left, self.vlay_right]:
-            self.mainlay.addLayout(layout)
 
-        # Set up the main buttons
         expanding_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         font_policy = QFont()
         font_policy.setPointSize(16)
         font_policy.setBold(True)
+
+        # Set up the main buttons
         self.btn_open_runexploreasl = QToolButton(self.cw)
         self.btn_open_parmsmaker = QToolButton(self.cw)
         self.btn_open_importer = QToolButton(self.cw)
         self.btn_open_postanalysis = QToolButton(self.cw)
-        self.main_btns = [self.btn_open_importer, self.btn_open_runexploreasl,
-                          self.btn_open_parmsmaker, self.btn_open_postanalysis]
+        self.main_btns = [self.btn_open_importer,
+                          self.btn_open_runexploreasl,
+                          self.btn_open_parmsmaker,
+                          self.btn_open_postanalysis]
 
         imgs = [os.path.join(self.config["ProjectDir"], "media", "importer_icon.svg"),
-                os.path.join(self.config["ProjectDir"], "media", "parmsmaker_icon.svg"),
                 os.path.join(self.config["ProjectDir"], "media", "run_exploreasl_icon.svg"),
+                os.path.join(self.config["ProjectDir"], "media", "parmsmaker_icon.svg"),
                 os.path.join(self.config["ProjectDir"], "media", "postrun_analysis_icon.svg")]
         txt_labels = ["Import DCM to NIFTI",
-                      "Create Parameters File",
                       "Process Data",
+                      "Create Parameters File",
                       "Post-Run Analysis"]
 
         for btn, img, text in zip(self.main_btns, imgs, txt_labels):
@@ -178,15 +174,23 @@ class xASL_MainWin(QMainWindow):
             btn.setText(text)
             btn.setFont(font_policy)
 
-        # Add the buttons to the layouts
-        self.vlay_left.addWidget(self.btn_open_importer)
-        self.vlay_left.addWidget(self.btn_open_parmsmaker)
-        self.vlay_right.addWidget(self.btn_open_runexploreasl)
-        self.vlay_right.addWidget(self.btn_open_postanalysis)
+        # Add the buttons to the layout
+        self.mainlay.addWidget(self.btn_open_importer, 0, 3, 1, 1)
+        self.mainlay.addWidget(self.btn_open_parmsmaker, 0, 4, 1, 1)
+        self.mainlay.addWidget(self.btn_open_runexploreasl, 1, 3, 1, 1)
+        self.mainlay.addWidget(self.btn_open_postanalysis, 1, 4, 1, 1)
+
+    def resizeEvent(self, event):
+        super(xASL_MainWin, self).resizeEvent(event)
+        for btn in self.main_btns:
+            adjusted = min([self.width(), self.height()])
+            btn.setIconSize(QSize(adjusted//2.8, adjusted//2.8))
 
     def UI_Setup_Connections(self):
-        actions = [self.show_Importer, self.show_ParmsMaker,
-                   self.show_Executor, self.show_PostAnalysis]
+        actions = [self.show_Importer,
+                   self.show_Executor,
+                   self.show_ParmsMaker,
+                   self.show_PostAnalysis]
         for btn, action in zip(self.main_btns, actions):
             btn.clicked.connect(action)
 
@@ -204,7 +208,6 @@ class xASL_MainWin(QMainWindow):
 
     # Launch the Post-Analysis window
     def show_PostAnalysis(self):
-        # self.postproc.show()
         self.plotter.show()
 
     # Launch the "About Explore ASL" window

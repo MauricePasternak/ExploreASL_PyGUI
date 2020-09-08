@@ -61,9 +61,6 @@ class ExploreASL_Worker(QRunnable):
                     f"{nworkers}, " \
                     f"[{' '.join([str(item) for item in imodules])}])"
 
-        # For troubleshooting and visualization
-        print(f"Func line: {func_line}")
-
         # Compile and run MATLAB session from command line
         result = subprocess.run(
             ["matlab",
@@ -73,6 +70,7 @@ class ExploreASL_Worker(QRunnable):
              f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"],
             capture_output=True, text=True
         )
+
         print(f"RESULTs for IWorker {iworker} of {nworkers}:"
               f"\n\tReturn code = {result.returncode}")
         worker_analysis_dir = re.search(r'.*analysis', par_path).group()
@@ -80,8 +78,6 @@ class ExploreASL_Worker(QRunnable):
         stderr = result.stderr
         stdout_error_dict = {}
         stderr_error_dict = {}
-        # print(f'stdout:\n{stdout}')
-        # print(f'stderr:\n{stderr}')
 
         ####################################################
         # ATTEMPT TO CATCH STDOUT ERRORS FOR TROUBLESHOOTING
@@ -113,10 +109,10 @@ class ExploreASL_Worker(QRunnable):
         # SEND THE APPROPRIATE END SIGNAL
         #################################
         if result.returncode == 0:
-            print("EMITTING FINISHED PROCESSING SIGNAL")
+            print(f"WORKER {iworker} IS EMITTING FINISHED PROCESSING SIGNAL")
             self.signals.finished_processing.emit()
         else:
-            print("EMITTING ENCOUNTERED ERROR SIGNAL")
+            print(f"WORKER {iworker} IS EMMITING ENCOUNTERED ERROR SIGNAL")
             stderr_error_dict[re.search(r'.*analysis', par_path).group()] = stderr
             self.signals.stderr_processing_error.emit(stderr_error_dict)
             self.signals.encountered_fatal_error.emit()
@@ -132,7 +128,7 @@ class xASL_Executor(QMainWindow):
         self.config = self.parent().config
 
         # Window Size and initial visual setup
-        self.setMinimumSize(1080, 720)
+        self.setMinimumSize(self.config["ScreenSize"][0] // 2, self.config["ScreenSize"][1] // 2)
         self.resize(self.config["ScreenSize"][0] // 2, self.config["ScreenSize"][1] // 2)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
@@ -332,7 +328,7 @@ class xASL_Executor(QMainWindow):
         self.formlay_promod = QFormLayout()
         # Set up the widgets in this section
         self.cmb_modjob = QComboBox(self.grp_procmod)
-        self.cmb_modjob.addItems(["Alter participants.tsv", "Prepare a study for a re-run"])
+        self.cmb_modjob.addItems(["Prepare a study for a re-run", "Alter participants.tsv"])
         self.le_modjob = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
         self.le_modjob.setPlaceholderText("Drag & Drop analysis directory here")
         self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod, clicked=self.run_modjob)
@@ -474,7 +470,6 @@ class xASL_Executor(QMainWindow):
                     checks.append(True)
                 else:
                     checks.append(False)
-                    print("is_ready_run_detected a false")
             else:
                 checks.append(False)
 
@@ -526,8 +521,6 @@ class xASL_Executor(QMainWindow):
             for stdout_errordict in self.stdout_errordicts_list:
                 for study_path, study_errors in stdout_errordict.items():
                     master_stdout_err_dict[study_path].append(study_errors)
-            # print("MASTER ERROR DICT")
-            # pprint(master_err_dict)
 
         # Same deal for the stderr_errordicts_list
         master_stderr_err_dict = defaultdict(list)
@@ -541,8 +534,10 @@ class xASL_Executor(QMainWindow):
         postrun_diagnosis = {}
         for study_dir, expected_files in self.expected_status_files.items():
             all_completed, incomplete_status_files = calculate_missing_STATUS(study_dir, expected_files)
-            print("INCOMPLETE STATUS FILES:")
-            pprint(incomplete_status_files)
+
+            if self.config["DeveloperMode"] and len(incomplete_status_files) > 0:
+                print(f"INCOMPLETE STATUS FILES FOR STUDY DIR: {study_dir}:")
+                pprint(incomplete_status_files)
 
             if all_completed:
                 continue
@@ -609,12 +604,14 @@ class xASL_Executor(QMainWindow):
     @Slot(dict)
     def update_stdout_error_dicts(self, stdout_error_dict):
         self.stdout_errordicts_list.append(stdout_error_dict)
-        print("update_stdout_error_dicts got a signal")
+        if self.config["DeveloperMode"]:
+            print("update_stdout_error_dicts got a signal")
 
     @Slot(dict)
     def update_stderr_error_dicts(self, stderr_error_dict):
         self.stderr_errordicts_list.append(stderr_error_dict)
-        print("update_stderr_error_dicts got a signal")
+        if self.config["DeveloperMode"]:
+            print("update_stderr_error_dicts got a signal")
 
     # This slot is responsible for updating the progressbar based on signals set from the watcher
     @Slot(int, int)
@@ -623,14 +620,16 @@ class xASL_Executor(QMainWindow):
         :param val_to_inc_by: the value of the .STATUS file that was just completed
         :param study_idx: the index of the progressbar contained within formlay_progbars_list to be selected
         """
-        print(f"update_progressbar received a signal from watcher {study_idx} to increase the progressbar value by "
-              f"{val_to_inc_by}")
         selected_progbar: QProgressBar = self.formlay_progbars_list[study_idx]
-        print(f"The progressbar's value before update: {selected_progbar.value()} "
-              f"out of maximum {selected_progbar.maximum()}")
+        if self.config["DeveloperMode"]:
+            print(f"update_progressbar received a signal from watcher {study_idx} to increase the progressbar value by "
+                  f"{val_to_inc_by}")
+            print(f"The progressbar's value before update: {selected_progbar.value()} "
+                  f"out of maximum {selected_progbar.maximum()}")
         selected_progbar.setValue(selected_progbar.value() + val_to_inc_by)
-        print(f"The progressbar's value after update: {selected_progbar.value()} "
-              f"out of maximum {selected_progbar.maximum()}")
+        if self.config["DeveloperMode"]:
+            print(f"The progressbar's value after update: {selected_progbar.value()} "
+                  f"out of maximum {selected_progbar.maximum()}")
 
     # This slot is responsible for re-activating the Run ExploreASL button
     @Slot()
@@ -640,8 +639,9 @@ class xASL_Executor(QMainWindow):
         total debt accordingly, and launches the post-run function if the debt is cleared
         """
         self.total_process_dbt += 1
-        print(f"update_process_debt_and_check_done received a signal and incremented the debt. "
-              f"The debt at this time is: {self.total_process_dbt}")
+        if self.config["DeveloperMode"]:
+            print(f"update_process_debt_and_check_done received a signal and incremented the debt. "
+                  f"The debt at this time is: {self.total_process_dbt}")
 
         # If the debt is cleared, proceed to the post-run assessments and widget processing
         if self.total_process_dbt == 0:
@@ -682,7 +682,19 @@ class xASL_Executor(QMainWindow):
     #                                              THE MAIN RUN FUNCTION
     ###################################################################################################################
     def run_Explore_ASL(self):
-        print("%" * 60)
+
+        # Immediately abandon this if the MATLAB version is not newer
+        if os.path.basename(self.config["MATLABROOT"]) not in ["R2019a", "R2019b", "R2020a", "R2020b"]:
+            QMessageBox().warning(self,
+                                  f"Incompatible MATLAB version on your machine",
+                                  f"The program has detected that you have MATLAB version:\n"
+                                  f"{os.path.basename(self.config['MATLABROOT'])}\n"
+                                  f"This program requires a MATLAB installation of 2019a or later.",
+                                  QMessageBox.Ok)
+            return
+
+        if self.config["DeveloperMode"]:
+            print("%" * 60)
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
         self.workers = []
         self.watchers = []
@@ -808,8 +820,9 @@ class xASL_Executor(QMainWindow):
             locked_dirs = iglob(os.path.join(path.text(), "**", "locked"), recursive=True)
             locked_dirs = peekable(locked_dirs)
             if locked_dirs:
-                print(f"Detected locked direcorties in {path.text()} prior to starting ExploreASL. "
-                      f"Removing them first.")
+                if self.config["DeveloperMode"]:
+                    print(f"Detected locked direcorties in {path.text()} prior to starting ExploreASL. "
+                          f"Removing them first.")
                 for lock_dir in locked_dirs:
                     os.removedirs(lock_dir)
 
@@ -831,7 +844,9 @@ class xASL_Executor(QMainWindow):
             del workload
             # Save the expected status files to the dict container; these will be iterated over after workers are done
             self.expected_status_files[path.text()] = expected_status_files
-            pprint(expected_status_files)
+            if self.config["DeveloperMode"]:
+                print(f"EXPECTED STATUS FILES TO BE GENERATED FOR STUDY: {path.text()}")
+                pprint(expected_status_files)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 5 - Create a Watcher for that study
@@ -839,7 +854,8 @@ class xASL_Executor(QMainWindow):
                                          regex=str_regex,  # the regex used to recognize subjects
                                          watch_debt=debt,  # the debt used to determine when to stop watching
                                          study_idx=study_idx,  # the identifier used to know which progressbar to signal
-                                         translators=self.executor_translators
+                                         translators=self.executor_translators,
+                                         config=self.config
                                          )
             self.textedit_textoutput.append(f"Setting a Watcher thread on {path.text()}")
 
@@ -904,7 +920,7 @@ class ExploreASL_Watcher(QRunnable):
     3)
     """
 
-    def __init__(self, target, regex, watch_debt, study_idx, translators):
+    def __init__(self, target, regex, watch_debt, study_idx, translators, config):
         super().__init__()
         self.signals = ExploreASL_WatcherSignals()
         self.dir_to_watch = os.path.join(target, "lock")
@@ -912,6 +928,7 @@ class ExploreASL_Watcher(QRunnable):
         self.module_regex = re.compile('module_(ASL|Structural|Population)')
         self.watch_debt = watch_debt
         self.study_idx = study_idx
+        self.config = config
 
         self.pop_mod_started = False
         self.struct_mod_started = False
@@ -930,13 +947,16 @@ class ExploreASL_Watcher(QRunnable):
         self.asl_status_file_translator = translators["ASL_Module_Filename2Description"]
         self.pop_status_file_translator = translators["Population_Module_Filename2Description"]
         self.workload_translator = translators["ExploreASL_Filename2Workload"]
-        print(f"Initialized a watcher for the directory {self.dir_to_watch} and will communicate with the progressbar"
-              f"at Python idx: {self.study_idx}")
+        if self.config["DeveloperMode"]:
+            print(f"Initialized a watcher for the directory {self.dir_to_watch} and will communicate with the progressbar "
+                  f"at Python idx: {self.study_idx}")
 
     # Processes the information sent from the event hander and emits signals to update widgets in the main Executor
     @Slot(str)
     def process_message(self, created_path):
-        print(f"Watcher process_message received message: {created_path}")
+        if self.config["DeveloperMode"]:
+            print(f"Watcher process_message received message: {created_path}")
+
         detected_subject = self.subject_regex.search(created_path)
         detected_module = self.module_regex.search(created_path)
         msg = None
@@ -987,13 +1007,14 @@ class ExploreASL_Watcher(QRunnable):
 
     def run(self):
         self.observer.start()
-        print("THE OBSERVER HAS STARTED")
+        if self.config["DeveloperMode"]:
+            print(f"THE WATCHER FOR {self.dir_to_watch} HAS STARTED")
         while self.watch_debt < 0:
             sleep(10)
-        print("THE OBSERVER HAS STOPPED")
         self.observer.stop()
         self.observer.join()
-        print(f"QRUNNABLE WATCHER FOR {self.dir_to_watch} is shutting down")
+        if self.config["DeveloperMode"]:
+            print(f"THE WATCHER FOR {self.dir_to_watch} IS SHUTTING DOWN")
         return
 
 

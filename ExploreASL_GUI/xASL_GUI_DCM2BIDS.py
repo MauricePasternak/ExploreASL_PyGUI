@@ -271,7 +271,7 @@ def get_dst_dirname(raw_dir: str, subject: str, session: str, scan: str, legacy_
                 subject = subject.replace("_", "")
 
             if session is None:
-                if scan not in ["T1", "FLAIR", "WHM_SEGM"]:
+                if scan not in ["T1", "FLAIR"]:
                     dst_dir = os.path.join(analysis_dir, f"sub-{subject}", "perf", "TEMP")
                 else:
                     dst_dir = os.path.join(analysis_dir, f"sub-{subject}", "anat", "TEMP")
@@ -282,7 +282,7 @@ def get_dst_dirname(raw_dir: str, subject: str, session: str, scan: str, legacy_
                 if "_" in session:
                     session = session.replace("_", "")
                 # Determine output directory based on the scan type
-                if scan not in ["T1", "FLAIR", "WHM_SEGM"]:
+                if scan not in ["T1", "FLAIR"]:
                     dst_dir = os.path.join(analysis_dir, f"sub-{subject}", f"ses-{session}", "perf", "TEMP")
                 else:
                     dst_dir = os.path.join(analysis_dir, f"sub-{subject}", f"ses-{session}", "anat", "TEMP")
