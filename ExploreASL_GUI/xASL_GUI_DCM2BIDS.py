@@ -597,8 +597,8 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
 
     # Retrieve the additional DICOM parameters and include the Philips rescale slope indicator
     addtional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir, manufacturer=manufacturer)
-    if manufacturer == "Philips":
-        addtional_dcm_parameters["UsePhilipsFloatNotDisplayScaling"] = 1
+    # if manufacturer == "Philips":
+    #     addtional_dcm_parameters["UsePhilipsFloatNotDisplayScaling"] = 1
 
     # Generate the directories for dumping dcm2niix output
     successful_run, temp_dst_dir = get_dst_dirname(raw_dir=config["RawDir"],
