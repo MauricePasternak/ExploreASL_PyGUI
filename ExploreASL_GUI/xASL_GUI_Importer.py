@@ -197,6 +197,7 @@ class xASL_GUI_Importer(QMainWindow):
         # Define the groupbox and its main layout
         self.grp_sessionaliases = QGroupBox(title="Specify Session Aliases and Ordering")
         self.vlay_sessionaliases = QVBoxLayout(self.grp_sessionaliases)
+        self.vlay_sessionaliases.setContentsMargins(0, 0, 0, 0)
         self.scroll_sessionaliases = QScrollArea(self.grp_sessionaliases)
         self.cont_sessionaliases = QWidget()
         self.scroll_sessionaliases.setWidget(self.cont_sessionaliases)

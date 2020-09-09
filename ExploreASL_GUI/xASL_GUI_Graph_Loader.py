@@ -105,7 +105,7 @@ class xASL_GUI_Data_Loader:
             self.parent_cw.lst_varview.addItems(self.loaded_long_data.columns.tolist())
 
             # The user may have loaded in new data and the subsetter's fields should reflect that
-            self.parent_cw.subsetter.update_subsetable_fields()
+            self.parent_cw.subsetter.update_subsetable_fields(self.loaded_long_data)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Fifth Section - Subset the data accordingly if the criteria is set
@@ -115,8 +115,13 @@ class xASL_GUI_Data_Loader:
             # Sixth Section - Housekeeping and Finishing touches
             # Alter this when Section 5 is completed; long_data is the "good copy" of the data that will be plotted
             self.long_data = self.loaded_long_data
-            self.parent_cw.cmb_figuretypeselection.setEnabled(
-                True)  # Data is loaded; figure selection settings can be enabled
+
+            # Allow to dtype indicator to be aware of the newly loaded data if a legitimate covariates file was provided
+            if os.path.exists(self.parent_cw.le_demographics_file.text()):
+                self.parent_cw.dtype_indicator.update_known_covariates(self.long_data)
+                self.parent_cw.btn_indicate_dtype.setEnabled(True)
+
+            self.parent_cw.cmb_figuretypeselection.setEnabled(True)  # Data is loaded; figure selection settings enabled
             self.parent_cw.btn_subset_data.setEnabled(True)  # Data is loaded; subsetting is allowed
 
             # In case any of this was done again (data was already loaded once before), we must account for what may

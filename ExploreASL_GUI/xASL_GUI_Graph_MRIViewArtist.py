@@ -128,10 +128,17 @@ class xASL_GUI_MRIViewArtist(QWidget):
 
         x_var = self.manager.axes_arg_x()
         y_var = self.manager.axes_arg_y()
-        # print(f"X Variable: {x_var}; Y Variable: {y_var}")
 
         df = self.parent_cw.loader.long_data
         subject = df.loc[(df[x_var] == parameters[0]) & (df[y_var] == parameters[1]), "SUBJECT"].tolist()
+
+        # Sometimes if a dtype change has occurred and this is a stipplot, the data may still be numerical, but the
+        # graph interpreted the new data correctly as categorical, resulting in strings
+        if len(subject) == 0 and self.manager.cmb_axestype.currentText() == "Strip Plot":
+            df[x_var] = df[x_var].values.astype(np.str)
+            subject = df.loc[(df[x_var] == parameters[0]) & (df[y_var] == parameters[1]), "SUBJECT"].tolist()
+
+        print(f"found subject: {subject}")
         if len(subject) == 1:
             cmb_idx = self.manager.cmb_selectsubject.findText(subject[0])
             if cmb_idx == -1:
