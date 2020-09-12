@@ -206,15 +206,22 @@ class xASL_Parms(QMainWindow):
         Receives a signal from the le_study_dir lineedit and will accordingly update several fields
         @param analysis_dir_text: the text updated from the analysis directory
         """
+
         # First set of checks
         if any([analysis_dir_text == '',  # Do not react to blank lines
                 not os.path.exists(analysis_dir_text),  # Do not react to nonexistent paths
                 ]):
             return
+
         # Second set of checks
-        if any([not os.path.isdir(analysis_dir_text)  # Must be a directory
+        if any([not os.path.isdir(analysis_dir_text),  # Must be a directory
+                os.path.basename(analysis_dir_text) != "analysis"
                 ]):
             return
+
+        if self.config["DeveloperMode"]:
+            print(f"Detected an update to the specified analysis directory. Attempting to find asl json sidecars and "
+                  f"infer appropriate field values from within.\n")
 
         # Retrieve any asl json sidecar
         asl_sides_legacy = iglob(os.path.join(analysis_dir_text, "**", "ASL4D.json"), recursive=True)
@@ -230,9 +237,16 @@ class xASL_Parms(QMainWindow):
                 asl_sidecar = next(asl_sides_bids)
         else:
             asl_sidecar = next(asl_sides_legacy)
-
-        with open(asl_sidecar, 'r') as sidecar_reader:
-            self.asl_json_sidecar_data = json.load(sidecar_reader)
+        try:
+            with open(asl_sidecar) as sidecar_reader:
+                self.asl_json_sidecar_data = json.load(sidecar_reader)
+        except json.decoder.JSONDecodeError as json_e:
+            QMessageBox.warning(self.parent(),
+                                "Json sidecars not in proper json format",
+                                f"ExploreASL GUI has detected that the json sidecars present for this dataset "
+                                f"are not in appropriate format. The following inconsistency was found:\n{json_e}",
+                                QMessageBox.Ok)
+            return
 
         # Now we can update a couple of fields
         # First, the vendor
@@ -241,7 +255,9 @@ class xASL_Parms(QMainWindow):
             if idx != -1:
                 self.cmb_vendor.setCurrentIndex(idx)
         except KeyError:
-            pass
+            if self.config["DeveloperMode"]:
+                print(f"Warning in update_asl_json_sidecar_data. The field: Manufacturer was not present in the "
+                      f"detected asl json sidecar.\n")
 
         # Next, the readout dimension
         try:
@@ -249,17 +265,20 @@ class xASL_Parms(QMainWindow):
             if idx != -1:
                 self.cmb_readout_dim.setCurrentIndex(idx)
         except KeyError:
-            pass
+            if self.config["DeveloperMode"]:
+                print(f"Warning in update_asl_json_sidecar_data. The field: MRAcquisitionType was not present in the "
+                      f"detected asl json sidecar.\n")
 
         # Next the inversion time (i.e Post-Label Duration)
         try:
             value = self.asl_json_sidecar_data["InversionTime"]
             self.spinbox_labdur.setValue(value * 1000)
         except KeyError:
-            pass
+            if self.config["DeveloperMode"]:
+                print(f"Warning in update_asl_json_sidecar_data. The field: InversionTime was not present in the "
+                      f"detected asl json sidecar.\n")
 
         # Retrieve any M0 json sidecar
-        # Retrieve any asl json sidecar
         m0_sides_legacy = iglob(os.path.join(analysis_dir_text, "**", "M0.json"), recursive=True)
         m0_sides_legacy = peekable(m0_sides_legacy)
         m0_sides_bids = iglob(os.path.join(analysis_dir_text, "**", "*_m0scan.json"), recursive=True)
@@ -293,6 +312,10 @@ class xASL_Parms(QMainWindow):
                 elif manufac == "Siemens":
                     idx = self.cmb_nsup_pulses.findText("2")
                 else:
+                    if self.config["DeveloperMode"]:
+                        print(f"Warning in update_asl_json_sidecar_data. An M0 json sidecar was detected, but its "
+                              f"Manufacturer field was not present, preventing the appropriate setting for the number "
+                              f"of background suppression pulses to be established.\n")
                     return
                 self.cmb_nsup_pulses.setCurrentIndex(idx)
 

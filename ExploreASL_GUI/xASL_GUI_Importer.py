@@ -34,9 +34,10 @@ class Importer_Worker(QRunnable):
         self.use_legacy_mode = use_legacy_mode
         super().__init__()
         self.signals = Importer_WorkerSignals()
-        print(f"Initialized Worker with args {self.dcm_dirs}\n{self.import_config}")
         self.import_summaries = []
         self.failed_runs = []
+        print("Initialized Worker with args:\n")
+        pprint(self.import_config)
 
     # This is called by the threadpool during threadpool.start(worker)
     def run(self):
@@ -119,6 +120,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.le_rootdir.setReadOnly(True)
         self.le_rootdir.textChanged.connect(self.set_rootdir_variable)
         self.le_rootdir.textChanged.connect(self.clear_widgets)
+        self.le_rootdir.textChanged.connect(self.is_ready_import)
         self.btn_setrootdir = QPushButton("...", self.grp_dirstruct, clicked=self.set_import_root_directory)
         self.hlay_rootdir.addWidget(self.le_rootdir)
         self.hlay_rootdir.addWidget(self.btn_setrootdir)
@@ -224,8 +226,14 @@ class xASL_GUI_Importer(QMainWindow):
 
     # Purpose of this function is to change the value of the rawdir attribute based on the current text
     @Slot()
-    def set_rootdir_variable(self):
-        self.rawdir = self.le_rootdir.text()
+    def set_rootdir_variable(self, path):
+        if path == '' or not os.path.exists(path):
+            return
+
+        if all([os.path.isdir(path),
+                os.path.basename(path) == "raw"]
+               ):
+            self.rawdir = self.le_rootdir.text()
 
     def get_nth_level_dirs(self, dir_type: str, level: int):
         """
@@ -315,6 +323,9 @@ class xASL_GUI_Importer(QMainWindow):
         self.reset_scan_alias_cmbs(basenames=[])
         self.visit_aliases = OrderedDict()
         self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
+
+        if self.config["DeveloperMode"]:
+            print("clear_widgets engaged due to a change in the indicated Raw directory")
 
     def check_if_reset_needed(self):
         """
@@ -576,9 +587,12 @@ class xASL_GUI_Importer(QMainWindow):
         aliases = list(le.text() for le in self.le_visitaliases_dict.values())
         orders = list(cmb.currentText() for cmb in self.cmb_visitaliases_dict.values())
 
-        print(f"basename_keys: {basename_keys}")
-        print(f"aliases: {aliases}")
-        print(f"orders: {orders}")
+        if self.config["DeveloperMode"]:
+            print(f"Inside get_visit_aliases, the following variable values were in play prior to generating the "
+                  f"visit aliases dict:\n"
+                  f"basename_keys: {basename_keys}\n"
+                  f"aliases: {aliases}\n"
+                  f"orders: {orders}")
 
         for num in range(1, len(orders) + 1):
             idx = orders.index(str(num))
@@ -670,7 +684,7 @@ class xASL_GUI_Importer(QMainWindow):
 
         # If there were any failures, write them to disk now
         if len(self.failed_runs) > 0:
-            with open(os.path.join(analysis_dir, "import_summary_failed.json")) as failed_writer:
+            with open(os.path.join(analysis_dir, "import_summary_failed.json"), 'w') as failed_writer:
                 json.dump(dict(self.failed_runs), failed_writer, indent=3)
 
         # If the settings is BIDS...
@@ -738,8 +752,11 @@ class xASL_GUI_Importer(QMainWindow):
 
         # Get the dicom directories
         dicom_dirs = get_dicom_directories(config=self.import_parms)
-        print("Detected the following dicom directories:")
-        pprint(dicom_dirs)
+
+        if self.config["DeveloperMode"]:
+            print("Detected the following dicom directories:")
+            pprint(dicom_dirs)
+            print('\n')
 
         # Create workers
         dicom_dirs = list(divide(4, dicom_dirs))
@@ -753,9 +770,26 @@ class xASL_GUI_Importer(QMainWindow):
             self.n_import_workers += 1
 
         # Launch them
-        print("Launching Importer workers")
         for worker in workers:
             self.threadpool.start(worker)
+
+        print(r"""
+  ______            _                          _____ _         _____ _    _ _____ 
+ |  ____|          | |                  /\    / ____| |       / ____| |  | |_   _|
+ | |__  __  ___ __ | | ___  _ __ ___   /  \  | (___ | |      | |  __| |  | | | |  
+ |  __| \ \/ / '_ \| |/ _ \| '__/ _ \ / /\ \  \___ \| |      | | |_ | |  | | | |  
+ | |____ >  <| |_) | | (_) | | |  __// ____ \ ____) | |____  | |__| | |__| |_| |_ 
+ |______/_/\_\ .__/|_|\___/|_|  \___/_/    \_\_____/|______|  \_____|\____/|_____|
+             | |                                                                  
+             |_|                                                                  
+  _____                            _                                              
+ |_   _|                          | |                                             
+   | |  _ __ ___  _ __   ___  _ __| |_                                            
+   | | | '_ ` _ \| '_ \ / _ \| '__| __|                                           
+  _| |_| | | | | | |_) | (_) | |  | |_                                            
+ |_____|_| |_| |_| .__/ \___/|_|   \__|                                           
+                 | |                                                              
+                 |_|                                                             """)
 
 
 class DraggableLabel(QLabel):

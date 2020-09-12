@@ -118,7 +118,6 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
     :param dcm_dir: absolute path to the dicom directory, where the first dicom will be used to determine parameters
     :return: additional_dcm_info: a dict of the additional parameters as keys and their values as the dict values.
     """
-    print(f"PROCESSING {dcm_dir}!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     dcm_files = iglob(os.path.join(dcm_dir, "*.dcm"))
     dcm_files = peekable(dcm_files)
     if not dcm_files:
@@ -221,8 +220,11 @@ def get_structure_components(dcm_dir: str, config: dict):
         else:
             dirname, _ = os.path.split(dirname)
 
-    scan_translator = {value: key for key, value in config["Scan Aliases"].items()}
-    scan_dst_name = scan_translator[scan]
+    try:
+        scan_translator = {value: key for key, value in config["Scan Aliases"].items()}
+        scan_dst_name = scan_translator[scan]
+    except KeyError:
+        return False, subject, None, scan
 
     if visit is not None:
         visit_translator = config["Ordered Visit Aliases"]
@@ -230,7 +232,7 @@ def get_structure_components(dcm_dir: str, config: dict):
     else:
         visit_dst_name = None
 
-    return subject, visit_dst_name, scan_dst_name
+    return True, subject, visit_dst_name, scan_dst_name
 
 
 def get_dst_dirname(raw_dir: str, subject: str, visit: str, scan: str, legacy_mode: bool = False):
@@ -562,7 +564,12 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
     None if the import for this directory failed)
     """
     # Get the subject, visit, and scan for that directory
-    subject, visit, scan = get_structure_components(dcm_dir=dcm_dir, config=config)
+    successful_run, subject, visit, scan = get_structure_components(dcm_dir=dcm_dir, config=config)
+    if not successful_run:
+        print(f"FAILURE ENCOUNTERED AT GETTING THE DIRECTORY STRUCTURE COMPONENTS STEP")
+        return False, f"SUBJECT: {subject}; " \
+                      f"SCAN: {scan}; " \
+                      f"ERROR: Failed at getting directory structure components", None
 
     # Get the manufacturer tag
     manufacturer = get_manufacturer(dcm_dir=dcm_dir)
@@ -580,7 +587,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
                                                    scan=scan,
                                                    legacy_mode=legacy_mode)
     if not successful_run:
-        print(f"FAILURE ENCOUNTERED AT THE DCM2NIIX STEP")
+        print(f"FAILURE ENCOUNTERED AT THE TEMP FOLDER GENERATION STEP")
         return False, f"SUBJECT: {subject}; " \
                       f"SCAN: {scan}; " \
                       f"ERROR: Failed at Temp folder generation", None
