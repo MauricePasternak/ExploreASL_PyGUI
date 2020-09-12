@@ -8,6 +8,7 @@ from ExploreASL_GUI.xASL_GUI_Graph_FacetManager import xASL_GUI_FacetManager
 from ExploreASL_GUI.xASL_GUI_Graph_FacetArtist import xASL_GUI_FacetArtist
 from ExploreASL_GUI.xASL_GUI_Graph_MRIViewManager import xASL_GUI_MRIViewManager
 from ExploreASL_GUI.xASL_GUI_Graph_MRIViewArtist import xASL_GUI_MRIViewArtist
+from ExploreASL_GUI.xASL_GUI_HelperFuncs_StringOps import set_os_dependent_text
 import os
 
 
@@ -24,22 +25,22 @@ class xASL_Plotting(QMainWindow):
 
         # Window Size and initial visual setup
         self.setMinimumSize(1920, 1000)
-        # self.resize(self.config["ScreenSize"][0], self.config["ScreenSize"][1])
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
         self.setWindowTitle("Explore ASL - Post Processing Visualization")
-        self.setWindowIcon(QIcon(os.path.join(self.config["ProjectDir"], "media", "ExploreASL_logo.png")))
 
-        # Central Classes
+        # Central Classes and their connections
         self.dtype_indicator = xASL_GUI_Datatype_Indicator(self)
         self.subsetter = xASL_GUI_Subsetter(self)
         self.loader = xASL_GUI_Data_Loader(self)
+        self.loader.signal_dtype_was_changed.connect(self.subsetter.add_or_remove_subsetable_field)
 
         # Initialize blank givens
         self.fig_manager = None
         self.fig_artist = None
         self.spacer = QSpacerItem(0, 1, QSizePolicy.Preferred, QSizePolicy.Expanding)
+
         # Main Widgets setup
         self.UI_Setup_Docker()
 
@@ -58,8 +59,10 @@ class xASL_Plotting(QMainWindow):
         self.hlay_analysis_dir, self.le_analysis_dir, self.btn_analysis_dir = self.make_droppable_clearable_le(
             btn_connect_to=self.set_analysis_dir,
             default=self.config["DefaultRootDir"],
-            acceptable_path_type="Directory"
-        )
+            acceptable_path_type="Directory")
+        set_os_dependent_text(linedit=self.le_analysis_dir,
+                              config_ossystem=self.config["Platform"],
+                              text_to_set=self.config["DefaultRootDir"])
 
         self.le_demographics_file = DandD_FileExplorer2LineEdit(acceptable_path_type="File",
                                                                 supported_extensions=[".tsv", ".csv", ".xlsx"])
@@ -97,7 +100,7 @@ class xASL_Plotting(QMainWindow):
         self.grp_varview = QGroupBox(title="Variables", parent=self.cont_maindock)
         self.vlay_varview = QVBoxLayout(self.grp_varview)
         self.lst_varview = QListWidget(self.grp_varview)
-        self.lst_varview.setFixedHeight(250)
+        self.lst_varview.setFixedHeight(225)
         self.lst_varview.setDragEnabled(True)
         self.vlay_varview.addWidget(self.lst_varview)
 
@@ -180,6 +183,9 @@ class xASL_Plotting(QMainWindow):
                 return
             else:
                 self.le_analysis_dir.setText(analysisdir_filepath)
+                set_os_dependent_text(linedit=self.le_analysis_dir,
+                                      config_ossystem=self.config["Platform"],
+                                      text_to_set=analysisdir_filepath)
         else:
             QMessageBox().warning(self,
                                   "The filepath you specified does not exist",
