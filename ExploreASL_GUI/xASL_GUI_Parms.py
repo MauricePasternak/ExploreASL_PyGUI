@@ -49,6 +49,7 @@ class xASL_Parms(QMainWindow):
         # Misc Players
         self.import_error_logger = []
         self.asl_json_sidecar_data = {}
+        self.can_update_slicereadouttime = False
 
         self.UI_Setup_Basic()
         self.UI_Setup_Advanced()
@@ -80,6 +81,7 @@ class xASL_Parms(QMainWindow):
         self.cmb_vendor = self.make_cmb_and_items(["Siemens", "Philips", "GE", "GE_WIP"])
         self.cmb_sequencetype = self.make_cmb_and_items(["3D GRaSE", "2D EPI", "3D Spiral"])
         self.cmb_labelingtype = self.make_cmb_and_items(["Q2 TIPS PASL", "pCASL/CASL"])
+        self.cmb_labelingtype.currentTextChanged.connect(self.autocalc_slicereadouttime)
         self.cmb_m0_isseparate = self.make_cmb_and_items(["Proton density scan (M0) was acquired",
                                                           "Use mean control ASL as proton density mimic"])
         self.cmb_m0_posinasl = self.make_cmb_and_items(
@@ -118,10 +120,12 @@ class xASL_Parms(QMainWindow):
         self.cmb_nsup_pulses = self.make_cmb_and_items(["0", "2", "4", "5"], 1)
         self.cmb_readout_dim = self.make_cmb_and_items(["3D", "2D"])
         self.spinbox_initialpld = QDoubleSpinBox(maximum=2500, minimum=0, value=1800)
+        self.spinbox_initialpld.valueChanged.connect(self.autocalc_slicereadouttime)
         self.spinbox_labdur = QDoubleSpinBox(maximum=2000, minimum=0, value=800)
+        self.spinbox_labdur.valueChanged.connect(self.autocalc_slicereadouttime)
         self.hlay_slice_readout = QHBoxLayout()
         self.cmb_slice_readout = self.make_cmb_and_items(["Use Indicated Value", "Use Shortest TR"])
-        self.spinbox_slice_readout = QDoubleSpinBox(maximum=100, minimum=0, value=37)
+        self.spinbox_slice_readout = QDoubleSpinBox(maximum=1000, minimum=0, value=37)
         self.hlay_slice_readout.addWidget(self.cmb_slice_readout)
         self.hlay_slice_readout.addWidget(self.spinbox_slice_readout)
         for description, widget in zip(["Number of Suppression Pulses", "Readout Dimension",
@@ -278,6 +282,18 @@ class xASL_Parms(QMainWindow):
                 print(f"Warning in update_asl_json_sidecar_data. The field: InversionTime was not present in the "
                       f"detected asl json sidecar.\n")
 
+        # Next get a few essentials for auto-calculating the SliceReadoutTime
+        try:
+            has_tr = "RepetitionTime" in self.asl_json_sidecar_data
+            has_nslices = "NumberOfSlices" in self.asl_json_sidecar_data
+            print(has_tr, has_nslices)
+            if has_tr and has_nslices:
+                self.can_update_slicereadouttime = True
+            else:
+                self.can_update_slicereadouttime = False
+        except KeyError:
+            pass
+
         # Retrieve any M0 json sidecar
         m0_sides_legacy = iglob(os.path.join(analysis_dir_text, "**", "M0.json"), recursive=True)
         m0_sides_legacy = peekable(m0_sides_legacy)
@@ -321,6 +337,18 @@ class xASL_Parms(QMainWindow):
 
             except KeyError:
                 pass
+
+    def autocalc_slicereadouttime(self):
+        if not self.can_update_slicereadouttime or self.cmb_labelingtype.currentText() != "pCASL/CASL":
+            return
+
+        tr = self.asl_json_sidecar_data["RepetitionTime"]*1000
+        labdur = self.spinbox_labdur.value()
+        ini_pld = self.spinbox_initialpld.value()
+        nslices = self.asl_json_sidecar_data["NumberOfSlices"]
+        readouttime = round((tr - labdur - ini_pld) / nslices, 2)
+
+        self.spinbox_slice_readout.setValue(readouttime)
 
     ################
     # Misc Functions

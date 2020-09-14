@@ -134,17 +134,33 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
             "RescaleIntercept": [(0x0028, 0x1052)],
             "MRScaleSlope": [(0x2005, 0x120E), (0x2005, 0x110E), (0x2005, 0x100E)],
             "RealWorldValueSlope": [(0x0040, 0x9096, 0x0040, 0x9225)],
+            "NumberOfSlices": [(0x0054, 0x0081)]
         }
-        defaults = [None, None, 1, 1, 0, 1, None, None]
+        defaults = [None,  # AcquisitionMatrix
+                    None,  # SoftwareVersions
+                    1,  # NumberOfAverages
+                    1,  # RescaleSlope
+                    0,  # RescaleIntercept
+                    1,  # MRScaleSlope
+                    None,  # RealWorldValueSlope
+                    None  # NumberOfSlices
+                    ]
     else:
         tags_dict = {
             "AcquisitionMatrix": [(0x0018, 0x1310)],
             "SoftwareVersions": [(0x0018, 0x1020)],
             "NumberOfAverages": [(0x0018, 0x0083)],
             "RescaleSlope": [(0x0028, 0x1053), (0x2005, 0x110A)],
-            "RescaleIntercept": [(0x0028, 0x1052)]
+            "RescaleIntercept": [(0x0028, 0x1052)],
+            "NumberOfSlices": [(0x0054, 0x0081)]
         }
-        defaults = [None, None, 1, 1, 0]
+        defaults = [None,  # AcquisitionMatrix
+                    None,  # SoftwareVersions
+                    1,  # NumberOfAverages
+                    1,  # RescaleSlope
+                    0,  # RescaleIntercept
+                    None  # NumberOfSlices
+                    ]
 
     additional_dcm_info = {}.fromkeys(tags_dict.keys())
     for (key, value), default in zip(tags_dict.items(),
@@ -577,9 +593,6 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
     # Retrieve the additional DICOM parameters and include the Philips rescale slope indicator
     addtional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir, manufacturer=manufacturer)
 
-    # if manufacturer == "Philips":
-    #     addtional_dcm_parameters["UsePhilipsFloatNotDisplayScaling"] = 1
-
     # Generate the directories for dumping dcm2niix output
     successful_run, temp_dst_dir = get_dst_dirname(raw_dir=config["RawDir"],
                                                    subject=subject,
@@ -616,6 +629,10 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
         return False, f"SUBJECT: {subject}; " \
                       f"SCAN: {scan}; " \
                       f"ERROR: Failed at post-conversion nifti cleanup", None
+
+    # Minor preprocessing step; overwrite the number of slices based on the nifti shape
+    if addtional_dcm_parameters["NumberOfSlices"] is None:
+        addtional_dcm_parameters["NumberOfSlices"] = nifti_parmameters["nz"]
 
     # For ASL4D and M0 scans, the JSON sidecar from dcm2niix must include additional parameters
     successful_run, json_parameters = update_json_sidecar(json_file=json_filepath, dcm_parms=addtional_dcm_parameters)
