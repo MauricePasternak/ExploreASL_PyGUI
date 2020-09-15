@@ -1,9 +1,8 @@
+# ignore macOS files:
 .DS_Store
-ExploreASL_GUI_masterconfig.json
-*.xlsx
-*.xls
-*.todo
-*.pptx
-__pycache__
+# ignore temporary Matlab files:
+*.asv
+*.m~
+JSON_LOGIC/ExploreASL_GUI_masterconfig.json
 .idea
-*MRI_viewer.mp4
+__pycache__
