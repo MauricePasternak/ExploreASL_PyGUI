@@ -469,10 +469,17 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, visit: st
     elif len(reorganized_niftis) > 1 and scan == "M0":
         nii_objs = [nib.load(nifti) for nifti in reorganized_niftis]
         final_nifti_obj = image.mean_img(nii_objs)
+        # Must correct for bad headers under BIDS specification
+        if not legacy_mode:
+            final_nifti_obj = alter_nifti_header_pixdimvals(final_nifti_obj)
 
     # Scenario: single M0
     elif len(reorganized_niftis) == 1 and scan == "M0":
         final_nifti_obj = nib.load(reorganized_niftis[0])
+        # Must correct for bad headers under BIDS specification
+        if not legacy_mode:
+            final_nifti_obj = alter_nifti_header_pixdimvals(final_nifti_obj)
+            print(f"FINAL M0SCAN NIFTI SHAPE: {final_nifti_obj.shape}")
 
     # Scenario: one of the structural types
     elif len(reorganized_niftis) == 1 and scan in ["T1", "FLAIR", "WMH_SEGM"]:
@@ -699,7 +706,6 @@ def bids_m0_followup(analysis_dir):
 
         # Ensure that the asl json sidecar and nifti images actually exist adjacent to the m0scan.json
         if os.path.exists(asl_json) and os.path.exists(asl_nifti):
-
             # BIDS standard: the "IntendedFor" filepath must be relative to the subject (exclusive)
             # and contain forward slashes
             truncated_asl_nifti = asl_nifti.replace(analysis_dir, "").replace("\\", "/")
@@ -711,6 +717,18 @@ def bids_m0_followup(analysis_dir):
             m0_parms["IntendedFor"] = truncated_asl_nifti
             with open(m0_json, 'w') as m0_json_writer:
                 json.dump(m0_parms, m0_json_writer, indent=3)
+
+
+def alter_nifti_header_pixdimvals(img: nib.Nifti1Image):
+    """
+    Alters the pixdim values of a nifti
+    :param img: path to the m0scan or otherwise any nifti that needs its pixdim values at dim==1 values zeroed out
+    """
+    new_pixdim = np.where(img.header["dim"] > 1,  # where the dim value is greater than 1
+                          img.header["pixdim"],  # keep the pixdim value as it is
+                          0)  # otherwise, replace it with a zero
+    img.header["pixdim"] = new_pixdim
+    return img
 
 
 def fix_mosaic(mosaic_nifti: nib.Nifti1Image, acq_dims: tuple):
