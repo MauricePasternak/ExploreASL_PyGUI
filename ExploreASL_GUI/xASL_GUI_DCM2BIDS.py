@@ -5,6 +5,7 @@ import subprocess
 from glob import glob, iglob
 import nibabel as nib
 import pydicom
+from pydicom.errors import InvalidDicomError
 import json
 import pandas as pd
 from more_itertools import peekable
@@ -35,12 +36,24 @@ def get_manufacturer(dcm_dir: str):
     :param dcm_dir: the absolute path to the directory containing the dicoms to be converted.
     :return: returns the string "Siemens", "Philips", or "GE". Otherwise returns None.
     """
-    dcm_files = iglob(os.path.join(dcm_dir, "*.dcm"))
+    dcm_files = iglob(os.path.join(dcm_dir, "*"))
     dcm_files = peekable(dcm_files)
     if not dcm_files:
         return None
 
-    dcm_data = pydicom.read_file(dcm_files[0])
+    dcm_data = None
+    for dcm_file in dcm_files:
+        try:
+            dcm_file = next(dcm_files)
+            dcm_data = pydicom.read_file(dcm_file)
+            break
+        except InvalidDicomError:
+            print(f"DICOM dir bad bad file: {dcm_file}")
+            continue
+
+    if dcm_data is None:
+        return
+
     detected_manufac = []
     manufac_tags = [(0x0008, 0x0070), (0x0019, 0x0010)]
     for tag in manufac_tags:
@@ -119,12 +132,21 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
     :param dcm_dir: absolute path to the dicom directory, where the first dicom will be used to determine parameters
     :return: additional_dcm_info: a dict of the additional parameters as keys and their values as the dict values.
     """
-    dcm_files = iglob(os.path.join(dcm_dir, "*.dcm"))
+    dcm_files = iglob(os.path.join(dcm_dir, "*"))
     dcm_files = peekable(dcm_files)
     if not dcm_files:
         return None
 
-    dcm_data = pydicom.read_file(next(dcm_files))
+    dcm_data = None
+    for dcm_file in dcm_files:
+        try:
+            dcm_data = pydicom.read_file(dcm_file)
+            break
+        except InvalidDicomError:
+            continue
+
+    if dcm_data is None:
+        return
 
     if manufacturer == 'Philips':
         tags_dict = {
@@ -471,15 +493,23 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, visit: st
         final_nifti_obj = image.mean_img(nii_objs)
         # Must correct for bad headers under BIDS specification
         if not legacy_mode:
-            final_nifti_obj = alter_nifti_header_pixdimvals(final_nifti_obj)
+            pixdim_copy = final_nifti_obj.header["pixdim"].copy()
+            final_nifti_obj.header["dim"][0] = 4
+            final_nifti_obj.header["pixdim"] = pixdim_copy
+            final_nifti_obj = image.concat_imgs([final_nifti_obj])
 
     # Scenario: single M0
-    elif len(reorganized_niftis) == 1 and scan == "M0":
+    elif any([len(reorganized_niftis) == 1 and scan == "M0",  # Single independent M0
+              len(reorganized_niftis) == 1 and scan == "ASL4D"]):  # Could be a CBF or delta image
         final_nifti_obj = nib.load(reorganized_niftis[0])
         # Must correct for bad headers under BIDS specification
         if not legacy_mode:
-            final_nifti_obj = alter_nifti_header_pixdimvals(final_nifti_obj)
-            print(f"FINAL M0SCAN NIFTI SHAPE: {final_nifti_obj.shape}")
+            pixdim_copy = final_nifti_obj.header["pixdim"].copy()
+            final_nifti_obj.header["dim"][0] = 4
+            final_nifti_obj.header["pixdim"] = pixdim_copy
+            final_nifti_obj = nib.Nifti1Image(np.expand_dims(image.get_data(final_nifti_obj), axis=-1),
+                                              final_nifti_obj.affine,
+                                              final_nifti_obj.header)
 
     # Scenario: one of the structural types
     elif len(reorganized_niftis) == 1 and scan in ["T1", "FLAIR", "WMH_SEGM"]:
