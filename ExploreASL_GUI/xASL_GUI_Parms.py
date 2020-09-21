@@ -256,8 +256,15 @@ class xASL_Parms(QMainWindow):
                                 QMessageBox.Ok)
             return
 
-        # Now we can update a couple of fields
-        # First, the vendor
+        # First, check if this is bids
+        if os.path.exists(os.path.join(analysis_dir_text, "dataset_description.json")):
+            self.chk_overwrite_for_bids.setChecked(True)
+            print("This is BIDS")
+        else:
+            self.chk_overwrite_for_bids.setChecked(False)
+            print("This is not BIDS")
+
+        # Next, the vendor
         try:
             idx = self.cmb_vendor.findText(self.asl_json_sidecar_data["Manufacturer"])
             if idx != -1:
