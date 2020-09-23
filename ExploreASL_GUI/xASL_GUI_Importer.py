@@ -709,8 +709,18 @@ class xASL_GUI_Importer(QMainWindow):
 
         # If there were any failures, write them to disk now
         if len(self.failed_runs) > 0:
-            with open(os.path.join(analysis_dir, "import_summary_failed.json"), 'w') as failed_writer:
-                json.dump(dict(self.failed_runs), failed_writer, indent=3)
+            try:
+                with open(os.path.join(analysis_dir, "import_summary_failed.json"), 'w') as failed_writer:
+                    json.dump(dict(self.failed_runs), failed_writer, indent=3)
+            except FileNotFoundError:
+                QMessageBox().warning(self,
+                                      "Critical Import Error",
+                                      "The import module suffered a critical error and could not generate the "
+                                      "analysis directory. This usually occurs if the user has specified an incorrect "
+                                      "folder structure, commonly forgetting a DUMMY directory that may be present at "
+                                      "the tail end. Check if you have appropriately specified the existence of DUMMY "
+                                      "folders.",
+                                      QMessageBox.Ok)
 
         # If the settings is BIDS...
         if not self.chk_uselegacy.isChecked():
