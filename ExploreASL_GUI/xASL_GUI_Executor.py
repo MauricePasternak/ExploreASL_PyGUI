@@ -16,7 +16,7 @@ from ExploreASL_GUI.xASL_GUI_Executor_ancillary import (initialize_all_lock_dirs
                                                         calculate_missing_STATUS, interpret_statusfile_errors)
 from ExploreASL_GUI.xASL_GUI_AnimationClasses import xASL_ImagePlayer
 from ExploreASL_GUI.xASL_GUI_Executor_Modjobs import xASL_GUI_RerunPrep, xASL_GUI_TSValter
-from ExploreASL_GUI.xASL_GUI_HelperFuncs import set_widget_icon
+from ExploreASL_GUI.xASL_GUI_HelperFuncs import (set_widget_icon, make_droppable_clearable_le)
 from ExploreASL_GUI.xASL_GUI_HelperFuncs_StringOps import set_os_dependent_text
 from pprint import pprint
 from collections import defaultdict
@@ -279,18 +279,27 @@ class xASL_Executor(QMainWindow):
                 self.formlay_nrows += 1
                 inner_cmb = QComboBox()
                 inner_cmb.setMinimumWidth(140)
+                inner_cmb.setToolTip("Specify the number of cores to allocate to this study")
                 inner_cmb.addItems(list(map(str, range(1, os.cpu_count() // 2 + 1))))
                 inner_cmb.currentTextChanged.connect(self.set_ncores_left)
                 inner_cmb.currentTextChanged.connect(self.set_ncores_selectable)
                 inner_cmb.currentTextChanged.connect(self.set_nstudies_selectable)
                 inner_cmb.currentTextChanged.connect(self.is_ready_to_run)
                 inner_le = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
+                inner_le.setToolTip("Specify the filepath to the analysis folder of your study.\nFor example:\n"
+                                     "C:\\Users\\JohnSmith\\MyStudy\\analysis")
                 inner_le.setClearButtonEnabled(True)
                 inner_le.setPlaceholderText("Select the analysis directory to your study")
                 inner_le.textChanged.connect(self.is_ready_to_run)
                 inner_btn = RowAwareQPushButton(self.formlay_nrows, "...")
                 inner_btn.row_idx_signal.connect(self.set_analysis_directory)
                 inner_cmb_procopts = QComboBox()
+                inner_cmb_procopts.setToolTip("Specify which ExploreASL module to run:\n"
+                                              "\t-Structural: Structural Module for processing T1w and FLAIR scans\n"
+                                              "\t-ASL: ASL Module for processing ASL and M0 scans\n"
+                                              "\t-Both: Run both the Structural and ASL modules\n"
+                                              "\t-Population: Population module for determining statistics,\n"
+                                              "\tstudywide masks, etc.")
                 inner_cmb_procopts.addItems(["Structural", "ASL", "Both", "Population"])
                 inner_cmb_procopts.setCurrentIndex(2)
                 inner_cmb_procopts.currentTextChanged.connect(self.is_ready_to_run)
@@ -342,9 +351,18 @@ class xASL_Executor(QMainWindow):
         self.formlay_promod = QFormLayout()
         # Set up the widgets in this section
         self.cmb_modjob = QComboBox(self.grp_procmod)
-        self.cmb_modjob.addItems(["Prepare a study for a re-run", "Alter participants.tsv"])
-        self.le_modjob = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
+        self.cmb_modjob.addItems(["Re-run a study", "Alter participants.tsv"])
+        self.cmb_modjob.setToolTip("Specify the type of re-run or pre-processing modification you'd like to perform.\n"
+                                   "Currently the following options are avaliable:\n"
+                                   "\t'Re-run a study': Re-run parts of a previously-run study\n"
+                                   "\t'Alter participants.tsv': Add metadata to the tsv file such that biasfields for\n"
+                                   "\tthat metadata may be created when running the Population module")
+        self.hlay_modjob, self.le_modjob, \
+        self.btn_modjob = make_droppable_clearable_le(btn_connect_to=self.set_modjob_analysis_dir,
+                                                      acceptable_path_type="Directory")
         self.le_modjob.setPlaceholderText("Drag & Drop analysis directory here")
+        self.le_modjob.setToolTip("Specify the filepath to the analysis folder of your study.\nFor example:\n"
+                                  "C:\\Users\\JohnSmith\\MyStudy\\analysis")
         self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod, clicked=self.run_modjob)
 
         modjob_icon_font = QFont()
@@ -353,10 +371,10 @@ class xASL_Executor(QMainWindow):
         set_widget_icon(self.btn_runmodjob, self.config, "run_modjob_icon.svg", (75, 75))
         self.btn_runmodjob.setMinimumHeight(80)
         self.btn_runmodjob.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.MinimumExpanding)
-        # self.btn_runmodjob.setEnabled(False)
+
         # Add the widgets to the form layout
         self.formlay_promod.addRow("Which modification job to run", self.cmb_modjob)
-        self.formlay_promod.addRow("Path to analysis dir to modify", self.le_modjob)
+        self.formlay_promod.addRow("Path to analysis dir to modify", self.hlay_modjob)
         self.vlay_procmod.addLayout(self.formlay_promod)
         self.vlay_procmod.addWidget(self.btn_runmodjob)
 
@@ -388,7 +406,7 @@ class xASL_Executor(QMainWindow):
                                       QMessageBox.Ok)
                 return
             modjob_widget = xASL_GUI_TSValter(self)
-        elif selected_job == "Prepare a study for a re-run":
+        elif selected_job == "Re-run a study":
             # Requirements to launch the widget
             try:
                 if any([self.le_modjob.text() == '',
@@ -470,6 +488,15 @@ class xASL_Executor(QMainWindow):
                                                     self.parent().config["DefaultRootDir"],
                                                     QFileDialog.ShowDirsOnly)
         set_os_dependent_text(linedit=self.formlay_lineedits_list[row_idx - 1],
+                              config_ossystem=self.config["Platform"],
+                              text_to_set=dir_path)
+
+    def set_modjob_analysis_dir(self):
+        dir_path = QFileDialog.getExistingDirectory(self.cw,
+                                                    "Select the analysis directory of your study",
+                                                    self.config["DefaultRootDir"],
+                                                    QFileDialog.ShowDirsOnly)
+        set_os_dependent_text(linedit=self.le_modjob,
                               config_ossystem=self.config["Platform"],
                               text_to_set=dir_path)
 
