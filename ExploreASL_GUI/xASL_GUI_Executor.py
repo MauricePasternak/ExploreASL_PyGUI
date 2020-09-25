@@ -12,8 +12,9 @@ from PySide2.QtWidgets import *
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from ExploreASL_GUI.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from ExploreASL_GUI.xASL_GUI_Executor_ancillary import initialize_all_lock_dirs, calculate_anticipated_workload, \
-    calculate_missing_STATUS, interpret_statusfile_errors, xASL_ImagePlayer
+from ExploreASL_GUI.xASL_GUI_Executor_ancillary import (initialize_all_lock_dirs, calculate_anticipated_workload,
+                                                        calculate_missing_STATUS, interpret_statusfile_errors)
+from ExploreASL_GUI.xASL_GUI_AnimationClasses import xASL_ImagePlayer
 from ExploreASL_GUI.xASL_GUI_Executor_Modjobs import xASL_GUI_RerunPrep, xASL_GUI_TSValter
 from ExploreASL_GUI.xASL_GUI_HelperFuncs import set_widget_icon
 from ExploreASL_GUI.xASL_GUI_HelperFuncs_StringOps import set_os_dependent_text
@@ -172,7 +173,6 @@ class xASL_Executor(QMainWindow):
         self.frame_runExploreASL = QFrame()
         self.frame_runExploreASL.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         self.frame_runExploreASL.setLineWidth(0)
-        # self.frame_runExploreASL.setStyleSheet("border: 2px solid gray; border-radius: 3px; ")
         self.vlay_frame_runExploreASL = QVBoxLayout(self.frame_runExploreASL)
         self.btn_runExploreASL = QPushButton("Run Explore ASL", clicked=self.run_Explore_ASL)
         self.btn_runExploreASL.setEnabled(False)
@@ -507,7 +507,7 @@ class xASL_Executor(QMainWindow):
                         checks.clear()
                         self.btn_runExploreASL.setEnabled(False)
                         return
-                except (KeyError, FileNotFoundError) as e:
+                except (KeyError, FileNotFoundError):
                     checks.clear()
                     self.btn_runExploreASL.setEnabled(False)
                     return
@@ -798,13 +798,15 @@ class xASL_Executor(QMainWindow):
                         # Remember to re-activate widgets
                         self.set_widgets_activation_states(True)
                         return
-            except json.decoder.JSONDecodeError as e:
+            except json.decoder.JSONDecodeError as json_read_error:
                 QMessageBox().warning(self.parent(),
                                       f"Problem prior to starting ExploreASL - Bad Json syntax",
                                       f"The DataPar.json file in {os.path.dirname(parms_file)}\n"
                                       f"could not be read.\n"
-                                      f"Please ensure the DataPar.json file has come from the GUI module for defining "
-                                      f"study-level run parameters.",
+                                      f"Specifically, the error capture is as follows:\n"
+                                      f"{json_read_error}\n"
+                                      f"Please either correct this error or ensure the DataPar.json file has come "
+                                      f"from the GUI module for defining study-level run parameters.",
                                       QMessageBox.Ok)
                 # Remember to re-activate widgets
                 self.set_widgets_activation_states(True)
