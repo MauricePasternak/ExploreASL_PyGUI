@@ -275,13 +275,13 @@ class xASL_GUI_MRIViewArtist(QWidget):
     def plotupdate_axialslice(self, value):
         self.axial_t1.clear()
         self.axial_t1.imshow(np.rot90(self.current_t1_img[:, :, value]).squeeze(),
-                             cmap=self.manager.cmb_cmap.currentText(),
+                             cmap=self.manager.cmb_cbf_cmap.currentText(),
                              vmin=0,
                              vmax=self.current_t1_max
                              )
         self.axial_cbf.clear()
         self.axial_cbf.imshow(np.rot90(self.current_cbf_img[:, :, value]).squeeze(),
-                              cmap=self.manager.cmb_cmap.currentText(),
+                              cmap=self.manager.cmb_cbf_cmap.currentText(),
                               vmin=0,
                               vmax=self.current_cbf_max,
                               )
@@ -291,13 +291,13 @@ class xASL_GUI_MRIViewArtist(QWidget):
 
         self.coronal_t1.clear()
         self.coronal_t1.imshow(np.rot90(self.current_t1_img[:, value, :]).squeeze(),
-                               cmap=self.manager.cmb_cmap.currentText(),
+                               cmap=self.manager.cmb_cbf_cmap.currentText(),
                                vmin=0,
                                vmax=self.current_t1_max
                                )
         self.coronal_cbf.clear()
         self.coronal_cbf.imshow(np.rot90(self.current_cbf_img[:, value, :]).squeeze(),
-                                cmap=self.manager.cmb_cmap.currentText(),
+                                cmap=self.manager.cmb_cbf_cmap.currentText(),
                                 vmin=0,
                                 vmax=self.current_cbf_max,
                                 )
@@ -307,13 +307,13 @@ class xASL_GUI_MRIViewArtist(QWidget):
 
         self.sagittal_t1.clear()
         self.sagittal_t1.imshow(np.rot90(self.current_t1_img[value, :, :]).squeeze(),
-                                cmap=self.manager.cmb_cmap.currentText(),
+                                cmap=self.manager.cmb_cbf_cmap.currentText(),
                                 vmin=0,
                                 vmax=self.current_t1_max
                                 )
         self.sagittal_cbf.clear()
         self.sagittal_cbf.imshow(np.rot90(self.current_cbf_img[value, :, :]).squeeze(),
-                                 cmap=self.manager.cmb_cmap.currentText(),
+                                 cmap=self.manager.cmb_cbf_cmap.currentText(),
                                  vmin=0,
                                  vmax=self.current_cbf_max,
                                  )
