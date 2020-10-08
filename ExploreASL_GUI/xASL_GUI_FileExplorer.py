@@ -294,6 +294,7 @@ class xASL_FileView(QTreeView):
     def no_longer_busy(self):
         print("File operation was completed. Resetting 'is busy' variable back to False")
         self.is_busy = False
+        QApplication.restoreOverrideCursor()
 
     def delete_event(self):
         if self.is_busy:
@@ -305,6 +306,7 @@ class xASL_FileView(QTreeView):
         worker.signals.signal_done_processing.connect(self.no_longer_busy)
         self.is_busy = True
         self.threadpool.start(worker)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
 
     def copy_event(self):
         if self.is_busy:
@@ -322,6 +324,7 @@ class xASL_FileView(QTreeView):
         worker.signals.signal_done_processing.connect(self.no_longer_busy)
         self.is_busy = True
         self.threadpool.start(worker)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         self.copy_buffer.clear()
 
     def keyPressEvent(self, event: QKeyEvent):

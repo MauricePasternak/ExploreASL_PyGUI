@@ -19,11 +19,14 @@ class xASL_GUI_MRIViewArtist(QWidget):
     Main Widget class to handle drawing operations around seaborn's scatterplot class as well as MRI slices
     """
 
+    signal_manager_updateconstrasts = Signal(float, float)
+
     def __init__(self, parent):
         super().__init__(parent=parent)
         self.mainlay = QHBoxLayout(self)
         self.parent_cw = parent
-        self.manager = parent.fig_manager
+        from ExploreASL_GUI.xASL_GUI_Graph_MRIViewManager import xASL_GUI_MRIViewManager
+        self.manager: xASL_GUI_MRIViewManager = parent.fig_manager
 
         # Key Variables
         self.analysis_dir = self.parent_cw.le_analysis_dir.text()
@@ -35,8 +38,10 @@ class xASL_GUI_MRIViewArtist(QWidget):
 
         self.subjects_runs_dict = {}
         self.current_subject = None
+        self.cbf_scale_slope = 3.3151
+        self.cbf_scale_int = -0.6226
         self.current_cbf_img = np.zeros((121, 145, 121))
-        self.current_cbf_max = np.nanmax(self.current_cbf_img)
+        self.current_cbf_max = 0
         self.current_t1_img = np.zeros((121, 145, 121))
         self.current_t1_max = np.nanmax(self.current_t1_img)
         self.get_filenames()
@@ -68,6 +73,8 @@ class xASL_GUI_MRIViewArtist(QWidget):
         self.plotupdate_coronalslice(self.manager.slider_coronalslice.value())
         self.plotupdate_sagittalslice(self.manager.slider_sagittalslice.value())
 
+        self.signal_manager_updateconstrasts.connect(self.manager.update_contrastvals)
+
     def get_filenames(self):
         for subject in os.listdir(self.analysis_dir):
             match = self.regex.search(subject)
@@ -75,7 +82,6 @@ class xASL_GUI_MRIViewArtist(QWidget):
                 for run in os.listdir(os.path.join(self.analysis_dir, subject)):
                     run_path = os.path.join(self.analysis_dir, subject, run)
                     if not os.path.isdir(run_path):
-                        print(f"{run_path} is not a directory")
                         continue
                     if len(glob(os.path.join(self.analysis_dir, subject, run, "CBF.nii*"))) > 0:
                         name = subject + "_" + run
@@ -98,9 +104,9 @@ class xASL_GUI_MRIViewArtist(QWidget):
         """
         self.current_subject = None
         self.current_cbf_img = np.zeros((121, 145, 121))
-        self.current_cbf_max = np.nanmax(self.current_cbf_img)
+        self.current_cbf_max = 0
         self.current_t1_img = np.zeros((121, 145, 121))
-        self.current_t1_max = np.nanmax(self.current_t1_img)
+        self.current_t1_max = 0
 
     def check_if_files_exist(self, name):
         """
@@ -144,10 +150,19 @@ class xASL_GUI_MRIViewArtist(QWidget):
             # inform the user and reset the images to be black volumes
             try:
                 self.current_cbf_img = image.load_img(self.subjects_runs_dict[name]["CBF"]).get_fdata()
-                self.current_cbf_max = np.nanmax(self.current_cbf_img)
-                self.current_cbf_img = self.current_cbf_img.clip(0, self.current_cbf_max)
+                self.current_cbf_max = np.nanpercentile(self.current_cbf_img, 99)
+                self.current_cbf_img = self.current_cbf_img.clip(0, np.nanmax(self.current_cbf_img))
                 self.current_t1_img = image.load_img(self.subjects_runs_dict[name]["T1"]).get_fdata()
-                self.current_t1_max = np.nanmax(self.current_t1_img)
+                self.current_t1_max = np.nanpercentile(self.current_t1_img, 99)
+
+                self.signal_manager_updateconstrasts.emit(self.current_cbf_max, np.nanmax(self.current_cbf_img))
+                print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+                print(f"Mean of current image {np.nanmean(self.current_cbf_img)}")
+                print(f"Median of current image {np.nanmedian(self.current_cbf_img)}")
+                print(f"Minimum of current image {np.nanmin(self.current_cbf_img)}")
+                print(f"Maximum of current image {np.nanmax(self.current_cbf_img)}")
+                print(f"Anticipated maximum value image {self.current_cbf_max}")
+
             except ValueError:
                 self.check_if_files_exist(name=name)
                 self.reset_images_to_default_black()
@@ -156,10 +171,10 @@ class xASL_GUI_MRIViewArtist(QWidget):
                 self.get_filenames()
                 try:
                     self.current_cbf_img = image.load_img(self.subjects_runs_dict[name]["CBF"]).get_fdata()
-                    self.current_cbf_max = np.nanmax(self.current_cbf_img)
-                    self.current_cbf_img = self.current_cbf_img.clip(0, self.current_cbf_max)
+                    self.current_cbf_max = np.nanpercentile(self.current_cbf_img, 99)
+                    self.current_cbf_img = self.current_cbf_img.clip(0, np.nanmax(self.current_cbf_img))
                     self.current_t1_img = image.load_img(self.subjects_runs_dict[name]["T1"]).get_fdata()
-                    self.current_t1_max = np.nanmax(self.current_t1_img)
+                    self.current_t1_max = np.nanpercentile(self.current_t1_img, 99)
                 except KeyError:
                     QMessageBox().warning(self.parent_cw,
                                           "Discrepancy between data and images",
@@ -275,46 +290,55 @@ class xASL_GUI_MRIViewArtist(QWidget):
     def plotupdate_axialslice(self, value):
         self.axial_t1.clear()
         self.axial_t1.imshow(np.rot90(self.current_t1_img[:, :, value]).squeeze(),
-                             cmap=self.manager.cmb_cbf_cmap.currentText(),
+                             cmap=self.manager.cmb_t1w_cmap.currentText(),
                              vmin=0,
                              vmax=self.current_t1_max
                              )
-        self.axial_cbf.clear()
-        self.axial_cbf.imshow(np.rot90(self.current_cbf_img[:, :, value]).squeeze(),
-                              cmap=self.manager.cmb_cbf_cmap.currentText(),
-                              vmin=0,
-                              vmax=self.current_cbf_max,
-                              )
-        self.axial_canvas.draw()
+        try:
+            self.axial_cbf.clear()
+            self.axial_cbf.imshow(np.rot90(self.current_cbf_img[:, :, value]).squeeze(),
+                                  cmap=self.manager.cmb_cbf_cmap.currentText(),
+                                  vmin=self.manager.spinbox_mincbf.value(),
+                                  vmax=self.manager.spinbox_maxcbf.value(),
+                                  )
+            self.axial_canvas.draw()
+        except ValueError:
+            self.manager.spinbox_mincbf.setValue(self.manager.spinbox_maxcbf.value())
 
     def plotupdate_coronalslice(self, value):
 
         self.coronal_t1.clear()
         self.coronal_t1.imshow(np.rot90(self.current_t1_img[:, value, :]).squeeze(),
-                               cmap=self.manager.cmb_cbf_cmap.currentText(),
+                               cmap=self.manager.cmb_t1w_cmap.currentText(),
                                vmin=0,
                                vmax=self.current_t1_max
                                )
         self.coronal_cbf.clear()
-        self.coronal_cbf.imshow(np.rot90(self.current_cbf_img[:, value, :]).squeeze(),
-                                cmap=self.manager.cmb_cbf_cmap.currentText(),
-                                vmin=0,
-                                vmax=self.current_cbf_max,
-                                )
-        self.coronal_canvas.draw()
+        try:
+            self.coronal_cbf.imshow(np.rot90(self.current_cbf_img[:, value, :]).squeeze(),
+                                    cmap=self.manager.cmb_cbf_cmap.currentText(),
+                                    vmin=self.manager.spinbox_mincbf.value(),
+                                    vmax=self.manager.spinbox_maxcbf.value(),
+                                    )
+            self.coronal_canvas.draw()
+        except ValueError:
+            self.manager.spinbox_mincbf.setValue(self.manager.spinbox_maxcbf.value())
 
     def plotupdate_sagittalslice(self, value):
 
         self.sagittal_t1.clear()
         self.sagittal_t1.imshow(np.rot90(self.current_t1_img[value, :, :]).squeeze(),
-                                cmap=self.manager.cmb_cbf_cmap.currentText(),
+                                cmap=self.manager.cmb_t1w_cmap.currentText(),
                                 vmin=0,
                                 vmax=self.current_t1_max
                                 )
         self.sagittal_cbf.clear()
-        self.sagittal_cbf.imshow(np.rot90(self.current_cbf_img[value, :, :]).squeeze(),
-                                 cmap=self.manager.cmb_cbf_cmap.currentText(),
-                                 vmin=0,
-                                 vmax=self.current_cbf_max,
-                                 )
-        self.sagittal_canvas.draw()
+        try:
+            self.sagittal_cbf.imshow(np.rot90(self.current_cbf_img[value, :, :]).squeeze(),
+                                     cmap=self.manager.cmb_cbf_cmap.currentText(),
+                                     vmin=self.manager.spinbox_mincbf.value(),
+                                     vmax=self.manager.spinbox_maxcbf.value(),
+                                     )
+            self.sagittal_canvas.draw()
+        except ValueError:
+            self.manager.spinbox_mincbf.setValue(self.manager.spinbox_maxcbf.value())

@@ -84,6 +84,9 @@ class xASL_GUI_MRIViewManager(QWidget):
         if self.artist is not None:
             self.cmb_selectsubject.currentTextChanged.connect(self.artist.switch_subject)
             self.cmb_cbf_cmap.currentTextChanged.connect(self.artist.plotupdate_allslices)
+            self.cmb_t1w_cmap.currentTextChanged.connect(self.artist.plotupdate_allslices)
+            self.spinbox_mincbf.valueChanged.connect(self.artist.plotupdate_allslices)
+            self.spinbox_maxcbf.valueChanged.connect(self.artist.plotupdate_allslices)
             self.slider_axialslice.valueChanged.connect(self.artist.plotupdate_axialslice)
             self.slider_coronalslice.valueChanged.connect(self.artist.plotupdate_coronalslice)
             self.slider_sagittalslice.valueChanged.connect(self.artist.plotupdate_sagittalslice)
@@ -208,15 +211,31 @@ class xASL_GUI_MRIViewManager(QWidget):
         self.hlay_sagittalslice = self.UI_Setup_Slide_Spin(self.slider_sagittalslice, self.spinbox_sagittalslice,
                                                            "Control which sagittal slice is presented",
                                                            "Set the value of the sagittal slice being presented")
+        # Colormaps
         self.cmb_cbf_cmap = QComboBox()
-        self.cmb_cbf_cmap.setToolTip("Control the colormap used to present the images")
+        self.cmb_cbf_cmap.setToolTip("Control the colormap used to present the CBF images")
         self.cmb_cbf_cmap.addItems(["gray", "inferno", "nipy_spectral", "gnuplot2"])
+        self.cmb_t1w_cmap = QComboBox()
+        self.cmb_t1w_cmap.setToolTip("Control the colormap used to present the T1w images")
+        self.cmb_t1w_cmap.addItems(["gray", "inferno", "nipy_spectral", "gnuplot2"])
+
+        # Max-Min Value
+        self.spinbox_mincbf = QDoubleSpinBox(minimum=0, value=0, singleStep=0.01)
+        self.spinbox_mincbf.setToolTip("Set which pixel value counts as the minimum of the colormap\n"
+                                       "(i.e. on grayscale, all values lower than this are black)")
+        self.spinbox_maxcbf = QDoubleSpinBox(minimum=0, singleStep=0.01)
+        self.spinbox_maxcbf.setToolTip("Set which pixel value counts as the maximum of the colormap\n"
+                                       "(i.e. on grayscale, all values higher than this are white)")
+
 
         self.formlay_mriparms.addRow("Subject_Run Selection", self.cmb_selectsubject)
         self.formlay_mriparms.addRow("Axial Slice", self.hlay_axialslice)
         self.formlay_mriparms.addRow("Coronal Slice", self.hlay_coronalslice)
         self.formlay_mriparms.addRow("Sagittal Slice", self.hlay_sagittalslice)
-        self.formlay_mriparms.addRow("Colormap", self.cmb_cbf_cmap)
+        self.formlay_mriparms.addRow("CBF Image Colormap", self.cmb_cbf_cmap)
+        self.formlay_mriparms.addRow("T1w Image Colormap", self.cmb_t1w_cmap)
+        self.formlay_mriparms.addRow("Darkest Pixel Value", self.spinbox_mincbf)
+        self.formlay_mriparms.addRow("Brightest Pixel Value", self.spinbox_maxcbf)
 
     # Convenience Function - clears the Axes Parameters Tab
     # noinspection PyTypeChecker
@@ -228,6 +247,23 @@ class xASL_GUI_MRIViewManager(QWidget):
             self.subcont_axesparms.setParent(None)
             del self.subcont_axesparms
             self.axes_widget = None
+
+    ############################################################
+    # Functions for the Artist communicating back to the Manager
+    ############################################################
+    @Slot(float, float)
+    def update_contrastvals(self, new_val, new_max):
+        """
+        Upon the loading of a new
+        """
+        print(f"update_contrastvals received the following values: {new_val} and {new_max}")
+        for widget in [self.spinbox_maxcbf, self.spinbox_mincbf]:
+            widget.setMaximum(new_max)
+
+        self.spinbox_mincbf.setValue(0)
+        self.spinbox_maxcbf.setValue(new_val)
+        print(self.spinbox_mincbf.value())
+        print(self.spinbox_maxcbf.value())
 
     #############################################################################
     # Functions Designed to send signals out and sometimes set up parameter dicts
