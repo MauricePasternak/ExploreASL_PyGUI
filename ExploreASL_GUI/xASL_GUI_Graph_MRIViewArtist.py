@@ -230,18 +230,25 @@ class xASL_GUI_MRIViewArtist(QWidget):
     ##############################
     # Plotting Functions and Slots
     ##############################
+
+    ###############################
+    # SEABORN CANVAS PLOTTING FUNCS
     def plotupdate_axes(self):
+        self.plot_isupdating = True
         # If x or y axes arguments are still in their non-callable form (i.e string type), don't proceed
         if any([isinstance(self.manager.axes_arg_x, str), isinstance(self.manager.axes_arg_y, str)]):
+            self.plot_isupdating = False
             return
 
         # If x and y axes arguments are blank, don't proceed
         if any([self.manager.axes_arg_x() == '', self.manager.axes_arg_y() == '']):
+            self.plot_isupdating = False
             return
 
         # Account for a user typing the palette name, accidentally triggering this function, don't proceed
         if any([not self.manager.cmb_palette,
                 self.manager.cmb_palette.currentText() not in self.manager.palettenames]):
+            self.plot_isupdating = False
             return
 
         print("PLOTUPDATE_AXES TRIGGERED")
@@ -264,18 +271,69 @@ class xASL_GUI_MRIViewArtist(QWidget):
         if axes_constructor['palette'] in ['', "None", "Default Blue", "No Palette"]:
             axes_constructor['palette'] = None
 
+        # Account for the hue presence or absence
         if hue == '':
-            self.plotting_axes = func(x=x, y=y, data=self.parent_cw.loader.long_data, ax=self.plotting_axes,
-                                      **axes_constructor, picker=4)
+            self.plotting_axes: plt.Axes = func(x=x, y=y, data=self.parent_cw.loader.long_data,
+                                                ax=self.plotting_axes,
+                                                **axes_constructor, picker=4)
         else:
-            self.plotting_axes = func(x=x, y=y, hue=hue, data=self.parent_cw.loader.long_data, ax=self.plotting_axes,
-                                      **axes_constructor, picker=4)
+            self.plotting_axes: plt.Axes = func(x=x, y=y, hue=hue, data=self.parent_cw.loader.long_data,
+                                                ax=self.plotting_axes,
+                                                **axes_constructor, picker=4)
         self.plotting_canvas.draw()
+        self.plot_isupdating = False
 
     @Slot()
     def plotupdate_axescall(self):
         print("PLOTUPDATE_AXESCALL TRIGGERED")
         self.plotupdate_axes()
+
+    @Slot()
+    def plotupdate_xticklabels_from_le(self):
+        # If x or y axes arguments are still in their non-callable form (i.e string type), don't proceed
+        if any([isinstance(self.manager.axes_arg_x, str), isinstance(self.manager.axes_arg_y, str)]):
+            self.plot_isupdating = False
+            return
+
+        # If x and y axes arguments are blank, don't proceed
+        if any([self.manager.axes_arg_x() == '', self.manager.axes_arg_y() == '']):
+            self.plot_isupdating = False
+            return
+
+        while self.plot_isupdating:
+            pass
+        self.approximate_xticklabel_rotation()
+
+    def plotupdate_xticklabels(self):
+        print("PLOTUPATE_ROTATE_XTICKLABELS")
+        self.plotting_axes.set_xticklabels(self.plotting_axes.get_xticklabels(),
+                                           rotation=self.manager.spinbox_xticksrot.value())
+        self.plotting_canvas.draw()
+
+    def approximate_xticklabel_rotation(self):
+        w, h = self.get_ax_size(self.plotting_axes)
+        text_lens = [len(text.get_text()) for text in self.plotting_axes.get_xticklabels()]
+        pix_maxlen = 13 * max(text_lens[1:])  # 13 is the pixels at 10pt font
+        pixroom_per_text = w // len(text_lens)
+
+        if pix_maxlen > pixroom_per_text:
+            print("Should rotate")
+            self.manager.spinbox_xticksrot.setValue(45)
+        else:
+            print("Should not rotate")
+            self.manager.spinbox_xticksrot.setValue(0)
+
+    @staticmethod
+    def get_ax_size(ax: plt.Axes):
+        fig = ax.figure
+        bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+        width, height = bbox.width, bbox.height
+        width *= fig.dpi
+        height *= fig.dpi
+        return width, height
+
+    #############################
+    # MRI CANVASES PLOTTING FUNCS
 
     @Slot()
     def plotupdate_cmapcall(self):
