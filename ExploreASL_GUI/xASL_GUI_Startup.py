@@ -3,6 +3,7 @@ from PySide2.QtWidgets import QApplication, QMessageBox, QWidget
 from PySide2.QtGui import QIcon
 from platform import system
 from shutil import which
+from glob import glob
 import os
 import sys
 import json
@@ -74,6 +75,26 @@ def startup():
             if match:
                 master_config["MATLABROOT"] = match.group()
                 print(f"shutil method was a success and located: {match.group()}")
+            # Random possibility - Linux usr whose matlab command is in '/usr/bin/matlab'
+            elif not match and result == '/usr/bin/matlab':
+                print(f"shutil method was a partial fail. User clearly has the matlab command in {result}, but not the"
+                      f" main program. Attempting to locate around '/usr/local/")
+                local_result = glob("/usr/local/**/MATLAB/*/bin", recursive=True)
+                if len(local_result) != 0:
+                    local_match = regex.search(local_result[0])
+                    if local_match:
+                        master_config["MATLABROOT"] = local_match.group()
+                    else:
+                        pass
+                else:
+                    QMessageBox().warning(QWidget(),
+                                          "No MATLAB directory found",
+                                          "No path to the MATLAB root directory could be located on this device. "
+                                          "If MATLAB is installed on this device and this message is displaying, "
+                                          "please contact your system administration and check whether MATLAB is "
+                                          "listed in your system's PATH variable.",
+                                          QMessageBox.Ok)
+
             else:
                 QMessageBox().warning(QWidget(),
                                       "No MATLAB directory found",
