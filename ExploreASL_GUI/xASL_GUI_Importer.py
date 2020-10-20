@@ -24,6 +24,7 @@ class Importer_WorkerSignals(QObject):
     signal_send_errors = Signal(list)  # Signal sent by worker to indicate the file where something has failed
 
 
+# noinspection PyUnresolvedReferences
 class Importer_Worker(QRunnable):
     """
     Worker thread for running the import for a particular group.
@@ -858,13 +859,24 @@ class DraggableLabel(QLabel):
     def __init__(self, text='', parent=None):
         super(DraggableLabel, self).__init__(parent)
         self.setText(text)
-        self.setStyleSheet("QLabel { border-style: solid;"
-                           "border-width: 2px;"
-                           "border-color: black;"
-                           "border-radius: 10px;"
-                           "background-color: white;"
-                           "margin-bottom: 5px }"
-                           "QToolTip { color: ##ffffe1; background-color: #000000; border: 1px; }")
+        # self.setStyleSheet("QLabel {border-style: solid;"
+        #                    "border-width: 2px;"
+        #                    "border-color: black;"
+        #                    "border-radius: 10px;"
+        #                    "background-color: white;"
+        #                    "margin-bottom: 5px}"
+        #                    "QToolTip {color: ##ffffe1; background-color: #000000; border: 1px}")
+        style = """
+        QLabel {
+            border-style: solid;
+            border-width: 2px;
+            border-color: black;
+            border-radius: 10px;
+            background-color: white;
+            margin-bottom: 10px
+        }
+        """
+        self.setStyleSheet(style)
         font = QFont()
         font.setPointSize(16)
         self.setFont(font)
