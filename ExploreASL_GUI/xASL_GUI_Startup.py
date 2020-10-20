@@ -76,7 +76,7 @@ def startup():
                 master_config["MATLABROOT"] = match.group()
                 print(f"shutil method was a success and located: {match.group()}")
             # Random possibility - Linux usr whose matlab command is in '/usr/bin/matlab'
-            elif not match and result == '/usr/bin/matlab':
+            elif not match and '/usr/local' in result:
                 print(f"shutil method was a partial fail. User clearly has the matlab command in {result}, but not the"
                       f" main program. Attempting to locate around '/usr/local/")
                 local_result = glob("/usr/local/**/MATLAB/*/bin", recursive=True)
