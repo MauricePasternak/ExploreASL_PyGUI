@@ -859,14 +859,16 @@ class DraggableLabel(QLabel):
     def __init__(self, text='', parent=None):
         super(DraggableLabel, self).__init__(parent)
         self.setText(text)
-        # self.setStyleSheet("QLabel {border-style: solid;"
-        #                    "border-width: 2px;"
-        #                    "border-color: black;"
-        #                    "border-radius: 10px;"
-        #                    "background-color: white;"
-        #                    "margin-bottom: 5px}"
-        #                    "QToolTip {color: ##ffffe1; background-color: #000000; border: 1px}")
-        style = """
+        style_windows = """
+        QLabel {
+            border-style: solid;
+            border-width: 2px;
+            border-color: black;
+            border-radius: 10px;
+            background-color: white;
+        }
+        """
+        style_unix = """
         QLabel {
             border-style: solid;
             border-width: 2px;
@@ -876,7 +878,10 @@ class DraggableLabel(QLabel):
             margin-bottom: 10px
         }
         """
-        self.setStyleSheet(style)
+        if platform.system() == "Windows":
+            self.setStyleSheet(style_windows)
+        else:
+            self.setStyleSheet(style_unix)
         font = QFont()
         font.setPointSize(16)
         self.setFont(font)
