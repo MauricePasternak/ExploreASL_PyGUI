@@ -110,13 +110,13 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
             current_status_files = os.listdir(directory)
             ###########################################
             # Keeping this here in case of switch back
-            # if has_flair_img:
-            #     workload = default_workload + flair_workload
-            # else:
-            #     workload = default_workload
+            if has_flair_img:
+                workload = default_workload + flair_workload
+            else:
+                workload = default_workload
 
             # Uncomment this if full workload is the assumption each time
-            workload = default_workload + flair_workload  # The full workload is assumed now every time
+            # workload = default_workload + flair_workload  # The full workload is assumed now every time
             ############################################
             # Filter out any anticipated status files that are already present in the lock dirs
             filtered_workload = set(workload).difference(set(current_status_files))
@@ -193,6 +193,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
                             "040_GetDICOMStatistics.status",
                             "050_GetVolumeStatistics.status",
                             "060_GetMotionStatistics.status",
+                            "065_GetRegistrationStatistics.status",
                             "070_GetROIstatistics.status",
                             "080_SortBySpatialCoV.status",
                             "090_DeleteAndZip.status",

@@ -491,12 +491,12 @@ class xASL_GUI_FacetLegend(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.parent = parent  # The Facet Grid Manager
+        self.parent: xASL_GUI_FacetManager = parent  # The Facet Grid Manager
         self.setWindowFlag(Qt.Window)
         self.setWindowTitle("FacetGrid Legend Settings")
-        self.setMinimumSize(300, 480)
-        self.legend_kwargs = {}
         self.formlay_legend = QFormLayout(self)
+
+        # Widgets
         self.cmb_location = QComboBox()
         self.cmb_location.addItems(["best", "upper right", "upper left", "lower left", "lower right", "center left",
                                     "center right", "lower center", "upper center"])
@@ -537,3 +537,52 @@ class xASL_GUI_FacetLegend(QWidget):
         if self.chk_manual_loc.isChecked():
             constructor["bbox_to_anchor"] = (self.spinbox_legend_x.value(), self.spinbox_legend_y.value())
         self.signal_legendcall_updateplot.emit(constructor)
+
+
+class xASL_GUI_FacetTickWidget(QWidget):
+    signal_tickcall_updateplot = Signal(dict)
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.parent: xASL_GUI_FacetManager = parent  # The Facet Grid Manager
+        self.setWindowFlag(Qt.Window)
+        self.setWindowFlag("FacetGrid Ticklabels Settings")
+        self.formlay_ticks = QFormLayout(self)
+
+        # Widgets
+        self.cmb_hfontsize = QComboBox()
+        self.cmb_hfontsize.addItems(["xx-small", "x-small", "small", "medium", "large", "x-large", "xx-large"])
+        self.cmb_hfontsize.setCurrentIndex(2)
+        self.cmb_hfontweight = QComboBox()
+        self.cmb_hfontweight.addItems(["normal", "bold", "extra bold"])
+        self.cmb_hfontweight.setCurrentIndex(0)
+        self.cmb_hfontstyle = QComboBox()
+        self.cmb_hfontstyle.addItems(["normal", "italic"])
+        self.cmb_hfontstyle.setCurrentIndex(0)
+        self.cmb_halign = QComboBox()
+        self.cmb_halign.addItems(["center", "left", "right"])
+        self.cmb_halign.setCurrentIndex(2)
+        self.spinbox_hrot = QSpinBox(maximum=90, minimum=0, value=0, singleStep=1)
+        self.chk_hvisible = QCheckBox(checked=True)
+        self.spinbox_halpha = QDoubleSpinBox(maximum=1, minimum=0, value=1, singleStep=0.01)
+
+        for widget, description in zip([self.cmb_hfontsize, self.cmb_hfontweight, self.cmb_hfontstyle, self.cmb_halign,
+                                        self.spinbox_hrot, self.spinbox_halpha, self.chk_hvisible],
+                                       ["Font Size", "Font Weight", "Font Style", "Alignment", "Rotation", "Opaqueness",
+                                        "Is Visible?"]):
+            self.formlay_ticks.addRow(description, widget)
+            connect_widget_to_signal(widget, self.sendSignal_tickparms_updateplot)
+
+        self.xtick_kwargs = {
+            "fontsize": self.cmb_hfontsize.currentText,
+            "fontweight": self.cmb_hfontweight.currentText,
+            "fontstyle": self.cmb_hfontstyle.currentText,
+            "horizontalalignment": self.cmb_halign.currentText,
+            "rotation": self.spinbox_hrot.value,
+            "alpha": self.spinbox_halpha.value,
+            "visible": self.chk_hvisible.isChecked
+        }
+
+    def sendSignal_tickparms_updateplot(self):
+        constructor = {key: call() for key, call in self.xtick_kwargs.items()}
+        self.signal_tickcall_updateplot.emit(constructor)

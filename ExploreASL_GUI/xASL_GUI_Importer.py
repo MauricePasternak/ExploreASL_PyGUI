@@ -82,8 +82,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.failed_runs = []
 
         # Window Size and initial visual setup
-        self.setMinimumSize(600, 720)
-        self.resize(600, 720)
+        self.setMinimumSize(570, 750)
         self.setWindowTitle("ExploreASL ASL2BIDS Importer")
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
@@ -118,16 +117,19 @@ class xASL_GUI_Importer(QMainWindow):
         self.btn_run_importer.setEnabled(False)
 
         self.mainsplit.addWidget(self.btn_run_importer)
-        self.mainsplit.setSizes([150, 225, 300, 50])
+        # self.mainsplit.setSizes([250, 325, 300, 50])
         self.vlay_import.addWidget(self.mainsplit)
 
         # The dehybridizer UI setup
         self.dehybridizer = xASL_GUI_Dehybridizer(self)
         self.vlay_dehybridizer.addWidget(self.dehybridizer)
+    
+    # def resizeEvent(self, event:QResizeEvent):
+    #     print(self.size())
+    #     super(xASL_GUI_Importer, self).resizeEvent(event)
 
     def Setup_UI_UserSpecifyDirStuct(self):
         self.grp_dirstruct = QGroupBox(title="Specify Directory Structure")
-        self.grp_dirstruct.setMaximumHeight(225)
         self.vlay_dirstruct = QVBoxLayout(self.grp_dirstruct)
 
         # First specify the root directory
@@ -211,10 +213,10 @@ class xASL_GUI_Importer(QMainWindow):
         self.btn_clear_receivers = QPushButton("Clear the fields", self.grp_dirstruct, clicked=self.clear_receivers)
 
         # Organize layouts
-        self.vlay_dirstruct.addLayout(self.formlay_rootdir, 1)
-        self.vlay_dirstruct.addLayout(self.hlay_placeholders, 2)
-        self.vlay_dirstruct.addLayout(self.hlay_receivers, 2)
-        self.vlay_dirstruct.addWidget(self.btn_clear_receivers, 2)
+        self.vlay_dirstruct.addLayout(self.formlay_rootdir)
+        self.vlay_dirstruct.addLayout(self.hlay_placeholders)
+        self.vlay_dirstruct.addLayout(self.hlay_receivers)
+        self.vlay_dirstruct.addWidget(self.btn_clear_receivers)
 
         self.mainsplit.addWidget(self.grp_dirstruct)
 
@@ -875,7 +877,6 @@ class DraggableLabel(QLabel):
             border-color: black;
             border-radius: 10px;
             background-color: white;
-            margin-bottom: 10px
         }
         """
         if platform.system() == "Windows":
@@ -885,10 +886,10 @@ class DraggableLabel(QLabel):
         font = QFont()
         font.setPointSize(16)
         self.setFont(font)
-        self.setMinimumHeight(75)
-        self.setMaximumHeight(100)
+        # self.setMinimumHeight(75)
+        # self.setMaximumHeight(100)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.setAlignment(Qt.AlignCenter)
-        self.setToolTip("TESTING")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:

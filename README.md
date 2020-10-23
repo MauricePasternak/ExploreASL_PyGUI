@@ -3,7 +3,7 @@
 > Complementary GUI to assist Arterial Spin Labelling analysis by ExploreASL
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-![Version](https://img.shields.io/badge/Version-0.2.3-yellow)
+![Version](https://img.shields.io/badge/Version-0.2.5-yellow)
 ![PythonVersions](https://img.shields.io/badge/Python-3.8-green)
 
 ## Graphics and Examples
