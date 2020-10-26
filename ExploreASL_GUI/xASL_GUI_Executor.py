@@ -21,6 +21,7 @@ from ExploreASL_GUI.xASL_GUI_HelperFuncs_StringOps import set_os_dependent_text
 from pprint import pprint
 from collections import defaultdict
 import subprocess
+from shutil import rmtree
 
 
 class ExploreASL_WorkerSignals(QObject):
@@ -967,7 +968,11 @@ class xASL_Executor(QMainWindow):
                     print(f"Detected locked direcorties in {path.text()} prior to starting ExploreASL. "
                           f"Removing them first.")
                 for lock_dir in locked_dirs:
-                    os.removedirs(lock_dir)
+                    try:
+                        os.rmdir(lock_dir)
+                    except OSError as lock_err:  # Just in case a user tampers with the lock directory
+                        print(f"{lock_err}...but proceeding to recursive delete")
+                        rmtree(path=lock_dir, ignore_errors=True)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
