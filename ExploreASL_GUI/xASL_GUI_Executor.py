@@ -91,8 +91,8 @@ class ExploreASL_Worker(QRunnable):
         stdout, stderr = self.proc.communicate()
         print(f"RESULTs for IWorker {iworker} of {nworkers}:"
               f"\n\tReturn code = {self.proc.returncode}")
-        print(f"{stdout=}")
-        print(f"{stderr=}")
+        # print(f"{stdout=}")
+        # print(f"{stderr=}")
         self.is_running = False
 
         worker_analysis_dir = re.search(r'.*analysis', par_path).group()

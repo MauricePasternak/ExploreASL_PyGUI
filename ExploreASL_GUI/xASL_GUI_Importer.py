@@ -82,7 +82,6 @@ class xASL_GUI_Importer(QMainWindow):
         self.failed_runs = []
 
         # Window Size and initial visual setup
-        self.setMinimumSize(570, 750)
         self.setWindowTitle("ExploreASL ASL2BIDS Importer")
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
