@@ -812,14 +812,25 @@ class xASL_Executor(QMainWindow):
     def run_Explore_ASL(self):
 
         # Immediately abandon this if the MATLAB version is not newer
-        if os.path.basename(self.config["MATLABROOT"]) not in ["R2019a", "R2019b", "R2020a", "R2020b"]:
+        version_checks = []
+        for version in ["R2019a", "R2019b", "R2020a", "R2020b", "R2021a"]:
+            if version in os.path.basename(self.config["MATLABROOT"]):
+                version_checks.append(True)
+            else:
+                version_checks.append(False)
+
+        # If none of those versions could be detected, exit out
+        if not any(version_checks):
             QMessageBox().warning(self,
                                   f"Incompatible MATLAB version on your machine",
                                   f"The program has detected that you have MATLAB version:\n"
                                   f"{os.path.basename(self.config['MATLABROOT'])}\n"
                                   f"This program requires a MATLAB installation of 2019a or later.",
                                   QMessageBox.Ok)
+            del version_checks, version
             return
+        else:  # Otherwise, garbage collect
+            del version_checks, version
 
         if self.config["DeveloperMode"]:
             print("%" * 60)
