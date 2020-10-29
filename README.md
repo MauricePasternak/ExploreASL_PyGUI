@@ -24,7 +24,7 @@
 ---
 ## Installation
 
-###For Linux
+### For Linux
 
 Pre-requisites:
 
@@ -72,11 +72,11 @@ Once you are within your desired directory, clone this github repository via com
    
 3) Remember to `cd` out of the no-longer-existent ExploreASL_GUI directory or close the terminal.
 
-###For Windows
+### For Windows
 
 \**To be updated once executable is made avaliable**
 
-###For MacOS
+### For MacOS
 
 \**To be updated**
 
