@@ -50,17 +50,17 @@ Once you are within your desired directory, clone this github repository via com
    
    You will be requested to give your sudo password so that the program may be accessible to Applications
 
-###For Windows
+### For Windows
 
 \**To be updated once executable is made avaliable**
 
-###For MacOS
+### For MacOS
 
 \**To be updated**
 
 ## Uninstallation
 
-###For Linux
+### For Linux
 
 1) Navigate to the ExploreASL_GUI directory via terminal.
 
