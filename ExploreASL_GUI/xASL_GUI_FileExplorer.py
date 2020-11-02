@@ -285,8 +285,9 @@ class xASL_FileView(QTreeView):
         self.copy_buffer = []
         self.is_busy = False
         self.threadpool = QThreadPool()
-        self.editor = None
+        self.idx_of_editor = None
         self.orig_filepath = None
+        self.editor = None
 
     def mouseDoubleClickEvent(self, event):
         """

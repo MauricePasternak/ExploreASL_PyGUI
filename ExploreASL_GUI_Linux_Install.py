@@ -10,13 +10,30 @@ from getpass import getpass
 
 def Linux_Install():
     print("Implementing the Linux Install")
+    print(f"The installer was launched from {os.getcwd()}")
+
+    password = getpass("Before proceeding, this installation process requires your sudo password for "
+                       "two essential steps:\n"
+                       "1) To install any required dependencies (i.e. python3.8, pip3, python-wheel, etc.)\n"
+                       "2) To allow your program to be launched as an application "
+                       "(i.e. move a .desktop file to /usr/local/applications)\n"
+                       "Please enter your sudo password: ")
+
+    # Install dependencies as necessary
+    dependency_commands = "sudo -S apt-get install python3.8 libpq-dev python3-dev python3-pip python3-venv python3-wheel && pip3 install wheel"
+    dependency_proc = sp.Popen(dependency_commands, shell=True, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
+    dependency_proc.communicate(password.encode())
+    print(f"Return code of installing dependencies: {dependency_proc.returncode} (0 means successful)")
+    if dependency_proc.returncode != 0:
+        sys.exit(dependency_proc.returncode)
+
     # Get the root directory and the location of the bash directory
     try:
         if any([os.getcwd().endswith("ExploreASL_GUI/ExploreASL_GUI"),
                 os.getcwd().endswith("ExploreASL_GUI-master/ExploreASL_GUI")]):
             explore_asl_root = os.path.dirname(os.getcwd())
             if not os.path.isdir(explore_asl_root):
-                return 1
+                sys.exit(1)
             else:
                 os.chdir(explore_asl_root)
         else:
@@ -28,7 +45,6 @@ def Linux_Install():
                 os.chdir(explore_asl_root)
     except IndexError:
         sys.exit(1)
-    print(f"{explore_asl_root=}")
 
     # Make the venv directory if it does not exist
     if not os.path.isdir(os.path.join(explore_asl_root, "venv")):
@@ -39,7 +55,7 @@ def Linux_Install():
     packages_path = os.path.join(explore_asl_root, "venv", "lib", "python3.8", "site-packages")
     if not os.path.exists(packages_path):
         venvcreate_result = sp.run(f"python3.8 -m venv {explore_asl_root}/venv; ", shell=True, text=True)
-        print(f"Return code of creating a new environment: {venvcreate_result.returncode=} (0 means successful)")
+        print(f"Return code of creating a new environment: {venvcreate_result.returncode} (0 means successful)")
         if venvcreate_result.returncode != 0:
             sys.exit(venvcreate_result.returncode)
     else:
@@ -57,10 +73,9 @@ def Linux_Install():
         sys.exit(1)
     if not os.path.exists(os.path.join(explore_asl_root, "venv", "lib", "python3.8", "site-packages", "nilearn")):
         venvactandinstall_result = sp.run(f"{activate_command} && {packages_install_command}", shell=True, text=True)
-        print(f"Result code of activating the env and installing packages {venvactandinstall_result.returncode=} "
+        print(f"Result code of activating the env and installing packages {venvactandinstall_result.returncode} "
               f"(0 means successful)")
         if venvactandinstall_result.returncode != 0:
-            print(venvactandinstall_result.stderr)
             sys.exit(venvactandinstall_result.returncode)
     else:
         print("Packages already exist in venv site-packages. Continuing...")
@@ -98,29 +113,20 @@ Categories=Utility;Development;
         print(f"{desktop_file} already exists. Continuing...")
 
     # Move the .desktop file into /usr/share/applications
-    password = getpass("To move a .desktop file to /usr/local/applications , we will only as for your "
-                       "\nsudo password this once: ")
     proc = sp.Popen(f"sudo -S mv {desktop_file} /usr/share/applications/ExploreASL_GUI.desktop", shell=True,
                     stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE, universal_newlines=True)
     proc.communicate(password)
     print(f"Result code of moving the desktop file to /usr/local/applications: {proc.returncode} (0 means successful)")
     if proc.returncode != 0:
-        print(f"{proc.returncode=}")
         sys.exit(proc.returncode)
 
     print("Installation complete. If you are seeing this message, everything should be a success")
     sys.exit(0)
 
 
-def MacOS_Install():
-    sys.exit(1)
-
-
 if __name__ == '__main__':
     if system() == "Linux":
         Linux_Install()
-    elif system() == "Darwin":
-        MacOS_Install()
     else:
-        print("Neither Linux nor Mac System described")
+        print("This installer script is meant for Linux systems")
         sys.exit(1)

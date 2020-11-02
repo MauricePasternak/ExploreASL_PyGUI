@@ -148,7 +148,7 @@ def startup():
                 sys.exit(1)
 
     # Memory cleanup
-    del regex, current_dir, dcm2niix_dir, json_logic_dir, project_dir
+    del regex, dcm2niix_dir, json_logic_dir, project_dir
 
     # If all was successful, launch the GUI
     app.setWindowIcon(QIcon(os.path.join(master_config["ProjectDir"], "media", "ExploreASL_logo.ico")))
