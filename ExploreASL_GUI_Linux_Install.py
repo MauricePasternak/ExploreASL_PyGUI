@@ -1,16 +1,22 @@
 import os
 import sys
-import re
 import subprocess as sp
-from glob import glob
 from platform import system
-import shutil
 from getpass import getpass
 
 
 def Linux_Install():
     print("Implementing the Linux Install")
     print(f"The installer was launched from {os.getcwd()}")
+
+    # Get the root directory
+    explore_asl_root = os.path.dirname(os.path.abspath(__file__))
+    print(f"explore_asl_root = {explore_asl_root}\n")
+    if os.path.basename(explore_asl_root) != "ExploreASL_GUI":
+        print(f"The installer was determined to no longer be located in the root ExploreASL_GUI folder.\n"
+              f"Check if you have accidentally renamed the root folder.\n"
+              f"Exiting process.")
+        sys.exit(1)
 
     password = getpass("Before proceeding, this installation process requires your sudo password for "
                        "two essential steps:\n"
@@ -26,25 +32,6 @@ def Linux_Install():
     print(f"Return code of installing dependencies: {dependency_proc.returncode} (0 means successful)")
     if dependency_proc.returncode != 0:
         sys.exit(dependency_proc.returncode)
-
-    # Get the root directory and the location of the bash directory
-    try:
-        if any([os.getcwd().endswith("ExploreASL_GUI/ExploreASL_GUI"),
-                os.getcwd().endswith("ExploreASL_GUI-master/ExploreASL_GUI")]):
-            explore_asl_root = os.path.dirname(os.getcwd())
-            if not os.path.isdir(explore_asl_root):
-                sys.exit(1)
-            else:
-                os.chdir(explore_asl_root)
-        else:
-            installer_name = "ExploreASL_GUI_Linux_Install.py"
-            explore_asl_root = os.path.dirname(glob(os.path.join(os.getcwd(), "**", installer_name), recursive=True)[0])
-            if not os.path.isdir(explore_asl_root):
-                sys.exit(1)
-            else:
-                os.chdir(explore_asl_root)
-    except IndexError:
-        sys.exit(1)
 
     # Make the venv directory if it does not exist
     if not os.path.isdir(os.path.join(explore_asl_root, "venv")):
@@ -64,6 +51,7 @@ def Linux_Install():
     # Activate the venv, then install the packages
     bin_path = os.path.join(explore_asl_root, "venv", "bin")
     activate_command = f". {explore_asl_root}/venv/bin/activate"
+    wheel_command = "pip3 install wheel"
     packages_install_command = f"pip3 install -r {explore_asl_root}/requirements.txt"
     if not os.path.isdir(bin_path):
         print("The venv/bin path does not exist!")
@@ -72,7 +60,8 @@ def Linux_Install():
         print(f"Could not find the requirements.txt file within {explore_asl_root}")
         sys.exit(1)
     if not os.path.exists(os.path.join(explore_asl_root, "venv", "lib", "python3.8", "site-packages", "nilearn")):
-        venvactandinstall_result = sp.run(f"{activate_command} && {packages_install_command}", shell=True, text=True)
+        venvactandinstall_result = sp.run(f"{activate_command} && {wheel_command} && {packages_install_command}",
+                                          shell=True, text=True)
         print(f"Result code of activating the env and installing packages {venvactandinstall_result.returncode} "
               f"(0 means successful)")
         if venvactandinstall_result.returncode != 0:

@@ -13,11 +13,10 @@ import re
 
 def startup():
     app = QApplication(sys.argv)
-    current_dir = os.getcwd()
-    project_dir = current_dir
-    json_logic_dir = os.path.join(current_dir, "JSON_LOGIC")
-    scripts_dir = os.path.join(current_dir, "ExploreASL_GUI")
-    dcm2niix_dir = os.path.join(current_dir, "External", "DCM2NIIX")
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(scripts_dir)
+    json_logic_dir = os.path.join(project_dir, "JSON_LOGIC")
+    dcm2niix_dir = os.path.join(project_dir, "External", "DCM2NIIX")
     regex = re.compile("'(.*)'")
     # Get the appropriate default style based on the user's operating system
     if system() == "Windows":  # Windows
@@ -54,10 +53,29 @@ def startup():
         with open(os.path.join(json_logic_dir, "ExploreASL_GUI_masterconfig.json")) as master_config_reader:
             master_config = json.load(master_config_reader)
 
+        # Update the ProjectDir and ScriptsDir variables in the event the user moves the location of this folder
+        # First, make sure the Startup.py is located in the ExploreASL_GUI folder
+        if project_dir != master_config["ProjectDir"]:
+
+            # Yell at the user in the event that they messed around with the folder naming scheme
+            if os.path.basename(project_dir) != "ExploreASL_GUI":
+                QMessageBox().warning(QWidget(),
+                                      "Project structure compromised",
+                                      f"The detected project root path: {project_dir}\n"
+                                      f"is not the expected ExploreASL_GUI directory.\n"
+                                      f"Please check if you have not renamed any folders or files.",
+                                      QMessageBox.Ok)
+                sys.exit(1)
+            # Otherwise, if internal structure is still the same but the root is in a different location,
+            # update accordingly
+            else:
+                master_config["ProjectDir"] = project_dir
+                master_config["ScriptsDir"] = os.path.join(project_dir, "ExploreASL_GUI")
+
     # Otherwise, this is a first time startup and additional things need to be checked
     else:
         master_config = {"ExploreASLRoot": "",  # The filepath to the ExploreASL directory
-                         "DefaultRootDir": current_dir,  # The default root for the navigator to watch from
+                         "DefaultRootDir": project_dir,  # The default root for the navigator to watch from
                          "ScriptsDir": scripts_dir,  # The location of where this script is launched from
                          "ProjectDir": project_dir,  # The location of the ExploreASL_GUI main dir
                          "Platform": f"{system()}",
