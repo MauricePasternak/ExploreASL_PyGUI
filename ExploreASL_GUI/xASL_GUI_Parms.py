@@ -7,6 +7,7 @@ import os
 from glob import iglob
 from tdda import rexpy
 from more_itertools import peekable
+from shutil import which
 
 
 class xASL_Parms(QMainWindow):
@@ -16,7 +17,6 @@ class xASL_Parms(QMainWindow):
         self.config = self.parent().config
 
         # Window Size and initial visual setup
-        self.setMinimumSize(512, 960)
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
@@ -52,6 +52,7 @@ class xASL_Parms(QMainWindow):
 
         # After all UI is set up, make certain connections
         self.le_study_dir.textChanged.connect(self.update_asl_json_sidecar_data)
+        self.resize(self.minimumSizeHint())
 
     def UI_Setup_Basic(self):
         self.formlay_basic = QFormLayout(self.cont_basic)
@@ -72,13 +73,14 @@ class xASL_Parms(QMainWindow):
                                      "C:\\Users\\JohnSmith\\MyStudy\\analysis")
         self.le_study_dir.setPlaceholderText("Indicate the analysis directory filepath here")
         self.le_subjectregex = QLineEdit(text='\\d+')
-        self.le_subjectregex.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.lst_included_subjects = DandD_FileExplorer2ListWidget()
         self.lst_included_subjects.alert_regex.connect(self.update_regex)
         self.lst_included_subjects.setToolTip("Drag and Drop the subjects that should be analyzed")
+        self.lst_included_subjects.setMinimumHeight(self.config["ScreenSize"][1]//5)
         self.btn_included_subjects = QPushButton("Clear Subjects", clicked=self.clear_included)
         self.lst_excluded_subjects = DandD_FileExplorer2ListWidget()
         self.lst_excluded_subjects.setToolTip("Drag and Drop the subjects that should be exluded from analysis")
+        self.lst_excluded_subjects.setMinimumHeight(self.config["ScreenSize"][1]//10)
         self.btn_excluded_subjects = QPushButton("Clear Excluded", clicked=self.clear_excluded)
         self.le_run_names = QLineEdit(text="ASL_1",
                                       placeholderText="Indicate run names, each separated by a comma and space")
@@ -115,14 +117,12 @@ class xASL_Parms(QMainWindow):
 
         for desc, widget in zip(["ExploreASL Directory", "Name of Study", "Analysis Directory",
                                  "Dataset is in BIDS format?",
-                                 # "Subject Regex",
                                  "Subjects to Assess\n(Drag and Drop Directories)",
                                  "Subjects to Exclude\n(Drag and Drop Directories)",
                                  "Run Names", "Run Options", "Vendor", "Sequence Type", "Labelling Type",
                                  "M0 was acquired?", "M0 Position in ASL", "Quality"],
                                 [self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
                                  self.chk_overwrite_for_bids,
-                                 # self.le_subjectregex,
                                  self.lst_included_subjects, self.lst_excluded_subjects,
                                  self.le_run_names, self.le_run_options, self.cmb_vendor, self.cmb_sequencetype,
                                  self.cmb_labelingtype, self.cmb_m0_isseparate, self.cmb_m0_posinasl,
@@ -134,17 +134,17 @@ class xASL_Parms(QMainWindow):
     def UI_Setup_Advanced(self):
         # First, set up the groupboxes and add them to the advanced tab layout
         self.vlay_advanced = QVBoxLayout(self.cont_advanced)
-        self.grp_sequenceparms = QGroupBox(title="Sequence Parameters")
+        self.grp_seqparms = QGroupBox(title="Sequence Parameters")
         self.grp_quantparms = QGroupBox(title="Quantification Parameters")
         self.grp_m0parms = QGroupBox(title="M0 Parameters")
         self.grp_procparms = QGroupBox(title="Processing Parameters")
         self.grp_envparms = QGroupBox(title="Environment Parameters")
-        for grp in [self.grp_sequenceparms, self.grp_quantparms, self.grp_m0parms,
-                    self.grp_procparms, self.grp_envparms]:
+        for grp in [self.grp_seqparms, self.grp_quantparms, self.grp_m0parms, self.grp_procparms, self.grp_envparms]:
             self.vlay_advanced.addWidget(grp)
 
         # Set up the Sequence Parameters
-        self.formlay_sequenceparms = QFormLayout(self.grp_sequenceparms)
+        self.vlay_seqparms, self.scroll_seqparms, self.cont_seqparms = self.make_scrollbar_area(self.grp_seqparms)
+        self.formlay_seqparms = QFormLayout(self.cont_seqparms)
         self.cmb_nsup_pulses = self.make_cmb_and_items(["0", "2", "4", "5"], 1)
         self.cmb_nsup_pulses.setToolTip("Specify the number of background suppression pulses that were utilized\n"
                                         "for ASL scans in your study")
@@ -170,10 +170,12 @@ class xASL_Parms(QMainWindow):
                                         "Slice Readout Time (ms)"],
                                        [self.cmb_nsup_pulses, self.cmb_readout_dim, self.spinbox_initialpld,
                                         self.spinbox_labdur, self.hlay_slice_readout]):
-            self.formlay_sequenceparms.addRow(description, widget)
+            self.formlay_seqparms.addRow(description, widget)
 
         # Set up the Quantification Parameters
-        self.formlay_quantparms = QFormLayout(self.grp_quantparms)
+        (self.vlay_quantparms, self.scroll_quantparms,
+         self.cont_quantparms) = self.make_scrollbar_area(self.grp_quantparms)
+        self.formlay_quantparms = QFormLayout(self.cont_quantparms)
         self.spinbox_lambda = QDoubleSpinBox(maximum=1, minimum=0, value=0.9, singleStep=0.01)
         self.spinbox_lambda.setToolTip("Specify the blood/brain water coefficient (0.9 in Alsop MRM 2014)")
         self.spinbox_artt2 = QDoubleSpinBox(maximum=100, minimum=0, value=50, singleStep=0.1)
@@ -200,7 +202,9 @@ class xASL_Parms(QMainWindow):
             self.formlay_quantparms.addRow(description, widget)
 
         # Set up the remaining M0 Parameters
-        self.formlay_m0parms = QFormLayout(self.grp_m0parms)
+        self.vlay_m0parms, self.scroll_m0parms, self.cont_m0parms = self.make_scrollbar_area(self.grp_m0parms)
+        self.scroll_m0parms.setMinimumHeight(self.config["ScreenSize"][1] // 16)
+        self.formlay_m0parms = QFormLayout(self.cont_m0parms)
         self.cmb_m0_algorithm = self.make_cmb_and_items(["New Image Processing", "Standard Processing"], 0)
         self.cmb_m0_algorithm.setToolTip("Specify whether to use the newer M0 processing algorithm or the standard one")
         self.spinbox_gmscale = QDoubleSpinBox(maximum=100, minimum=0.01, value=1, singleStep=0.01)
@@ -214,12 +218,7 @@ class xASL_Parms(QMainWindow):
             self.formlay_m0parms.addRow(description, widget)
 
         # Set up the Processing Parameters
-        self.vlay_procparms = QVBoxLayout(self.grp_procparms)
-        self.scroll_procparms = QScrollArea()
-        self.scroll_procparms.setWidgetResizable(True)
-        self.vlay_procparms.addWidget(self.scroll_procparms)
-        self.cont_procparms = QWidget()
-        self.scroll_procparms.setWidget(self.cont_procparms)
+        self.vlay_procparms, self.scroll_procparms, self.cont_procparms = self.make_scrollbar_area(self.grp_procparms)
         self.formlay_procparms = QFormLayout(self.cont_procparms)
         self.chk_removespikes = QCheckBox(checked=True)
         self.spinbox_spikethres = QDoubleSpinBox(maximum=1, minimum=0, value=0.01, singleStep=0.01)
@@ -251,11 +250,19 @@ class xASL_Parms(QMainWindow):
             self.formlay_procparms.addRow(description, widget)
 
         # Set up the Environment Parameters
-        self.formlay_envparms = QFormLayout(self.grp_envparms)
-        self.chk_detectfsl = QCheckBox(checked=True)
+        self.vlay_envparms, self.scroll_envparms, self.cont_envparms = self.make_scrollbar_area(self.grp_envparms)
+        self.scroll_envparms.setMinimumHeight(self.config["ScreenSize"][1]//17.5)
+        self.formlay_envparms = QFormLayout(self.cont_envparms)
+        (self.hlay_fslpath, self.le_fslpath,
+         self.btn_fslpath) = self.make_droppable_clearable_le(btn_connect_to=self.set_fslpath)
+        self.le_fslpath.setToolTip("Specify the path to the FSL bin directory\n(i.e. /usr/local/fsl/bin/fsl")
+        fsl_filepath = which("fsl")
+        print(os.environ["PATH"])
+        if fsl_filepath is not None:
+            self.le_fslpath.setText(os.path.dirname(fsl_filepath))
         self.chk_outputcbfmaps = QCheckBox(checked=False)
-        for desc, widget in zip(["Detect FSL Automatically", "Output CBF native space maps?"],
-                                [self.chk_detectfsl, self.chk_outputcbfmaps]):
+        for desc, widget in zip(["Path to FSL bin directory", "Output CBF native space maps?"],
+                                [self.hlay_fslpath, self.chk_outputcbfmaps]):
             self.formlay_envparms.addRow(desc, widget)
 
     ################################
@@ -613,6 +620,32 @@ class xASL_Parms(QMainWindow):
                                   QMessageBox.Ok)
             return
 
+    def set_fslpath(self):
+        fsl_filepath = QFileDialog.getExistingDirectory(self.parent(),
+                                                        "Select the path to the fsl bin direction",
+                                                        self.config["DefaultRootDir"],
+                                                        QFileDialog.ShowDirsOnly)
+        # Return if the user has cancelled the operation
+        if fsl_filepath == "":
+            return
+
+        if any([not os.path.isdir(fsl_filepath),
+                os.path.basename(fsl_filepath) != "bin",
+                "fsl" not in os.listdir(fsl_filepath)
+                ]):
+            QMessageBox().warning(self,
+                                  "Invalid FSL bin directory selected",
+                                  "One of the following has occurred:\n"
+                                  "1) The filepath is not a directory\n"
+                                  "2) The filepath is not a bin directory\n"
+                                  "3) The filepath does not contain the ",
+                                  QMessageBox.Ok)
+            return
+        else:
+            set_os_dependent_text(linedit=self.le_fslpath,
+                                  config_ossystem=self.config["Platform"],
+                                  text_to_set=fsl_filepath)
+
     #######################################################################
     # Main Functions for this module - saving to json and loading from json
     #######################################################################
@@ -675,6 +708,8 @@ class xASL_Parms(QMainWindow):
             "bRegisterM02ASL": int(self.chk_removespikes.isChecked()),
             "bUseMNIasDummyStructural": int(self.chk_usemniasdummy.isChecked()),
             "ApplyQuantification": self.prep_quantparms(),
+            "FSLdir": self.le_fslpath.text(),
+            "MakeNIfTI4DICOM": int(self.chk_outputcbfmaps.isChecked()),
             "Q": {
                 "BackGrSupprPulses": int(self.cmb_nsup_pulses.currentText()),
                 "LabelingType": {"Pulsed ASL": "PASL",
@@ -788,7 +823,9 @@ class xASL_Parms(QMainWindow):
             "bAffineRegistration": self.get_affinereg,
             "bRegisterM02ASL": self.chk_regm0toasl.setChecked,
             "bUseMNIasDummyStructural": self.chk_usemniasdummy.setChecked,
+            "MakeNIfTI4DICOM": self.chk_outputcbfmaps.setChecked,
             "ApplyQuantification": self.get_quantparms,
+            "FSLdir": self.le_fslpath.setText,
             "Q": {
                 "BackGrSupprPulses": self.get_backgroundpulses,
                 "LabelingType": self.get_labelingtype,
@@ -1030,3 +1067,12 @@ class xASL_Parms(QMainWindow):
         if default is not None:
             cmb.setCurrentIndex(default)
         return cmb
+
+    @staticmethod
+    def make_scrollbar_area(grpwidget: QGroupBox):
+        vlay, scrollarea, container = QVBoxLayout(grpwidget), QScrollArea(), QWidget()
+        vlay.setContentsMargins(0, 0, 0, 0)
+        scrollarea.setWidget(container)
+        scrollarea.setWidgetResizable(True)
+        vlay.addWidget(scrollarea)
+        return vlay, scrollarea, container
