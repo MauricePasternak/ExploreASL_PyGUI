@@ -1,7 +1,7 @@
 #!/bin/bash
 EXPLOREASLROOT="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 echo "Installing dependencies..."
-sudo apt-get install python3.8 libpq-dev python3-dev python3-pip python3-venv python3-wheel >/dev/null 2>&1 || exit 1
+sudo apt-get install -y python3.8 libpq-dev python3-dev python3-pip python3-venv python3-wheel pkg-config libfreetype6-dev >/dev/null 2>&1 || exit 1
 
 echo "Setting up virtual environment..."
 mkdir "${EXPLOREASLROOT}/venv" -p
