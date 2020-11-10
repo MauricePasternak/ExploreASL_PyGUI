@@ -1,5 +1,5 @@
 from ExploreASL_GUI.xASL_GUI_MainWin import xASL_MainWin
-from PySide2.QtWidgets import QApplication, QMessageBox, QWidget
+from PySide2.QtWidgets import QApplication, QMessageBox, QWidget, QDialog
 from PySide2.QtGui import QIcon
 from platform import system
 from shutil import which
@@ -84,47 +84,56 @@ def startup():
                          }
 
         # We must also check for the MATLAB version present on the machine
-        # First try the faster shutil.which method
-        print("First time startup. Please be patient as the matlab version is detected")
-        print("Attempting shutil method first")
+        # Two common possibilities on Linux:
+        # 1) the PATH registered is /usr/local/MATLAB/[VERSION]/bin
+        # 2) the PATH registered is /usr/bin
+        # Try option 1 first to get the version, opt for looking around /usr/local if Option 2 comes around
+        print("First time startup. Please be patient as the matlab version is detected\n"
+              "Attempting shutil method first")
+
+        # Is matlab even on PATH?
         result = which("matlab")
         if result is not None:
+            # If matlab was found on PATH, see if the version number can be extracted from it as per possibility #1
+            # On Windows, this should always work. On Linux...*sigh*
             regex = re.compile(r".*R\d{4}[ab]")
             match = regex.search(result)
             if match:
                 master_config["MATLABROOT"] = match.group()
                 print(f"shutil method was a success and located: {match.group()}")
-            # Random possibility - Linux usr whose matlab command is in '/usr/bin/matlab'
+
+            # Not a success, see if the version number can be extracted from possibility #2
             elif not match and '/usr/' in result:
-                print(f"shutil method was a partial fail. User clearly has the matlab command in {result}, but not the"
-                      f" main program. Attempting to locate around '/usr/local/")
-                local_result = glob("/usr/local/**/MATLAB/*/bin", recursive=True)
-                if len(local_result) != 0:
-                    local_match = regex.search(local_result[0])
-                    if local_match:
-                        master_config["MATLABROOT"] = local_match.group()
-                    else:
-                        pass
-                else:
+                version_is_located = False
+                print(f"User clearly has the matlab command in {result}, but the version number could not be "
+                      f"ascertained. Attempting to locate around '/usr/local/")
+                for search_pattern in ["/usr/local/matlab**/bin", "/usr/local/**/MATLAB/*/bin"]:
+                    local_result = glob(search_pattern, recursive=True)
+                    if len(local_result) != 0:
+                        local_match = regex.search(local_result[0])
+                        if local_match:
+                            master_config["MATLABROOT"] = local_match.group()
+                            version_is_located = True
+                            break
+
+                if not version_is_located:
                     QMessageBox().warning(QWidget(),
-                                          "No MATLAB directory found",
-                                          "No path to the MATLAB root directory could be located on this device. "
-                                          "If MATLAB is installed on this device and this message is displaying, "
-                                          "please contact your system administration and check whether MATLAB is "
-                                          "listed in your system's PATH variable.",
+                                          "No MATLAB Version could be determined",
+                                          "MATLAB was detected on this system, but its location is unconventional\n"
+                                          "and the version number could not be detected",
                                           QMessageBox.Ok)
                     sys.exit(1)
+
+            # Neither a success with possibility #1 or #2
             else:
-                QMessageBox().warning(QWidget(),
-                                      "No MATLAB directory found",
-                                      "No path to the MATLAB root directory could be located on this device. "
-                                      "If MATLAB is installed on this device and this message is displaying, "
-                                      "please contact your system administration and check whether MATLAB is "
-                                      "listed in your system's PATH variable.",
-                                      QMessageBox.Ok)
+                QMessageBox.warning(QWidget(),
+                                    "No MATLAB Version could be determined",
+                                    "MATLAB was detected on this system, but its location is unconventional\n"
+                                    "and the version number could not be detected",
+                                    QMessageBox.Ok)
                 sys.exit(1)
 
-            # dcm2niix may not have executable permission; add execute permissions
+            # Assuming the above was successful, dcm2niix may not have executable permission; add execute permissions
             if system() == "Linux":
                 print("Checking for execute permissions on dcm2niix")
                 target = os.path.join(dcm2niix_dir, "DCM2NIIX_Linux", "dcm2niix")
