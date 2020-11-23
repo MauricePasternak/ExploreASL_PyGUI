@@ -429,19 +429,27 @@ def run_dcm2niix(temp_dir: str, dcm_dir: str, subject: str, visit, run: str, sca
         else:
             return False
     elif system() == "Linux":
+        print(os.getcwd())
         command = f"./dcm2niix -b y -z n -x n -t n -m n -s n -v n " \
                   f"-f {output_filename_format} " \
                   f"-o {temp_dir} " \
-                  f"{dcm_dir}".split(" ")
+                  f"{dcm_dir}".strip()
         p = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                             universal_newlines=True)
+                             text=True, shell=True)
 
         p.wait()
+        stdout, stderr = p.communicate()
         return_code = p.returncode
+        print(f"DCM2NIIX Return code: {return_code}")
         if return_code == 0:
             return True
         else:
+            print(f"DCM2NIIX Std Err:\n{stderr}")
             return False
+
+    else:
+        print("This system is not yet supported")
+        return False
 
 
 def remove_illegal_chars(item):

@@ -516,7 +516,7 @@ class xASL_GUI_Importer(QMainWindow):
         """
         current_texts = [le.text() for le in self.levels.values()]
         # First requirement; raw directory must be an existent directory
-        if os.path.exists(self.le_rootdir.text()):
+        if os.path.exists(self.le_rootdir.text()) and " " not in self.le_rootdir.text():
             if not os.path.isdir(self.le_rootdir.text()):
                 self.btn_run_importer.setEnabled(False)
                 return
