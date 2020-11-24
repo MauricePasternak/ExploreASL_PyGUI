@@ -819,7 +819,7 @@ class xASL_GUI_Importer(QMainWindow):
             print('\n')
 
         # Create workers
-        dicom_dirs = list(divide(4, dicom_dirs))
+        dicom_dirs = list(divide(1, dicom_dirs))
         for ddirs in dicom_dirs:
             worker = Importer_Worker(ddirs,  # The list of dicom directories
                                      self.import_parms,  # The import parameters

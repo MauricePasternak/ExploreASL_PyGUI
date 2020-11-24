@@ -200,7 +200,8 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
             "RescaleIntercept": [(0x0028, 0x1052)],
             "MRScaleSlope": [(0x2005, 0x120E), (0x2005, 0x110E), (0x2005, 0x100E)],
             "RealWorldValueSlope": [(0x0040, 0x9096, 0x0040, 0x9225)],
-            "NumberOfSlices": [(0x0054, 0x0081)]
+            "NumberOfSlices": [(0x0054, 0x0081)],
+            "AcquisitionTime": [(0x0008, 0x0032)]
         }
         defaults = [None,  # AcquisitionMatrix
                     None,  # SoftwareVersions
@@ -209,7 +210,8 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
                     0,  # RescaleIntercept
                     1,  # MRScaleSlope
                     None,  # RealWorldValueSlope
-                    None  # NumberOfSlices
+                    None,  # NumberOfSlices
+                    0  # AcquisitionTime
                     ]
     else:
         tags_dict = {
@@ -218,14 +220,16 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
             "NumberOfAverages": [(0x0018, 0x0083)],
             "RescaleSlope": [(0x0028, 0x1053), (0x2005, 0x110A)],
             "RescaleIntercept": [(0x0028, 0x1052)],
-            "NumberOfSlices": [(0x0054, 0x0081)]
+            "NumberOfSlices": [(0x0054, 0x0081)],
+            "AcquisitionTime": [(0x0008, 0x0032)]
         }
         defaults = [None,  # AcquisitionMatrix
                     None,  # SoftwareVersions
                     1,  # NumberOfAverages
                     1,  # RescaleSlope
                     0,  # RescaleIntercept
-                    None  # NumberOfSlices
+                    None,  # NumberOfSlices
+                    0  # AcquisitionTime
                     ]
 
     additional_dcm_info = {}.fromkeys(tags_dict.keys())
@@ -477,6 +481,8 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
     """
     jsons = iglob(os.path.join(temp_dir, "*.json"))
     reorganized_niftis = []
+    import_summary = dict.fromkeys(["subject", "visit", "scan", "filename",
+                                    "dx", "dy", "dz", "nx", "ny", "nz", "nt"])
 
     ###################################
     # PART 1 - ORGANIZING DCM2NII FILES
@@ -487,10 +493,16 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
         with open(json_file) as json_reader:
             sidecar_data = json.load(json_reader)
             for parm in json_data.keys():
-                json_data[parm][json_file.replace(".json", ".nii")] = sidecar_data[parm]
+                try:
+                    json_data[parm][json_file.replace(".json", ".nii")] = sidecar_data[parm]
+                except KeyError:
+                    if parm == "AcquisitionTime":
+                        json_data[parm][json_file.replace(".json", ".nii")] = 0
+                        if "TriggerDelayTime" in list(sidecar_data.keys()):
+                            json_data[parm][json_file.replace(".json", ".nii")] = sidecar_data["TriggerDelayTime"]
 
     # Philips case; same series and probably same acq number too; opt for acq_time as the differentiating factor
-    if len(set(json_data["SeriesNumber"].values())) == 1:
+    if len(set(json_data["SeriesNumber"].values())) == 1 and len(set(json_data["AcquisitionTime"].values())) > 1:
         reorganized_data = {key: value for key, value in sorted(json_data["AcquisitionTime"].items(),
                                                                 key=lambda x: x[1])}
         reorganized_niftis = list(reorganized_data.keys())
@@ -507,8 +519,12 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
                                                                 key=lambda x: x[1])}
         reorganized_niftis = list(reorganized_data.keys())
 
-    import_summary = dict.fromkeys(["subject", "visit", "scan", "filename",
-                                    "dx", "dy", "dz", "nx", "ny", "nz", "nt"])
+    else:
+        print("WARNING: Atypical DCM2NIIX import")
+        if scan == "T1":
+            reorganized_data = {key: value for key, value in sorted(json_data["AcquisitionNumber"].items(),
+                                                                    key=lambda x: x[1])}
+            reorganized_niftis = list(set(reorganized_data.keys()))
 
     # Get the acquisition matrix
     acq_matrix = add_parms["AcquisitionMatrix"]
