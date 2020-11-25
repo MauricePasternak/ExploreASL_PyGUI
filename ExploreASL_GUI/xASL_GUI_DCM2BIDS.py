@@ -520,11 +520,12 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
         reorganized_niftis = list(reorganized_data.keys())
 
     else:
-        print("WARNING: Atypical DCM2NIIX import")
-        if scan == "T1":
+        if len(reorganized_niftis) == 0:
             reorganized_data = {key: value for key, value in sorted(json_data["AcquisitionNumber"].items(),
                                                                     key=lambda x: x[1])}
             reorganized_niftis = list(set(reorganized_data.keys()))
+        else:
+            return False, import_summary, None, None
 
     # Get the acquisition matrix
     acq_matrix = add_parms["AcquisitionMatrix"]
@@ -591,7 +592,7 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
                                               final_nifti_obj.header)
 
     # Scenario: one of the structural types
-    elif len(reorganized_niftis) == 1 and scan in ["T1", "FLAIR", "WMH_SEGM"]:
+    elif len(reorganized_niftis) == 1 and scan in ["T1", "FLAIR"]:
         final_nifti_obj = nib.load(reorganized_niftis[0])
 
     # Otherwise, something went wrong and the operation should stop
