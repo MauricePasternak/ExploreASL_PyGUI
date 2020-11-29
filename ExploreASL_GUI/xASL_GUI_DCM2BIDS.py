@@ -103,11 +103,11 @@ def get_manufacturer(dcm_dir: str):
         except KeyError:
             detected_manufac.append("")
 
-    if any(["SIEMENS" in result for result in detected_manufac]):
+    if any(["SIEMENS" in result.upper() for result in detected_manufac]):
         return True, "Siemens"
-    elif any(["PHILIPS" in result for result in detected_manufac]):
+    elif any(["PHILIPS" in result.upper() for result in detected_manufac]):
         return True, "Philips"
-    elif any(["GE" in result for result in detected_manufac]):
+    elif any(["GE" in result.upper() for result in detected_manufac]):
         return True, "GE"
     else:
         return False, None
@@ -665,12 +665,13 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
     return True, import_summary, final_nifti_filename, final_json_filename
 
 
-def update_json_sidecar(json_file: str, nifti_file: str, dcm_parms: dict):
+def update_json_sidecar(json_file: str, nifti_file: str, dcm_parms: dict, emerg_manufacturer: str):
     """
     Updates the json sidecar to include additional DICOM parameters not extracted by dcm2niix
     :param json_file: the absolute filepath to the json sidecar
     :param nifti_file: the absolute filepath to the nifti corresponding to the json
     :param dcm_parms: a dict of the additional extracted DICOM headers that should be added to the json
+    :param emerg_manufacturer: a string of the manufacturer in the event dcm2niix could not ascertain it
     :return: 2 items: whether the operation was a success; the updated parameters of the json file (to be used in the
     summary file generation)
     """
@@ -686,8 +687,14 @@ def update_json_sidecar(json_file: str, nifti_file: str, dcm_parms: dict):
             if old_name in json_sidecar_parms.keys():
                 json_sidecar_parms[new_name] = json_sidecar_parms.pop(old_name)
 
+        # Add in the emergency manufacturer string value in the event dcm2niix could not ascertain it
+        try:
+            _ = json_sidecar_parms["Manufacturer"]
+        except KeyError:
+            json_sidecar_parms["Manufacturer"] = emerg_manufacturer
+
         # Next, must see if Philips-related fixes post-DCM2NIIX are necessary
-        if json_sidecar_parms["Manufacturer"] == "Philips":
+        if json_sidecar_parms.get("Manufacturer", emerg_manufacturer) == "Philips":
 
             # One possibility: Array values are Stored Values and must be corrected to Philips Floating Point
             if all(["PhilipsRescaleSlope" in json_sidecar_parms,
@@ -763,7 +770,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
                       f"ERROR: Failed retrieving the manufacturer value", None
 
     # Retrieve the additional DICOM parameters and include the Philips rescale slope indicator
-    successful_run, addtional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir, manufacturer=manufacturer)
+    successful_run, additional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir, manufacturer=manufacturer)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT THE ADDITIONAL DCM PARMS RETRIEVAL STEP")
         return False, f"SUBJECT: {subject}; " \
@@ -801,7 +808,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
      nifti_parmameters,
      nifti_filepath,
      json_filepath) = clean_niftis_in_temp(temp_dir=temp_dst_dir,
-                                           add_parms=addtional_dcm_parameters,
+                                           add_parms=additional_dcm_parameters,
                                            subject=subject,
                                            run=run,
                                            visit=visit,
@@ -814,13 +821,15 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
                       f"ERROR: Failed at post-conversion nifti cleanup", None
 
     # Minor preprocessing step; overwrite the number of slices based on the nifti shape
-    if addtional_dcm_parameters["NumberOfSlices"] is None:
-        addtional_dcm_parameters["NumberOfSlices"] = nifti_parmameters["nz"]
+    if additional_dcm_parameters["NumberOfSlices"] is None:
+        additional_dcm_parameters["NumberOfSlices"] = nifti_parmameters["nz"]
 
     # For ASL4D and M0 scans, the JSON sidecar from dcm2niix must include additional parameters
     successful_run, json_parameters = update_json_sidecar(json_file=json_filepath,
                                                           nifti_file=nifti_filepath,
-                                                          dcm_parms=addtional_dcm_parameters)
+                                                          dcm_parms=additional_dcm_parameters,
+                                                          emerg_manufacturer=manufacturer)
+
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT CORRECTION THE JSON SIDECAR STEP")
         return False, f"SUBJECT: {subject}; " \
@@ -829,7 +838,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
 
     # If everything was a success, prepare the dict for creating the import summary
     import_summary = {}
-    import_summary.update(addtional_dcm_parameters)
+    import_summary.update(additional_dcm_parameters)
     import_summary.update(nifti_parmameters)
     import_summary.update(json_parameters)
 
