@@ -1,8 +1,6 @@
-import os
 import numpy as np
 import shutil
 import subprocess
-from glob import glob, iglob
 import nibabel as nib
 import pydicom
 from pydicom.errors import InvalidDicomError
@@ -13,24 +11,27 @@ import struct
 from ast import literal_eval
 from nilearn import image
 from platform import system
+from pathlib import Path
+from typing import Union, List
 
 pd.set_option("display.width", 600)
 pd.set_option("display.max_columns", 15)
 
 
-def get_dicom_directories(config: dict):
+def get_dicom_directories(config: dict) -> List[Path]:
     """
     Convenience function for globbing the dicom directories from the config file
     :param config: the configuration file that specifies the directory structure
     :return: dcm_firs: the list of filepaths to directories containing the dicom files
     """
-    raw_dir = config["RawDir"]
+    raw_dir = Path(config["RawDir"])
     n_levels = ["*"] * len(config["Directory Structure"])
-    dcm_dirs = [directory for directory in glob(os.path.join(raw_dir, *n_levels)) if os.path.isdir(directory)]
+    delimiter = "\\" if system() == "Windows" else "/"
+    dcm_dirs = [directory for directory in raw_dir.glob(delimiter.join(n_levels)) if directory.is_dir()]
     return dcm_dirs
 
 
-def get_structure_components(dcm_dir: str, config: dict):
+def get_structure_components(dcm_dir: Path, config: dict):
     """
     Returns the essential subject, visit, run, and scan names of the currently-assessed dicom directory.
     :param dcm_dir: the absolute path to the directory containing the dicoms to be converted
@@ -38,22 +39,17 @@ def get_structure_components(dcm_dir: str, config: dict):
     :return: returns the current subject, visit, run, and scan names in their alias form
     """
     subject, visit, run, scan = None, None, None, None
-    dirname = dcm_dir
-    for dir_type in reversed(config["Directory Structure"]):
+    for path_partname, dir_type in zip(reversed(dcm_dir.parts), reversed(config["Directory Structure"])):
         if dir_type == "Subject":
-            dirname, basename = os.path.split(dirname)
-            subject = basename
+            subject = path_partname
         elif dir_type == "Visit":
-            dirname, basename = os.path.split(dirname)
-            visit = basename
+            visit = path_partname
         elif dir_type == "Run":
-            dirname, basename = os.path.split(dirname)
-            run = basename
+            run = path_partname
         elif dir_type == "Scan":
-            dirname, basename = os.path.split(dirname)
-            scan = basename
+            scan = path_partname
         else:
-            dirname, _ = os.path.split(dirname)
+            pass
 
     try:
         scan_translator = {value: key for key, value in config["Scan Aliases"].items()}
@@ -62,27 +58,27 @@ def get_structure_components(dcm_dir: str, config: dict):
         return False, subject, visit, run, scan
 
     if run is not None:
-        run_translator = config["Ordered Run Aliases"]
-        run_dst_name = run_translator[run]
+        run_dst_name = config["Ordered Run Aliases"][run]
     else:
         run_dst_name = None
 
     return True, subject, visit, run_dst_name, scan_dst_name
 
 
-def get_manufacturer(dcm_dir: str):
+def get_manufacturer(dcm_dir: Path) -> (bool, str):
     """
     Returns the string suggesting which manufacturer the dicoms in the provided dicom directory belong to.
     :param dcm_dir: the absolute path to the directory containing the dicoms to be converted.
     :return: returns the string "Siemens", "Philips", or "GE". Otherwise returns None.
     """
-    dcm_files = iglob(os.path.join(dcm_dir, "*"))
-    dcm_files = peekable(dcm_files)
+    dcm_files = peekable(dcm_dir.glob("*"))
     if not dcm_files:
         return False, None
 
     dcm_data = None
     for dcm_file in dcm_files:
+        if dcm_file.is_dir():
+            continue
         try:
             dcm_data = pydicom.read_file(dcm_file)
             break
@@ -165,16 +161,14 @@ def get_dicom_value(data: pydicom.Dataset, tags: list, default=None):
     return default
 
 
-def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
+def get_additional_dicom_parms(dcm_dir: Path) -> (bool, dict):
     """
     Retrieves some additional important dicom headers that dcm2niix may not capture and which may be important for
     processing
-    :param manufacturer: the string detailing which MRI scanner manufacturer corresponds to this DICOM directory
     :param dcm_dir: absolute path to the dicom directory, where the first dicom will be used to determine parameters
     :return: additional_dcm_info: a dict of the additional parameters as keys and their values as the dict values.
     """
-    dcm_files = iglob(os.path.join(dcm_dir, "*"))
-    dcm_files = peekable(dcm_files)
+    dcm_files = peekable(dcm_dir.glob("*"))
     if not dcm_files:
         return False, None
 
@@ -190,6 +184,19 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
 
     if dcm_data is None:
         return False, None
+
+    manufacturer = get_dicom_value(data=dcm_data, tags=[(0x0008, 0x0070), (0x0019, 0x0010)], default=None)
+    if manufacturer is None:
+        return False, None
+    else:
+        if "SIEMENS" in manufacturer.upper():
+            manufacturer = "Siemens"
+        elif "PHILIPS" in manufacturer.upper():
+            manufacturer = "Philips"
+        elif "GE" in manufacturer.upper():
+            manufacturer = "GE"
+        else:
+            return False, None
 
     if manufacturer == 'Philips':
         tags_dict = {
@@ -233,9 +240,8 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
                     ]
 
     additional_dcm_info = {}.fromkeys(tags_dict.keys())
-    for (key, value), default in zip(tags_dict.items(),
-                                     defaults  # Default values
-                                     ):
+    additional_dcm_info["Manufacturer"] = manufacturer
+    for (key, value), default in zip(tags_dict.items(), defaults):
         result = get_dicom_value(dcm_data, value, default)
 
         # Additional processing for specific keys
@@ -284,7 +290,7 @@ def get_additional_dicom_parms(dcm_dir: str, manufacturer: str):
     return True, additional_dcm_info
 
 
-def get_tempdst_dirname(raw_dir: str, subject: str, visit: str, run: str, scan: str, legacy_mode: bool = False):
+def get_tempdst_dirname(raw_dir: Path, subject: str, visit: str, run: str, scan: str, legacy_mode: bool = False):
     """
     Creates the essential TEMP destination directory for nifti and json files to be created in during the conversion
     process
@@ -305,17 +311,13 @@ def get_tempdst_dirname(raw_dir: str, subject: str, visit: str, run: str, scan: 
             else:
                 visit = f"_{visit}"
 
-            analysis_dir = os.path.join(os.path.dirname(raw_dir), "analysis")
+            analysis_dir = raw_dir.parent / "analysis"
             if run is None:
-                if scan not in ["T1", "FLAIR"]:
-                    dst_dir = os.path.join(analysis_dir, f"{subject}{visit}", "ASL_1", "TEMP")
-                else:
-                    dst_dir = os.path.join(analysis_dir, f"{subject}{visit}", "TEMP")
+                run = "ASL_1"
+            if scan not in ["T1", "FLAIR"]:
+                dst_dir = analysis_dir / f"{subject}{visit}" / run / "TEMP"
             else:
-                if scan not in ["T1", "FLAIR"]:
-                    dst_dir = os.path.join(analysis_dir, f"{subject}{visit}", run, "TEMP")
-                else:
-                    dst_dir = os.path.join(analysis_dir, f"{subject}{visit}", "TEMP")
+                dst_dir = analysis_dir / f"{subject}{visit}" / "TEMP"
         except NotADirectoryError:
             return False, None
 
@@ -323,7 +325,7 @@ def get_tempdst_dirname(raw_dir: str, subject: str, visit: str, run: str, scan: 
     # For BIDS import, this will be in the form raw/subject/[visit]/perf or anat
     else:
         try:
-            analysis_dir = os.path.join(os.path.dirname(raw_dir), "analysis")
+            analysis_dir = raw_dir.parent / "analysis"
             # Get rid of illegal characters for subject
             if "-" in subject:
                 subject = subject.replace("-", "")
@@ -332,9 +334,9 @@ def get_tempdst_dirname(raw_dir: str, subject: str, visit: str, run: str, scan: 
 
             if visit is None:
                 if scan not in ["T1", "FLAIR"]:
-                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", "perf", "TEMP")
+                    dst_dir = analysis_dir / f"sub-{subject}" / "perf" / "TEMP"
                 else:
-                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", "anat", "TEMP")
+                    dst_dir = analysis_dir / f"sub-{subject}" / "anat" / "TEMP"
             else:
                 # Get rid of illegal characters for visit
                 if "-" in visit:
@@ -343,21 +345,21 @@ def get_tempdst_dirname(raw_dir: str, subject: str, visit: str, run: str, scan: 
                     visit = visit.replace("_", "")
                 # Determine output directory based on the scan type
                 if scan not in ["T1", "FLAIR"]:
-                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", f"ses-{visit}", "perf", "TEMP")
+                    dst_dir = analysis_dir / f"sub-{subject}" / f"ses-{visit}" / "perf" / "TEMP"
                 else:
-                    dst_dir = os.path.join(analysis_dir, f"sub-{subject}", f"ses-{visit}", "anat", "TEMP")
+                    dst_dir = analysis_dir / f"sub-{subject}" / f"ses-{visit}" / "anat" / "TEMP"
         except NotADirectoryError:
             return False, None
 
     try:
-        os.makedirs(dst_dir, exist_ok=True)
+        dst_dir.mkdir(parents=True, exist_ok=True)
     except OSError:
         return False, None
 
     return True, dst_dir
 
 
-def run_dcm2niix(temp_dir: str, dcm_dir: str, subject: str, visit, run: str, scan: str):
+def run_dcm2niix(temp_dir: Path, dcm_dir: Path, subject: str, visit, run: str, scan: str):
     """
     Runs the dcm2niix program as a subprocess and generates the appropriate nifti and json files
     :param temp_dir: the TEMP dst where nifti and json files will be deposited
@@ -396,16 +398,14 @@ def run_dcm2niix(temp_dir: str, dcm_dir: str, subject: str, visit, run: str, sca
 
     # Must ensure that no files currently exist within the destination
     try:
-        if len(os.listdir(temp_dir)) > 0:
-            for path in os.listdir(temp_dir):
-                fullpath = os.path.join(temp_dir, path)
-                if os.path.isfile(fullpath):
-                    os.remove(fullpath)
-                elif os.path.isdir(fullpath):
-                    os.removedirs(fullpath)
-                else:
-                    continue
-    except FileNotFoundError:
+        for path in temp_dir.iterdir():
+            if path.is_dir():
+                path.rmdir()
+            else:
+                path.unlink(missing_ok=True)
+    except FileNotFoundError as ferr:
+        print(f"Encountered Error while processing subject: {subject}; visit: {visit}; run: {run}; scan: {scan}"
+              f"\n{ferr}")
         return False
 
     # Arguments used:
@@ -427,33 +427,26 @@ def run_dcm2niix(temp_dir: str, dcm_dir: str, subject: str, visit, run: str, sca
                   f"{dcm_dir}"
 
         return_code = subprocess.run(command.split(" "))
-        print(f"Return code: {return_code.returncode}")
         if return_code.returncode == 0:
             return True
         else:
+            print(f"DCM2NIIX Did not exit gracefully!!!\nStd Err:\n{return_code.stderr}")
             return False
-    elif system() == "Linux":
-        print(os.getcwd())
+    else:
         command = f"./dcm2niix -b y -z n -x n -t n -m n -s n -v n " \
                   f"-f {output_filename_format} " \
                   f"-o {temp_dir} " \
                   f"{dcm_dir}".strip()
         p = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
                              text=True, shell=True)
-
         p.wait()
         stdout, stderr = p.communicate()
         return_code = p.returncode
-        print(f"DCM2NIIX Return code: {return_code}")
         if return_code == 0:
             return True
         else:
-            print(f"DCM2NIIX Std Err:\n{stderr}")
+            print(f"DCM2NIIX Did not exit gracefully!!!\nStd Err:\n{stderr}")
             return False
-
-    else:
-        print("This system is not yet supported")
-        return False
 
 
 def remove_illegal_chars(item):
@@ -464,7 +457,7 @@ def remove_illegal_chars(item):
     return item
 
 
-def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str, visit: str, scan: str,
+def clean_niftis_in_temp(temp_dir: Path, add_parms: dict, subject: str, run: str, visit: str, scan: str,
                          legacy_mode: bool = False):
     """
     Concatenates the niftis, deletes the previous ones, and moves the concatenated one out of the temp dir
@@ -479,10 +472,13 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
     :return: status: whether the operation was a success or not; the import summary parameters, and the filepath to the
     new nifti created
     """
-    jsons = iglob(os.path.join(temp_dir, "*.json"))
     reorganized_niftis = []
     import_summary = dict.fromkeys(["subject", "visit", "scan", "filename",
                                     "dx", "dy", "dz", "nx", "ny", "nz", "nt"])
+    jsons = peekable(temp_dir.glob("*.json"))
+    if not jsons:
+        print(f"Did not locate any json files in {temp_dir}")
+        return False, import_summary, None, None
 
     ###################################
     # PART 1 - ORGANIZING DCM2NII FILES
@@ -494,12 +490,12 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
             sidecar_data = json.load(json_reader)
             for parm in json_data.keys():
                 try:
-                    json_data[parm][json_file.replace(".json", ".nii")] = sidecar_data[parm]
+                    json_data[parm][json_file.with_suffix(".nii")] = sidecar_data[parm]
                 except KeyError:
                     if parm == "AcquisitionTime":
-                        json_data[parm][json_file.replace(".json", ".nii")] = 0
+                        json_data[parm][json_file.with_suffix(".nii")] = 0
                         if "TriggerDelayTime" in list(sidecar_data.keys()):
-                            json_data[parm][json_file.replace(".json", ".nii")] = sidecar_data["TriggerDelayTime"]
+                            json_data[parm][json_file.with_suffix(".nii")] = sidecar_data["TriggerDelayTime"]
 
     # Philips case; same series and probably same acq number too; opt for acq_time as the differentiating factor
     if len(set(json_data["SeriesNumber"].values())) == 1 and len(set(json_data["AcquisitionTime"].values())) > 1:
@@ -595,8 +591,17 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
     elif len(reorganized_niftis) == 1 and scan in ["T1", "FLAIR"]:
         final_nifti_obj = nib.load(reorganized_niftis[0])
 
+    # Scenario: multiple T1 acquisitions...take the mean
+    elif len(reorganized_niftis) > 1 and scan in ["T1", "FLAIR"]:
+        nii_objs = [nib.load(nifti) for nifti in reorganized_niftis]
+        final_nifti_obj = image.mean_img(nii_objs)
+
     # Otherwise, something went wrong and the operation should stop
     else:
+        print(f"Error in clean_niftis_in_temp while attempting to process subject {subject}; visit {visit};"
+              f" run {run}; scan {scan}\n"
+              f"Reorganized_niftis did not fit into any of the foreseen scenarios\n"
+              f"Length of reorganized_niftis: {len(reorganized_niftis)}")
         return False, import_summary, None, None
 
     # Take the oppurtunity to get more givens for the import summary
@@ -638,8 +643,9 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
         visit = f"ses-{visit}_"
 
     if legacy_mode:
-        final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"{scan}.nii")
-        final_json_filename = os.path.join(os.path.dirname(temp_dir), f"{scan}.json")
+        final_nifti_filename = temp_dir.parent / f"{scan}.nii"
+        final_json_filename = temp_dir.parent / f"{scan}.json"
+
     else:
         scan = {"ASL4D": "asl", "M0": "m0scan", "T1": "T1w", "FLAIR": "FLAIR"}[scan]
         # Get rid of illegal characters for subject
@@ -648,30 +654,26 @@ def clean_niftis_in_temp(temp_dir: str, add_parms: dict, subject: str, run: str,
         if "_" in subject:
             subject = subject.replace("_", "")
 
-        final_nifti_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{visit}{run}{scan}.nii")
-        final_json_filename = os.path.join(os.path.dirname(temp_dir), f"sub-{subject}_{visit}{run}{scan}.json")
+        final_nifti_filename = temp_dir.parent / f"sub-{subject}_{visit}{run}{scan}.nii"
+        final_json_filename = temp_dir.parent / f"sub-{subject}_{visit}{run}{scan}.json"
 
     nib.save(final_nifti_obj, final_nifti_filename)
-
-    jsons = iglob(os.path.join(temp_dir, "*.json"))
+    jsons = peekable(temp_dir.glob("*json"))
+    if not jsons:
+        print("Error in clean_niftis_in_temp while attempting to rename remaining json files")
+        return False, import_summary, None, None
     json_file = next(jsons)
-
-    # Json can bring up errors; os.replace should handle the rename if os.rename fails
-    try:
-        os.rename(json_file, final_json_filename)
-    except FileExistsError:
-        os.replace(json_file, final_json_filename)
+    json_file.replace(final_json_filename)
 
     return True, import_summary, final_nifti_filename, final_json_filename
 
 
-def update_json_sidecar(json_file: str, nifti_file: str, dcm_parms: dict, emerg_manufacturer: str):
+def update_json_sidecar(json_file: Path, nifti_file: Path, dcm_parms: dict):
     """
     Updates the json sidecar to include additional DICOM parameters not extracted by dcm2niix
     :param json_file: the absolute filepath to the json sidecar
     :param nifti_file: the absolute filepath to the nifti corresponding to the json
     :param dcm_parms: a dict of the additional extracted DICOM headers that should be added to the json
-    :param emerg_manufacturer: a string of the manufacturer in the event dcm2niix could not ascertain it
     :return: 2 items: whether the operation was a success; the updated parameters of the json file (to be used in the
     summary file generation)
     """
@@ -687,15 +689,9 @@ def update_json_sidecar(json_file: str, nifti_file: str, dcm_parms: dict, emerg_
             if old_name in json_sidecar_parms.keys():
                 json_sidecar_parms[new_name] = json_sidecar_parms.pop(old_name)
 
-        # Add in the emergency manufacturer string value in the event dcm2niix could not ascertain it
-        try:
-            _ = json_sidecar_parms["Manufacturer"]
-        except KeyError:
-            json_sidecar_parms["Manufacturer"] = emerg_manufacturer
-
         # Next, must see if Philips-related fixes post-DCM2NIIX are necessary
-        if json_sidecar_parms.get("Manufacturer", emerg_manufacturer) == "Philips":
-
+        manufac = json_sidecar_parms.get("Manufacturer", None)
+        if manufac == "Philips":
             # One possibility: Array values are Stored Values and must be corrected to Philips Floating Point
             if all(["PhilipsRescaleSlope" in json_sidecar_parms,
                     "PhilipsRescaleIntercept" in json_sidecar_parms,
@@ -725,13 +721,18 @@ def update_json_sidecar(json_file: str, nifti_file: str, dcm_parms: dict, emerg_
                       ]):
                 nifti_img: nib.Nifti1Image = image.load_img(nifti_file)
                 nifti_data: np.ndarray = image.get_data(nifti_img)
-                RS = json_sidecar_parms["PhilipsRescaleSlope"]
-                SS = json_sidecar_parms["PhilipsScaleSlope"]
+                RS, SS = json_sidecar_parms["PhilipsRescaleSlope"], json_sidecar_parms["PhilipsScaleSlope"]
                 new_nifti_data = nifti_data / (RS * SS)
                 new_nifti = nib.Nifti1Image(dataobj=new_nifti_data, header=nifti_img.header, affine=nifti_img.affine)
                 del nifti_img, nifti_data, RS, SS, new_nifti_data
                 new_nifti.to_filename(nifti_file)
                 del new_nifti
+        elif manufac is None:
+            print(f"Encountered error in update_json_sidecar for file {json_file}\n"
+                  f"The mandatory Manufacturer key was not present in the json")
+            return False, None
+        else:
+            pass
 
         with open(json_file, 'w') as w:
             json.dump(json_sidecar_parms, w, indent=3)
@@ -754,6 +755,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
     """
     # Get the subject, visit, and scan for that directory
     # True, subject, visit, run_dst_name, scan_dst_name
+    dcm_dir = Path(dcm_dir)
     successful_run, subject, visit, run, scan = get_structure_components(dcm_dir=dcm_dir, config=config)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT GETTING THE DIRECTORY STRUCTURE COMPONENTS STEP")
@@ -762,15 +764,15 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
                       f"ERROR: Failed at getting directory structure components", None
 
     # Get the manufacturer tag
-    successful_run, manufacturer = get_manufacturer(dcm_dir=dcm_dir)
-    if not successful_run:
-        print(f"FAILURE ENCOUNTERED AT GETTING THE MANUFACTURER STEP")
-        return False, f"SUBJECT: {subject}; " \
-                      f"SCAN: {scan}; " \
-                      f"ERROR: Failed retrieving the manufacturer value", None
+    # successful_run, manufacturer = get_manufacturer(dcm_dir=dcm_dir)
+    # if not successful_run:
+    #     print(f"FAILURE ENCOUNTERED AT GETTING THE MANUFACTURER STEP")
+    #     return False, f"SUBJECT: {subject}; " \
+    #                   f"SCAN: {scan}; " \
+    #                   f"ERROR: Failed retrieving the manufacturer value", None
 
     # Retrieve the additional DICOM parameters and include the Philips rescale slope indicator
-    successful_run, additional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir, manufacturer=manufacturer)
+    successful_run, additional_dcm_parameters = get_additional_dicom_parms(dcm_dir=dcm_dir)
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT THE ADDITIONAL DCM PARMS RETRIEVAL STEP")
         return False, f"SUBJECT: {subject}; " \
@@ -778,7 +780,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
                       f"ERROR: Failed at retrieving additional dicom parameters", None
 
     # Generate the directories for dumping dcm2niix output
-    successful_run, temp_dst_dir = get_tempdst_dirname(raw_dir=config["RawDir"],
+    successful_run, temp_dst_dir = get_tempdst_dirname(raw_dir=Path(config["RawDir"]),
                                                        subject=subject,
                                                        visit=visit,
                                                        run=run,
@@ -827,8 +829,7 @@ def asldcm2bids_onedir(dcm_dir: str, config: dict, legacy_mode: bool = False):
     # For ASL4D and M0 scans, the JSON sidecar from dcm2niix must include additional parameters
     successful_run, json_parameters = update_json_sidecar(json_file=json_filepath,
                                                           nifti_file=nifti_filepath,
-                                                          dcm_parms=additional_dcm_parameters,
-                                                          emerg_manufacturer=manufacturer)
+                                                          dcm_parms=additional_dcm_parameters)
 
     if not successful_run:
         print(f"FAILURE ENCOUNTERED AT CORRECTION THE JSON SIDECAR STEP")
@@ -861,7 +862,7 @@ def create_import_summary(import_summaries: list, config: dict):
     :param import_summaries: a list of dicts, with each dict being the parameters of that subject-visit-scan
     :param config: the import configuration file generated by the GUI to help locate the analysis directory
     """
-    analysis_dir = os.path.join(os.path.dirname(config["RawDir"]), "analysis")
+    analysis_dir = Path(config["RawDir"]).parent / "analysis"
     try:
         df = pd.concat([pd.Series(import_summary) for import_summary in import_summaries], axis=1, sort=True).T
     except ValueError as concat_error:
@@ -878,27 +879,30 @@ def create_import_summary(import_summaries: list, config: dict):
     print(df)
 
     try:
-        df.to_csv(os.path.join(analysis_dir, "import_summary.tsv"), sep='\t', index=False, na_rep='n/a')
+        df.to_csv(analysis_dir / "import_summary.tsv", sep='\t', index=False, na_rep='n/a')
     except PermissionError:
-        df.to_csv(os.path.join(analysis_dir, "import_summary_backup.tsv"), sep='\t', index=False, na_rep='n/a')
+        df.to_csv(analysis_dir / "import_summary_backup.tsv", sep='\t', index=False, na_rep='n/a')
 
 
-def bids_m0_followup(analysis_dir):
+def bids_m0_followup(analysis_dir: Path):
     """
     In a BIDS import, this function will run through the imported dataset and adjust any BIDS-standard fields that
     should be present in the m0scan.json sidecar, such as "IntendedFor"
     :param analysis_dir: the absolute path to the analysis directory
     """
-    m0_jsons = iglob(os.path.join(analysis_dir, "**", "*_m0scan.json"), recursive=True)
+    m0_jsons = peekable(analysis_dir.rglob("*_m0scan.json"))
+    if not m0_jsons:
+        print("bids_m0_followup could not find any _m0scan.json files")
+        return
     for m0_json in m0_jsons:
-        asl_json = m0_json.replace("_m0scan.json", "_asl.json")
-        asl_nifti = m0_json.replace("_m0scan.json", "_asl.nii")
+        asl_json = m0_json.with_name("_asl.json")
+        asl_nifti = m0_json.with_name("_asl.nii")
 
         # Ensure that the asl json sidecar and nifti images actually exist adjacent to the m0scan.json
-        if os.path.exists(asl_json) and os.path.exists(asl_nifti):
+        if asl_json.exists() and asl_nifti.exists():
             # BIDS standard: the "IntendedFor" filepath must be relative to the subject (exclusive)
             # and contain forward slashes
-            truncated_asl_nifti = asl_nifti.replace(analysis_dir, "").replace("\\", "/")
+            truncated_asl_nifti = str(asl_nifti).replace(str(analysis_dir), "").replace("\\", "/")
             by_parts = truncated_asl_nifti.split(sep='/')
             truncated_asl_nifti = "/".join(by_parts[2:])
 
