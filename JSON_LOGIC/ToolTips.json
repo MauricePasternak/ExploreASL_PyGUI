@@ -1,0 +1,74 @@
+{
+  "MainWindow": {},
+  "Importer": {
+    "le_rootdir": "Specify the filepath to the root folder of your study.\nFor example: /home/jsmith/MyStudy/source",
+    "chk_uselegacy": "Specify whether the legacy import should be used (CHECKED)\nOR whether the newer BIDS import should be used (UNCHECKED)",
+    "lab_holdersub": "This label tells the importer that a directory level contains subject information\nA subject is a person or animal participating in the study",
+    "lab_holdervisit": "This label tells the importer that a directory level contains visit information.\nA visit is a logical grouping of neuroimaging data acquired during the presence of\na subject at the site of the study (i.e baseline, 1-year followup, etc.)",
+    "lab_holderrun": "This label tells the importer that a directory level contains run information.\nA run is an uninterrupted repetition of data acquisition with the same parameters\nduring a visit",
+    "lab_holderscan": "This label tells the importer that a directory level contains scan information.\nA scan is an acquisition of neuroimaging data at using particular scanner machine\nparameters (i.e arterial spin labelling, T1-weighted imaging, etc.)",
+    "lab_holderdummy": "This label tells the importer that a directory level contains no important information\nand that this level should be skipped over when discerning folder structure",
+    "cmb_runposition": "Indicates the relative positioning this run has relative to the others in the event that run order is important to the study",
+    "le_runalias": "Indicates the run name that the folder indicated on the left should take on after being\nimported. If not specified, the name of this folder will be ASL_"
+  },
+  "Dehybridizer": {
+    "le_rootdir": "The path to the root directory that will have a backup made prior to an expansion\nand which tells the program where to begin looking.",
+    "btn_setrootdir": "Specify the path to the root directory through a file dialogue rather than by\ndrag and drop",
+    "le_exampledir": "Specify any directory that is an example of what must be expanded. This tells\nthe program the relative folder depth at which sibling folders can be found",
+    "btn_exampledir": "Specify the path to the example directory through a file dialogue rather than\nby drag and drop",
+    "le_delimiter": "Specify whether there is a character that separates two pieces of information\nfound at the indicated directory. For example subject_session is separated by\n '_' delimiter",
+    "btn_fill_spaces": "Click to extract all relevant folder names at the indicated level,\nseparating names as appropriate if a delimiter was specified",
+    "le_autofill": "Enter text in this field that you wish to be present in all rows.",
+    "name2le": "Specify the name of the parent folder that the indicated\nchild folder should be placed under"
+  },
+  "ParmsMaker": {
+    "le_easl_dir": "Specify the filepath to the ExploreASL folder located on your machine.\nExample: /home/jsmith/MATLAB/ExploreASL",
+    "le_studyname": "Specify the name of the study you would like it to have",
+    "chk_overwrite_for_bids": "Specify whether the study dataset is in BIDS format (CHECKED)\nOR whether the study dataset is in the older legacy format (UNCHECKED)",
+    "le_study_dir": "Specify the filepath to the raw folder of your study.\nFor example: /home/jsmith/MyStudy/derivatives",
+    "lst_included_subjects": "Drag and Drop the subjects that should be analyzed",
+    "lst_excluded_subjects": "Drag and Drop the subjects that should be excluded from the analysis",
+    "le_run_names": "Specify the names of run folders that are present within the analysis folder\nAFTER an import has been performed. Run names must be separated by a comma and\none space",
+    "le_run_options": "Specify the names that runs should have in the final output. For example, if\nthere are run folders called 'ASL_1' and 'ASL_2', you can specify here that\nhey should be called 'control' and 'treatment' in the final output",
+    "cmb_vendor": "Specify the Vendor of the scans in the analysis folder",
+    "cmb_sequencetype": "Specify the imaging sequence utilized during scan acquisition",
+    "cmb_labelingtype": "Specify the labelling strategy used during ASL scan acquisition",
+    "cmb_m0_isseparate": "Specify whether a proton density scan (M0) was acquired\nIf a scan was not acquired, the mean control ASL image set\nwill be used as a substitute.",
+    "cmb_m0_posinasl": "If a proton density (M0) scan was acquired, specify its location.\nThis argument is ignored if the user has indicated that an M0 scan\nwas not acquired",
+    "cmb_quality": "Indicate the precision with which certain processing steps should be taken, such\nas segmentation. Higher quality results in longer processing times.",
+    "cmb_nsup_pulses": "Specify the number of background suppression pulses that were utilized\nfor ASL scans in your study",
+    "cmb_readout_dim": "Specify the dimension of ASL acquisitions as they came off the scanner",
+    "spinbox_initialpld": "Specify the time, in milliseconds, of the post-label delay.\n- For 3D scans this is fixed for the whole brain\n- For 2D scans this is the post-label delay of the FIRST acquired slice",
+    "spinbox_labdur": "Specify the time, in milliseconds, of the pulse labeling period.",
+    "spinbox_slice_readout": "Specify the value of the time added to the PLD after each slice\nThis is required for 2D readout ASL acquisitions",
+    "spinbox_lambda": "Specify the blood/brain water coefficient (0.9 in Alsop MRM 2014)",
+    "spinbox_artt2": "Specify the T2* of the arterial blood at 3T",
+    "spinbox_bloodt1": "Specify the T1 relaxation time of arterial blood at 3T (1650 in Alsop MRM 2014)",
+    "spinbox_tissuet1": "Specify the T1 relaxation time of grey matter tissue at 3T 1240 in Alsop MRM 2014)",
+    "cmb_ncomparts": "Specify the number of compartments to model during quantification",
+    "le_quantset": "Specify the vector of actions to perform during quantification:\n1) Apply ScaleSlopes ASL4D\n2) Apply ScaleSlopes M0\n3) Convert PWI a.u. to label\n4) Quantify M0 a.u.\n5) Perform division by M0",
+    "cmb_m0_algorithm": "Specify whether to use the newer M0 processing algorithm or the standard one",
+    "spinbox_gmscale": "Specify whether the M0 image should be multiplied by a specific factor.\nThis is useful when you have background suppression but no M0 image acquired\nwithout suppression. If you know the M0 scalefactor, you can use the control\nimage as M0 and apply this factor to scale back what was suppressed by the\nbackground suppression",
+    "le_fslpath": "Specify the path to the FSL bin directory\n(i.e. /usr/local/fsl/bin/fsl"
+  },
+  "Executor": {
+    "inner_cmb_ncores": "Specify the number of cores to allocate to this study.\nImportant points:\n\t-DO NOT specify more cores than there are subjects for the study\n\t-DO NOT specify more than one core for a study that will have the \n\tPopulation Module run on it",
+    "inner_le": "Specify the filepath to the root folder of your study.\nFor example: /home/jsmith/MyStudy/derivatives",
+    "inner_cmb_procopts": "Specify which ExploreASL module to run:\n\t-Structural: Structural Module for processing T1w and FLAIR scans\n\t-ASL: ASL Module for processing ASL and M0 scans\n\t-Both: Run both the Structural and ASL modules\n\t-Population: Population module for determining statistics,\n\tstudywide masks, etc.",
+    "cmb_modjob": "Specify the type of re-run or pre-processing modification you'd like to perform.\nCurrently the following options are avaliable:\n\t'Re-run a study': Re-run parts of a previously-run study\n\t'Alter participants.tsv': Add metadata to the tsv file such that biasfields for\n\tthat metadata may be created when running the Population module",
+    "Modjob_RerunPrep": {
+      "lock_tree": "Indicate which parts of the pipeline should be re-run for which \nmodules/subjects/runs/etc.\nThis window will delete all created .status files with the lock\ndirectory for the selected folders & files. When ExploreASL is\nre-run, it will detect these missing .status files and interpret\nthat as a signal to re-run that particular section of the study's\npipeline."
+    }
+  },
+  "Plotting": {
+    "le_analysis_dir": "Specify the filepath to the root folder of your study.\nFor example: /home/jsmith/MyStudy/derivatives",
+    "le_metadata": "Specify the filepath to the metadata file. This should be either a .csv, .tsv. or .xlsx file",
+    "cmb_atlas_selection": "Select which atlas the CBF values should be based on",
+    "cmb_pvc_selection": "Select whether the CBF values should be based on\npartial-volume correction or uncorrected",
+    "btn_subset_data": "This will open a window to allow you to subset the loaded data on based on\nlevels in a categorical variable",
+    "btn_indicate_dtype": "This will open a window to allow you to correct the program's\ninterpretation of the datatype of a particular variable\n(i.e Sex encoded by 1s and 0s may be misinterpreted as a numerical type)",
+    "btn_load_in_data": "This will load in the data from the indicated analysis directory",
+    "lst_varview": "This area houses the variables extracted from column headers found within the\nstudy's dataframes as well as any metadata loaded in by the user",
+    "cmb_figuretypeselection": "This will select the type of plotting submodule to use.\nOptions include:\n- Facet Grid: for standard plotting (i.e Box Plots)\n- Plot & MRI View: for selecting ASL and T1w scans from datapoints"
+  }
+}
