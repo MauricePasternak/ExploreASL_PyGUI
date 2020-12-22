@@ -1,6 +1,6 @@
 from PySide2.QtWidgets import *
-from PySide2.QtGui import Qt, QFont
-from PySide2.QtCore import Signal
+from PySide2.QtGui import Qt, QFont, QIcon
+from PySide2.QtCore import Signal, QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
 from src.xASL_GUI_HelperFuncs_DirOps import *
 import pandas as pd
@@ -67,6 +67,9 @@ class xASL_GUI_MergeDirs(QWidget):
         btn_font.setPointSize(16)
         self.btn_mergedirs.setFont(btn_font)
         self.btn_mergedirs.setMinimumHeight(50)
+        merge_icon = QIcon(str(Path(self.parent.config["ProjectDir"]) / "media" / "merge_ios_100ax100.png"))
+        self.btn_mergedirs.setIcon(merge_icon)
+        self.btn_mergedirs.setIconSize(QSize(50, 50))
         self.mainlay.addWidget(self.btn_mergedirs)
 
     def add_remove_srcdirs(self, n_dirs: int):
