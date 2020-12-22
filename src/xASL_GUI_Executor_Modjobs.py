@@ -10,6 +10,142 @@ from pprint import pprint
 from json import load, dump
 
 
+class xASL_GUI_MergeDirs(QWidget):
+    """
+    Class designated to merge processed study directories together
+    """
+
+    def __init__(self, parent=None, default_mergedir=""):
+        super().__init__(parent=parent)
+        self.parent = parent
+        self.setWindowFlag(Qt.Window)
+        self.setWindowTitle("Explore ASL - Merge Study Directories")
+        self.setMinimumSize(512, 512)
+        self.mainlay = QVBoxLayout(self)
+
+        # Misc Vars
+        self.list_le_srcdirs: List[QLineEdit] = []
+        self.list_hlay_srcdirs: List[QHBoxLayout] = []
+        self.list_btn_srcdirs: List[QPushButton] = []
+
+        # Group 1 - Overall settings
+        self.grp_settings = QGroupBox("Merge Settings")
+        self.formlay_settings = QFormLayout(self.grp_settings)
+        (self.hlay_mergedst, self.le_mergedst,
+         self.btn_mergedirs) = self.make_le_btn_pair("Specify the path to the merge directory",
+                                                     self.select_dir, self.can_merge)
+        self.le_mergedst.setText(default_mergedir)
+        self.spin_nsrcdirs = QSpinBox(minimum=2, singleStep=1)
+        self.spin_nsrcdirs.valueChanged.connect(self.add_remove_srcdirs)
+        self.chk_symlinks = QCheckBox(checked=True)
+        self.chk_overwrite = QCheckBox(checked=False)
+        self.formlay_settings.addRow(self.hlay_mergedst)
+        for widget, desc in zip([self.spin_nsrcdirs, self.chk_symlinks, self.chk_overwrite],
+                                ["Number of Studies to Merge", "Create Symlinks?", "Overwrite Existing?"]):
+            self.formlay_settings.addRow(desc, widget)
+        self.mainlay.addWidget(self.grp_settings)
+
+        # Group 2 - Source Directories
+        self.grp_srcdirs = QGroupBox("Directories to Merge")
+        self.vlay_srcdirs_lvl1 = QVBoxLayout(self.grp_srcdirs)
+        self.vlay_srcdirs_lvl1.setContentsMargins(0, 0, 0, 0)
+        self.scroll_srcdirs = QScrollArea()
+        self.cont_srcdirs = QWidget()
+        self.vlay_srcdirs_lvl1.addWidget(self.scroll_srcdirs)
+        self.scroll_srcdirs.setWidget(self.cont_srcdirs)
+        self.scroll_srcdirs.setWidgetResizable(True)
+        self.vlay_srcdirs_lvl2 = QVBoxLayout(self.cont_srcdirs)
+        self.vlay_srcdirs_lvl2.addStretch(1)
+
+        self.mainlay.addWidget(self.grp_srcdirs)
+        self.add_remove_srcdirs(2)
+
+        # Finishing Touch
+        self.btn_mergedirs = QPushButton("Merge Directories", clicked=self.merge_dirs)
+        self.btn_mergedirs.setEnabled(False)
+        btn_font = QFont()
+        btn_font.setPointSize(16)
+        self.btn_mergedirs.setFont(btn_font)
+        self.btn_mergedirs.setMinimumHeight(50)
+        self.mainlay.addWidget(self.btn_mergedirs)
+
+    def add_remove_srcdirs(self, n_dirs: int):
+        # Add widgets
+        if n_dirs > len(self.list_le_srcdirs):
+            for _ in range(abs(n_dirs - len(self.list_le_srcdirs))):
+                hlay, le, btn = self.make_le_btn_pair("Specify the path to a study directory", self.select_dir,
+                                                      self.can_merge)
+                self.list_le_srcdirs.append(le)
+                self.list_hlay_srcdirs.append(hlay)
+                self.list_btn_srcdirs.append(btn)
+                self.vlay_srcdirs_lvl2.insertLayout(len(self.list_le_srcdirs) - 1, hlay)
+        # Remove wigets
+        else:
+            for _ in range(abs(n_dirs - len(self.list_le_srcdirs))):
+                self.vlay_srcdirs_lvl2.removeItem(self.vlay_srcdirs_lvl2.itemAt(len(self.list_hlay_srcdirs) - 1))
+                self.list_hlay_srcdirs[-1].setParent(None)
+                self.list_le_srcdirs[-1].setParent(None)
+                self.list_btn_srcdirs[-1].setParent(None)
+                del self.list_hlay_srcdirs[-1]
+                del self.list_le_srcdirs[-1]
+                del self.list_btn_srcdirs[-1]
+
+    @staticmethod
+    def make_le_btn_pair(le_placetxt, btnfunc, lefunc, **kwargs):
+        horizontal_layout = QHBoxLayout()
+        lineedit = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory",
+                                               placeholderText=le_placetxt, clearButtonEnabled=True)
+        lineedit.textChanged.connect(lefunc)
+        button = QPushButton("...", clicked=partial(btnfunc, calling_le=lineedit, **kwargs))
+        horizontal_layout.addWidget(lineedit)
+        horizontal_layout.addWidget(button)
+        return horizontal_layout, lineedit, button
+
+    def select_dir(self, calling_le):
+        directory = QFileDialog.getExistingDirectory(self, "Select Study Root",
+                                                     self.parent.config["DefaultRootDir"],
+                                                     QFileDialog.ShowDirsOnly)
+        if directory == "":
+            return
+        calling_le.setText(str(Path(directory)))
+
+    def can_merge(self):
+        if self.le_mergedst.text() in {"", "/", "."}:
+            self.btn_mergedirs.setEnabled(False)
+            return
+
+        merge_path = Path(self.le_mergedst.text())
+        if not merge_path.is_dir():
+            print("Exiting Early due to nonexistent merge destination")
+            self.btn_mergedirs.setEnabled(False)
+            return
+
+        try:
+            src_dirs = []
+            for le in self.list_le_srcdirs:
+                if le.text() in {"", "/", "."}:
+                    continue
+                path = Path(le.text())
+                if "DataPar.json" not in {p.name for p in path.iterdir()}:
+                    continue
+                src_dirs.append(path)
+        except FileNotFoundError:
+            self.btn_mergedirs.setEnabled(False)
+            return
+
+        if len(src_dirs) <= 1:
+            self.btn_mergedirs.setEnabled(False)
+        else:
+            self.btn_mergedirs.setEnabled(True)
+
+    def merge_dirs(self):
+        src_dirs = list({Path(le.text()) for le in self.list_le_srcdirs if le.text() not in {"", "/", "."}})
+        dst_dir = Path(self.le_mergedst.text())
+        merge_directories(roots=src_dirs, merge_root=dst_dir,
+                          symbolic=self.chk_symlinks.isChecked(),
+                          overwrite=self.chk_overwrite.isChecked())
+
+
 class xASL_GUI_ModSidecars(QWidget):
     """
     Class designated to altering JSON sidecars
@@ -253,7 +389,6 @@ class xASL_GUI_RerunPrep(QWidget):
                                 QMessageBox.Ok)
 
 
-# noinspection PyAttributeOutsideInit
 class xASL_GUI_TSValter(QWidget):
     """
     Class designated to alter the contents of participants.tsv

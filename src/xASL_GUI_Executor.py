@@ -14,7 +14,8 @@ from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from src.xASL_GUI_Executor_ancillary import (initialize_all_lock_dirs, calculate_anticipated_workload,
                                              calculate_missing_STATUS, interpret_statusfile_errors)
 from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer
-from src.xASL_GUI_Executor_Modjobs import xASL_GUI_RerunPrep, xASL_GUI_TSValter, xASL_GUI_ModSidecars
+from src.xASL_GUI_Executor_Modjobs import (xASL_GUI_RerunPrep, xASL_GUI_TSValter,
+                                           xASL_GUI_ModSidecars, xASL_GUI_MergeDirs)
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le)
 from pprint import pprint
 from collections import defaultdict
@@ -374,7 +375,8 @@ class xASL_Executor(QMainWindow):
         self.formlay_promod = QFormLayout()
         # Set up the widgets in this section
         self.cmb_modjob = QComboBox(self.grp_procmod)
-        self.cmb_modjob.addItems(["Re-run a study", "Alter participants.tsv", "Change Json Sidecars"])
+        self.cmb_modjob.addItems(["Re-run a study", "Alter participants.tsv",
+                                  "Change Json Sidecars", "Merge Study Directories"])
         self.cmb_modjob.setToolTip(self.exec_tips["cmb_modjob"])
         (self.hlay_modjob,
          self.le_modjob,
@@ -421,6 +423,9 @@ class xASL_Executor(QMainWindow):
                                       self.exec_errs["InvalidStudyDirectory"][1], QMessageBox.Ok)
                 return
             modjob_widget = xASL_GUI_ModSidecars(self)
+        elif selected_job == "Merge Study Directories":
+            modjob_widget = xASL_GUI_MergeDirs(self, self.le_modjob.text())
+
         if modjob_widget is not None:
             modjob_widget.show()
 

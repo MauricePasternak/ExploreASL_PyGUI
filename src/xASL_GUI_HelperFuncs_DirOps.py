@@ -146,3 +146,72 @@ def alter_sidecars(root_dir: Union[str, Path], subjects: Union[List[str], str, P
                     alter_json_sidecar(json_path=json_path, action=action, key=key, value=interpreted_value)
                 else:
                     continue
+
+
+def merge_directories(roots: List[Union[Path, str]],
+                      merge_root: Union[Path, str],
+                      symbolic: bool = True,
+                      overwrite: bool = False):
+    """
+    Merges several root directories into a single study symbolically or by copying filepaths over
+
+    :param roots: list of study root paths (i.e. /home/mpasternak/GENFI_utils/Philips_2D_EPI/analysis)
+    :param merge_root: path to the new root that will contain all the merged data
+    :param symbolic: whether to make the new paths symbolic (True) or real copies (False); default is True
+    :param overwrite: whether to overwrite existent paths downstream from merge_root; default is False
+    """
+
+    def make_symlinks(parentpath: Path, current_root: str, target_root: str, overwrite_links: bool = overwrite):
+        """
+        Walks recursively down a filepath, creating symlinks as needed based on a reference "other" root directory
+        """
+        for childpath in parentpath.iterdir():
+            symlink_path = Path(str(childpath).replace(current_root, target_root))
+            if all([childpath.exists(), childpath.is_dir()]):
+                symlink_path.mkdir(parents=True, exist_ok=True)
+                make_symlinks(childpath, current_root, target_root, overwrite_links)
+            elif all([childpath.exists(), childpath.is_file(), overwrite_links]):
+                if symlink_path.exists():
+                    symlink_path.unlink(missing_ok=True)
+                symlink_path.symlink_to(childpath)
+            elif all([childpath.exists(), childpath.is_file(), not overwrite_links]):
+                if not symlink_path.exists():
+                    symlink_path.symlink_to(childpath)
+            else:
+                continue
+
+    def make_reallinks(parentpath: Path, current_root: str, target_root: str, overwrite_links: bool = overwrite):
+        """
+        Walks recursively down a filepath, copying files & dirs as needed based on a reference "other" root directory
+        """
+        for childpath in parentpath.iterdir():
+            reallink_path = Path(str(childpath).replace(current_root, target_root))
+            if all([childpath.exists(), childpath.is_dir()]):
+                reallink_path.mkdir(parents=True, exist_ok=True)
+                make_reallinks(childpath, current_root, target_root, overwrite_links)
+            elif all([childpath.exists(), childpath.is_file(), overwrite_links]):
+                if reallink_path.exists():
+                    reallink_path.unlink(missing_ok=True)
+                copyfile(src=childpath, dst=reallink_path)
+            elif all([childpath.exists(), childpath.is_file(), not overwrite_links]):
+                if not reallink_path.exists():
+                    copyfile(src=childpath, dst=reallink_path)
+            else:
+                continue
+
+    # Account for typing
+    if isinstance(merge_root, str):
+        merge_root = Path(merge_root)
+    if not merge_root.exists():
+        merge_root.mkdir(parents=True)
+
+    # Iterate over the analysis directories
+    for root in roots:
+        if isinstance(root, str):
+            root = Path(root)
+        if symbolic:
+            make_symlinks(parentpath=root, current_root=str(root),
+                          target_root=str(merge_root), overwrite_links=symbolic)
+        else:
+            make_reallinks(parentpath=root, current_root=str(root),
+                           target_root=str(merge_root), overwrite_links=symbolic)
