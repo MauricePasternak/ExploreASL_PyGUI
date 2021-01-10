@@ -883,7 +883,7 @@ class xASL_Executor(QMainWindow):
                 # Remember to re-activate widgets
                 self.set_widgets_activation_states(True)
                 return
-            progressbar.reset()
+            progressbar.reset_colnames()
             progressbar.setMaximum(workload)
             progressbar.setMinimum(0)
             progressbar.setValue(0)

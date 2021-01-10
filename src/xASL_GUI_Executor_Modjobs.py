@@ -1,6 +1,6 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import Qt, QFont, QIcon
-from PySide2.QtCore import Signal, QSize
+from PySide2.QtCore import Signal, QSize, Slot
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
 from src.xASL_GUI_HelperFuncs_DirOps import *
 import pandas as pd
@@ -399,185 +399,229 @@ class xASL_GUI_TSValter(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
+
+        # Main Widget attributes
         self.parent = parent
         self.config = parent.config
-        self.target_dir = self.parent.le_modjob.text()
+        self.target_dir: str = self.parent.le_modjob.text()
         self.setWindowFlag(Qt.Window)
         self.setWindowTitle("Alter participants.tsv contents")
-        self.mainlay = QVBoxLayout(self)
+        self.resize(600, 600)
 
-        # Misc variables
+        # Misc attributes
         self.default_tsvcols = []
-        self.default_covcols = []
+        self.default_metacols = []
+        self.df_metadata = pd.DataFrame()
+        self.df_parttsv = pd.DataFrame()
+        self.df_backupmetadata = pd.DataFrame()
+        self.df_backupparttsv = pd.DataFrame()
+        self.metadatafile_duringalter: str = ""
 
-        # First section, the loading of the covariate file
-        self.formlay_covfile = QFormLayout()
-        self.hlay_covfile = QHBoxLayout()
-        self.le_covfile = DandD_FileExplorer2LineEdit(acceptable_path_type="File",
-                                                      supported_extensions=[".tsv", ".xlsx", ".csv"])
-        self.le_covfile.textChanged.connect(self.load_covariates_data)
-        self.btn_covfile = QPushButton("...", self)
-        self.hlay_covfile.addWidget(self.le_covfile)
-        self.hlay_covfile.addWidget(self.btn_covfile)
-        self.formlay_covfile.addRow("Covariates File", self.hlay_covfile)
+        # Create the Widget
+        self.Setup_UI_TSValter()
 
-        # Second section, the Drag and Drop listviews
-        self.hlay_dandcols = QHBoxLayout()
-        self.vlay_covcols = QVBoxLayout()
-        self.lab_covcols = QLabel(text="Covariates")
-        self.list_covcols = QListWidget(self)
-        self.list_covcols.setDragEnabled(True)  # This will have covariate names dragged from it
-        self.list_covcols.setDefaultDropAction(Qt.MoveAction)
-        self.vlay_covcols.addWidget(self.lab_covcols)
-        self.vlay_covcols.addWidget(self.list_covcols)
+        # Followup
+        self.btn_reset.setEnabled(False)
+        self.btn_altertsv.setEnabled(False)
+        if not (Path(self.target_dir) / "participants_orig.tsv").exists():
+            self.btn_revert.setEnabled(False)
+        self.load_parttsvfile()
 
-        self.vlay_tsvcols = QVBoxLayout()
-        self.lab_tsvcols = QLabel(text="TSV Variables")
-        self.list_tsvcols = ColnamesDragDrop_ListWidget(self)
-        self.list_tsvcols.setAcceptDrops(True)  # This will have covariate names dropped into it
-        self.vlay_tsvcols.addWidget(self.lab_tsvcols)
-        self.vlay_tsvcols.addWidget(self.list_tsvcols)
+    def Setup_UI_TSValter(self):
+        self.mainlay = QVBoxLayout(self)
+        self.hlay_listgrps = QHBoxLayout()  # Container holding the
 
-        self.hlay_dandcols.addLayout(self.vlay_covcols)
-        self.hlay_dandcols.addLayout(self.vlay_tsvcols)
+        # Group for loading in metadata
+        self.grp_metadatafile = QGroupBox("Load Metadata")
+        self.formlay_metadatafile = QFormLayout(self.grp_metadatafile)
+        self.hlay_metadatafile = QHBoxLayout()
+        self.le_metadatafile = DandD_FileExplorer2LineEdit(acceptable_path_type="File",
+                                                           supported_extensions=[".csv", ".tsv", ".xlsx"])
+        self.btn_metadatafile = QPushButton("...", clicked=self.get_metadatafile)
+        self.hlay_metadatafile.addWidget(self.le_metadatafile)
+        self.hlay_metadatafile.addWidget(self.btn_metadatafile)
+        self.btn_loadmetadata = QPushButton("Load Metadata", clicked=self.load_metadatafile)
+        self.formlay_metadatafile.addRow("Metadata Filepath", self.hlay_metadatafile)
+        self.formlay_metadatafile.addRow(self.btn_loadmetadata)
 
-        # Third section, just the main buttons
-        self.btn_altertsv = QPushButton("Commit changes", clicked=self.commit_changes)
-        self.btn_reset = QPushButton("Reset to original participants.tsv", clicked=self.reset_changes)
+        # Group for holding the widgets associated with the metadata columns
+        self.grp_metadatacols = QGroupBox("Metadata Columns")
+        self.vlay_metadatacols = QVBoxLayout(self.grp_metadatacols)
+        self.lst_metadata = QListWidget()
+        self.lst_metadata.setDragEnabled(True)
+        self.lst_metadata.setDefaultDropAction(Qt.MoveAction)
+        self.le_metadata_subjectcol = QLineEdit(placeholderText="Indicate the metadata subject column",
+                                                clearButtonEnabled=True)
+        self.le_metadata_subjectcol.textChanged.connect(self.is_ready_merge)
+        self.vlay_metadatacols.addWidget(self.lst_metadata)
+        self.vlay_metadatacols.addWidget(self.le_metadata_subjectcol)
 
-        self.mainlay.addLayout(self.formlay_covfile)
-        self.mainlay.addLayout(self.hlay_dandcols)
-        self.mainlay.addWidget(self.btn_altertsv)
+        # Group for holding the widgets associated with the participants.tsv columns
+        self.grp_parttsvcols = QGroupBox("Participants.tsv Columns")
+        self.vlay_parttsvcols = QVBoxLayout(self.grp_parttsvcols)
+        self.lst_parttsv = ColnamesDragDrop_ListWidget()
+        self.lst_parttsv.setAcceptDrops(True)
+        self.lst_parttsv.signal_received_item.connect(self.set_reset_enabled)
+        self.lst_parttsv.signal_received_item.connect(self.is_ready_merge)
+        self.le_parttsv_subjectcol = QLineEdit(text="participant_id",
+                                               placeholderText="Indicate the participants.tsv subject column",
+                                               clearButtonEnabled=True)
+        self.le_parttsv_subjectcol.textChanged.connect(self.is_ready_merge)
+        self.vlay_parttsvcols.addWidget(self.lst_parttsv)
+        self.vlay_parttsvcols.addWidget(self.le_parttsv_subjectcol)
+
+        # Remainder for holding buttons to perform certain functions
+        self.btn_reset = QPushButton("Reset", clicked=self.reset_colnames)
+        self.btn_altertsv = QPushButton("Alter participants.tsv", clicked=self.alter_tsv)
+        self.btn_revert = QPushButton("Emergency Revert", clicked=self.revert)
+
+        # Add widgets to their respective layouts
+        self.mainlay.addWidget(self.grp_metadatafile)
+        self.hlay_listgrps.addWidget(self.grp_metadatacols)
+        self.hlay_listgrps.addWidget(self.grp_parttsvcols)
+        self.mainlay.addLayout(self.hlay_listgrps)
         self.mainlay.addWidget(self.btn_reset)
+        self.mainlay.addWidget(self.btn_altertsv)
+        self.mainlay.addWidget(self.btn_revert)
 
-        # Once the widget UI is set up, load in the tsv data
-        self.load_tsv_data()
-
-    def reset_changes(self):
-        # If changes have already been committed, remove the current participants_orig.tsv and rename the _orig backup
-        # back into participants.tsv, thereby restoring things to normal
-        part_orig_path = Path(self.target_dir) / "participants_orig.tsv"
-        part_path = part_orig_path.with_name("participants.tsv")
-        if part_orig_path.exists():
-            part_path.unlink(missing_ok=True)
-            part_orig_path.rename(part_path)
-
-        # Restore the lists
-        self.list_covcols.clear()
-        self.list_covcols.addItems(self.default_covcols)
-        self.load_tsv_data()
-
-    def load_tsv_data(self):
-        part_path = Path(self.target_dir) / "particiants.tsv"
-        tsv_df = pd.read_csv(part_path, sep='\t')
-        tsv_df.drop(labels=[col for col in tsv_df.columns if "Unnamed" in col], axis=1, inplace=True)
-        self.tsv_df = tsv_df
-
-        # Set the listwidget to contain the column names here
-        tsv_colnames = self.tsv_df.columns.tolist()
-
-        # Re-define the loaded data as the new defaults
-        self.default_tsvcols = tsv_colnames
-
-        # In case this is a re-load, clear the previous items in this list an try again
-        self.list_tsvcols.clear()
-        self.list_tsvcols.addItems(tsv_colnames)
-
-    def load_covariates_data(self, cov_filepath: str):
-        if cov_filepath == "":
-            return
-
-        cov_filepath = Path(cov_filepath)
-
-        # Prevent loading of the participants.tsv file itself as covariates
-        if cov_filepath.name in ["participants.tsv", "participants_orig.tsv"]:
-            self.le_covfile.clear()
-            return
-
-        # Note to self: no further QC checks needed because the le_covfile is a DandDFileExplorer2LineEdit;
-        # this will already have the "File" and supported_extensions addressed
-
-        # Load in the data
-        if cov_filepath.name.endswith('.tsv'):
-            df = pd.read_csv(cov_filepath, sep='\t')
-        elif cov_filepath.name.endswith('.csv'):
-            df = pd.read_csv(cov_filepath)
+    def load_parttsvfile(self, from_reset: bool = False):
+        if from_reset:
+            path_parttsvfile = Path(self.target_dir, "participants_orig.tsv")
         else:
-            df = pd.read_excel(cov_filepath)
+            path_parttsvfile = Path(self.target_dir, "participants.tsv")
+        self.df_parttsv: pd.DataFrame = robust_read_csv(path_parttsvfile)
+        self.lst_parttsv.clear()
+        self.lst_parttsv.addItems(self.df_parttsv.columns)
+        self.default_tsvcols = self.df_parttsv.columns.tolist()
+        self.is_ready_merge()
 
-        # Second set of checks: Dataframe must be the same length for proper concatenation
-        if len(df) != len(self.tsv_df):
-            QMessageBox().warning(self, "Incompatible Dataframes",
-                                  f"The number of entires of the covariates dataframe: {len(df)}\n"
-                                  f"did not equal the number of entries in participants.tsv: {len(self.tsv_df)}",
-                                  QMessageBox.Ok)
-            self.le_covfile.clear()
+    def get_metadatafile(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select the Metadata File",
+                                              self.target_dir, "Data Files (*.tsv *.csv *.xlsx)")
+        if path == "":
+            return
+        path = Path(path).resolve()
+        self.le_metadatafile.setText(str(path))
+
+    def load_metadatafile(self, from_reset: bool = False):
+        if from_reset:
+            meta_path = Path(self.metadatafile_duringalter).resolve()
+        else:
+            meta_path = Path(self.le_metadatafile.text()).resolve()
+        if any([not meta_path.exists(), meta_path.is_dir()]):
+            QMessageBox.warning(self, "Could not load metadata",
+                                "You have indicated either a non-existent path or a directory", QMessageBox.Ok)
+            return
+        self.df_metadata: pd.DataFrame = robust_read_csv(meta_path)
+        self.lst_metadata.clear()
+        self.lst_metadata.addItems(self.df_metadata.columns)
+        self.default_metacols = self.df_metadata.columns.tolist()
+        self.is_ready_merge()
+
+    def is_ready_merge(self):
+        meta_path = Path(self.le_metadatafile.text()).resolve()
+
+        if any([not meta_path.exists(), meta_path.is_dir(),
+                self.le_metadata_subjectcol.text() not in self.df_metadata.columns,
+                self.le_parttsv_subjectcol.text() not in self.df_parttsv.columns,
+                len(self.get_current_parttsvcolnames() - set(self.default_tsvcols)) == 0]):
+            self.btn_altertsv.setEnabled(False)
+            return
+        self.btn_altertsv.setEnabled(True)
+
+    def get_current_metacolnames(self):
+        return {self.lst_metadata.item(idx).text() for idx in range(self.lst_metadata.count())}
+
+    def get_current_parttsvcolnames(self):
+        return {self.lst_parttsv.item(idx).text() for idx in range(self.lst_parttsv.count())}
+
+    @Slot()
+    def set_reset_enabled(self):
+        if not self.btn_reset.isEnabled():
+            self.btn_reset.setEnabled(True)
+
+    def reset_colnames(self):
+        print(f"Resetting back to established default metadata columns and default participants.tsv columns")
+        self.lst_parttsv.clear()
+        self.lst_parttsv.addItems(self.default_tsvcols)
+        self.lst_metadata.clear()
+        self.lst_metadata.addItems(self.default_metacols)
+        self.le_metadata_subjectcol.clear()
+        self.btn_reset.setEnabled(False)  # Prevent False resetting
+
+    def alter_tsv(self):
+
+        # Last Sanity Check - Does the choice of SUBJECT columns make sense?
+        subs_from_meta = set(self.df_metadata[self.le_metadata_subjectcol.text()].unique())
+        subs_from_parttsv = set(self.df_parttsv[self.le_parttsv_subjectcol.text()].unique())
+        if len(subs_from_meta.intersection(subs_from_parttsv)) == 0:
+            QMessageBox.warning(self, "Imminent Bad Merge",
+                                "No subjects from the indicated metadata column could be found in the participants.tsv "
+                                "subject column. Cancelling update.\n\nPlease ensure you have listed the correct "
+                                "subject columns or that the subject labelling is consistent between your metadata "
+                                "and participants.tsv.", QMessageBox.Ok)
             return
 
-        # Drop any columns already found in the participants.tsv df
-        for col in df.columns:
-            if col in self.tsv_df.columns.tolist():
-                df.drop(labels=col, axis=1, inplace=True)
+        # Prepare certain variables in the event of a revert
+        self.metadatafile_duringalter = self.le_metadatafile.text()
+        self.df_backupmetadata: pd.DataFrame = self.df_metadata.copy()
+        self.df_backupparttsv: pd.DataFrame = self.df_parttsv.copy()
 
-        self.cov_df = df
+        # Get the columns that are needed for merging, subset the metadata, then merge
+        which_transfer_cols = self.get_current_parttsvcolnames() - set(self.default_tsvcols)
+        meta_subset = self.df_metadata.loc[:, list(which_transfer_cols) + [self.le_metadata_subjectcol.text()]]
+        merge_df = pd.merge(left=self.df_parttsv, right=meta_subset,
+                            left_on=self.le_parttsv_subjectcol.text(),
+                            right_on=self.le_metadata_subjectcol.text(),
+                            how="left", suffixes=("_from_meta", "_from_participants"))
+        merge_df.drop(self.le_metadata_subjectcol.text(), axis=1, inplace=True)
 
-        # Set the listwidget to contain the column names here
-        cov_colnames = self.cov_df.columns.tolist()
-        self.list_covcols.clear()
-        self.list_covcols.addItems(cov_colnames)
-        self.default_covcols = cov_colnames
+        # Save backup and new merge to their respective files
+        self.df_backupparttsv.to_csv(Path(self.target_dir) / "participants_orig.tsv", sep="\t", index=False)
+        merge_df.to_csv(Path(self.target_dir) / "participants.tsv", sep="\t", index=False)
 
-        # Also reset the tsv columns
-        self.list_tsvcols.clear()
-        print(f"default tsv cols: {self.default_tsvcols}")
-        self.list_tsvcols.addItems(self.default_tsvcols)
+        QMessageBox.information(self, "Successfully updated participants.tsv",
+                                "participants.tsv has been updated with the indicated metadata columns. "
+                                "A backup of the previous content has been saved as participants_orig.tsv",
+                                QMessageBox.Ok)
 
-    def commit_changes(self):
-        commit_df = pd.DataFrame()
+        self.btn_altertsv.setEnabled(False)
+        self.btn_revert.setEnabled(True)
 
-        # Iterate over the labels in the tsv listwidget.
-        for idx in range(self.list_tsvcols.count()):
-            colname = self.list_tsvcols.item(idx).text()
+    def revert(self):
+        if not (Path(self.target_dir) / "participants_orig.tsv").exists():
+            QMessageBox.warning(self, "No participants_orig.tsv file found",
+                                "Could not perform a revert without the expected backup file", QMessageBox.Ok)
+            return
+        # Restore the old file
+        (Path(self.target_dir) / "participants.tsv").unlink()
 
-            # Check which dataframe it is in, then add that dataframe's column contents to the commit_df
-            if colname not in self.tsv_df.columns:
-                commit_df[colname] = self.cov_df[colname].values
-            else:
-                commit_df[colname] = self.tsv_df[colname].values
+        # Load from the restored file
+        self.load_parttsvfile(from_reset=True)
+        self.load_metadatafile(from_reset=True)
+        self.le_metadata_subjectcol.clear()
+        (Path(self.target_dir) / "participants_orig.tsv").rename(target=Path(self.target_dir) / "participants.tsv")
 
-        # If the _orig backup hasn't been made from the original, make it at this point in time.
-        part_orig_path = Path(self.target_dir) / "participants_orig.tsv"
-        part_path = part_orig_path.with_name("participants.tsv")
-        if not part_orig_path.exists():
-            try:
-                part_path.replace(part_orig_path)
-            except OSError:
-                QMessageBox().warning(self,
-                                      "Could not create a backup participants_orig.tsv from the original",
-                                      "It is likely that participants.tsv is opened in another program. "
-                                      "Please close that program and try committing again.",
-                                      QMessageBox.Ok)
-                return
+        # Disabled buttons as necessary
+        self.metadatafile_duringalter = ""
+        self.btn_altertsv.setEnabled(False)
+        self.btn_revert.setEnabled(False)
+        self.btn_reset.setEnabled(False)
+        self.is_ready_merge()
 
-        # Overwrite participants.tsv
-        try:
-            commit_df.to_csv(path_or_buf=part_path, sep='\t', index=False)
-        except OSError:
-            QMessageBox().warning(self,
-                                  "Could not commit changes to participants.tsv",
-                                  "It is likely that the file is opened in another program. "
-                                  "Please close that program and try committing again.",
-                                  QMessageBox.Ok)
+        QMessageBox.information(self, "participants.tsv has been reset",
+                                "participants_orig.tsv was used to restore the previous iteration of participants.tsv",
+                                QMessageBox.Ok)
 
 
 class ColnamesDragDrop_ListWidget(QListWidget):
     """
     Class meant to drag and drop items between themselves
     """
-    alert_regex = Signal()  # This will be called in the ParmsMaker superclass to update its regex
+    signal_received_item = Signal()  # Signal sent whenever the widget accepts
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
         # self.setDragDropMode(QAbstractItemView.DragDrop)
         # self.setDefaultDropAction(Qt.MoveAction)  # this was the magic line
         # self.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -602,5 +646,6 @@ class ColnamesDragDrop_ListWidget(QListWidget):
             event.accept()
             for item in event.source().selectedItems():
                 self.addItem(item.text())
+            self.signal_received_item.emit()
         else:
             event.ignore()

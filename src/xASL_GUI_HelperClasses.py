@@ -56,20 +56,18 @@ class DandD_Graphing_ListWidget2LineEdit(QLineEdit):
 
 
 class DandD_FileExplorer2LineEdit(QLineEdit):
-    """
-    Modified QLineEdit to support accepting text drops from a file explorer
+    def __init__(self, parent=None, acceptable_path_type: str = "Both", supported_extensions: list = None, **kwargs):
+        """
+        Modified QLineEdit to support accepting text drops from a file explorer
 
-    Signature: DandD_FileExplorer2LineEdit(parent, acceptable_path_type, supported_extensions)
-        - parent = the parent widget
-        - acceptable_path_type = the type of filepath it will accept.
-            - "File",
+        :param parent: The parent widget of this modified QLineEdit
+        :param acceptable_path_type: The type of filepath this QLineEdit will accept:
+            - "File"
             - "Directory"
             - "Both"
-        - supported_extensions = a list of the filetypes that this lineedit will accept (i.e ".csv" , ".txt" , etc.),
-
-    """
-
-    def __init__(self, parent=None, acceptable_path_type: str = "Both", supported_extensions: list = None, **kwargs):
+        :param supported_extensions: a list of the filetypes that this lineedit will accept (i.e ".csv" , ".txt" )
+        :param kwargs: other keyword arguments that would be fed into the QLineEdit constructor
+        """
         super().__init__(parent, **kwargs)
         self.setAcceptDrops(True)
         self.path_type = acceptable_path_type
@@ -171,6 +169,9 @@ class DandD_FileExplorer2ListWidget(QListWidget):
     itemsAdded = Signal()  # Signal that is sent whenever items are successfully added to the widget
 
     def __init__(self, parent=None):
+        """
+        Modified QListWidget intended to receive multiple
+        """
         super().__init__(parent)
         self.setAcceptDrops(True)
 
