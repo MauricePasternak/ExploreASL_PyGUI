@@ -29,24 +29,25 @@ class xASL_GUI_MergeDirs(QWidget):
         self.list_btn_srcdirs: List[QPushButton] = []
 
         # Group 1 - Overall settings
-        self.grp_settings = QGroupBox("Merge Settings")
+        self.grp_settings = QGroupBox(title="Merge Settings")
         self.formlay_settings = QFormLayout(self.grp_settings)
         (self.hlay_mergedst, self.le_mergedst,
-         self.btn_mergedirs) = self.make_le_btn_pair("Specify the path to the merge directory",
-                                                     self.select_dir, self.can_merge)
+         self.btn_mergedst) = self.make_le_btn_pair(le_placetxt="Specify the path to the merge directory",
+                                                    btnfunc=self.select_dir, lefunc=self.can_merge)
         self.le_mergedst.setText(default_mergedir)
         self.spin_nsrcdirs = QSpinBox(minimum=2, singleStep=1)
         self.spin_nsrcdirs.valueChanged.connect(self.add_remove_srcdirs)
         self.chk_symlinks = QCheckBox(checked=True)
         self.chk_overwrite = QCheckBox(checked=False)
         self.formlay_settings.addRow(self.hlay_mergedst)
-        for widget, desc in zip([self.spin_nsrcdirs, self.chk_symlinks, self.chk_overwrite],
-                                ["Number of Studies to Merge", "Create Symlinks?", "Overwrite Existing?"]):
+        for widget, desc, tipkey in zip([self.spin_nsrcdirs, self.chk_symlinks, self.chk_overwrite],
+                                        ["Number of Studies to Merge", "Create Symlinks?", "Overwrite Existing?"],
+                                        ["spin_nsrcdirs", "chk_symlinks", "chk_overwrite"]):
             self.formlay_settings.addRow(desc, widget)
-        self.mainlay.addWidget(self.grp_settings)
+            widget.setToolTip(self.parent.exec_tips["Modjob_RerunPrep"][tipkey])
 
         # Group 2 - Source Directories
-        self.grp_srcdirs = QGroupBox("Directories to Merge")
+        self.grp_srcdirs = QGroupBox(title="Directories to Merge")
         self.vlay_srcdirs_lvl1 = QVBoxLayout(self.grp_srcdirs)
         self.vlay_srcdirs_lvl1.setContentsMargins(0, 0, 0, 0)
         self.scroll_srcdirs = QScrollArea()
@@ -57,10 +58,9 @@ class xASL_GUI_MergeDirs(QWidget):
         self.vlay_srcdirs_lvl2 = QVBoxLayout(self.cont_srcdirs)
         self.vlay_srcdirs_lvl2.addStretch(1)
 
-        self.mainlay.addWidget(self.grp_srcdirs)
         self.add_remove_srcdirs(2)
 
-        # Finishing Touch
+        # Finishing Widgets
         self.btn_mergedirs = QPushButton("Merge Directories", clicked=self.merge_dirs)
         self.btn_mergedirs.setEnabled(False)
         btn_font = QFont()
@@ -70,7 +70,14 @@ class xASL_GUI_MergeDirs(QWidget):
         merge_icon = QIcon(str(Path(self.parent.config["ProjectDir"]) / "media" / "merge_ios_100ax100.png"))
         self.btn_mergedirs.setIcon(merge_icon)
         self.btn_mergedirs.setIconSize(QSize(50, 50))
+
+        # Adding groups to main layout and adding tooltips
+        self.mainlay.addWidget(self.grp_settings)
+        self.mainlay.addWidget(self.grp_srcdirs)
         self.mainlay.addWidget(self.btn_mergedirs)
+        for widget, tipkey in zip([self.le_mergedst, self.btn_mergedirs],
+                                  ["le_mergedst", "btn_mergedirs"]):
+            widget.setToolTip(self.parent.exec_tips["Modjob_RerunPrep"][tipkey])
 
     def add_remove_srcdirs(self, n_dirs: int):
         # Add widgets
@@ -78,6 +85,7 @@ class xASL_GUI_MergeDirs(QWidget):
             for _ in range(abs(n_dirs - len(self.list_le_srcdirs))):
                 hlay, le, btn = self.make_le_btn_pair("Specify the path to a study directory", self.select_dir,
                                                       self.can_merge)
+                le.setToolTip(self.parent.exec_tips["Modjob_RerunPrep"]["le_studypath"])
                 self.list_le_srcdirs.append(le)
                 self.list_hlay_srcdirs.append(hlay)
                 self.list_btn_srcdirs.append(btn)
@@ -165,7 +173,7 @@ class xASL_GUI_ModSidecars(QWidget):
         self.mainlay = QVBoxLayout(self)
 
         # Grp 1 - Editing Jsons from a csv config file
-        self.grp_fromfile = QGroupBox("Specify config from a CSV file", checkable=True, checked=True)
+        self.grp_fromfile = QGroupBox(title="Specify config from a CSV file", checkable=True, checked=True)
         self.grp_fromfile.clicked.connect(partial(self.ctrl_which_option, widget=self.grp_fromfile))
         self.grp_fromfile.clicked.connect(self.is_ready)
         self.formlay_fromfile = QFormLayout(self.grp_fromfile)
@@ -180,11 +188,11 @@ class xASL_GUI_ModSidecars(QWidget):
         self.formlay_fromfile.addRow(self.hlay_fromfile)
 
         # Grp 2 - Editing Jsons from a list of subjects and the indicated key + value
-        self.grp_fromlist = QGroupBox("Specify subject list", checkable=True, checked=False)
+        self.grp_fromlist = QGroupBox(title="Specify subject list", checkable=True, checked=False)
         self.grp_fromlist.clicked.connect(partial(self.ctrl_which_option, widget=self.grp_fromlist))
         self.grp_fromlist.clicked.connect(self.is_ready)
         self.formlay_fromlist = QFormLayout(self.grp_fromlist)
-        self.lab_subs = QLabel("Drag and drop the directories of the subjects\n"
+        self.lab_subs = QLabel(text="Drag and drop the directories of the subjects\n"
                                "whose json sidecars should be altered")
         self.lst_subs = DandD_FileExplorer2ListWidget()
         self.lst_subs.itemsAdded.connect(self.le_fromfile.clear)
@@ -198,7 +206,7 @@ class xASL_GUI_ModSidecars(QWidget):
             self.formlay_fromlist.addRow(widget)
 
         # Grp 3 - Other Settings
-        self.grp_runsettings = QGroupBox("Run Settings")
+        self.grp_runsettings = QGroupBox(title="Run Settings")
         self.formlay_runsettings = QFormLayout(self.grp_runsettings)
         self.cmb_actiontype = QComboBox()
         self.cmb_actiontype.addItems(["Add/Edit a field", "Remove a field"])
@@ -220,6 +228,10 @@ class xASL_GUI_ModSidecars(QWidget):
         # Put it all together
         for grp in [self.grp_fromfile, self.grp_fromlist, self.grp_runsettings]:
             self.mainlay.addWidget(grp)
+
+        # Add tooltips
+        for tipkey, tiptext in self.parent.exec_tips["Modjob_ModSidecars"].items():
+            getattr(self, tipkey).setToolTip(tiptext)
 
     def ctrl_which_option(self, widget):
         if widget == self.grp_fromlist:
@@ -432,7 +444,7 @@ class xASL_GUI_TSValter(QWidget):
         self.hlay_listgrps = QHBoxLayout()  # Container holding the
 
         # Group for loading in metadata
-        self.grp_metadatafile = QGroupBox("Load Metadata")
+        self.grp_metadatafile = QGroupBox(title="Load Metadata")
         self.formlay_metadatafile = QFormLayout(self.grp_metadatafile)
         self.hlay_metadatafile = QHBoxLayout()
         self.le_metadatafile = DandD_FileExplorer2LineEdit(acceptable_path_type="File",
@@ -445,7 +457,7 @@ class xASL_GUI_TSValter(QWidget):
         self.formlay_metadatafile.addRow(self.btn_loadmetadata)
 
         # Group for holding the widgets associated with the metadata columns
-        self.grp_metadatacols = QGroupBox("Metadata Columns")
+        self.grp_metadatacols = QGroupBox(title="Metadata Columns")
         self.vlay_metadatacols = QVBoxLayout(self.grp_metadatacols)
         self.lst_metadata = QListWidget()
         self.lst_metadata.setDragEnabled(True)
@@ -457,7 +469,7 @@ class xASL_GUI_TSValter(QWidget):
         self.vlay_metadatacols.addWidget(self.le_metadata_subjectcol)
 
         # Group for holding the widgets associated with the participants.tsv columns
-        self.grp_parttsvcols = QGroupBox("Participants.tsv Columns")
+        self.grp_parttsvcols = QGroupBox(title="Participants.tsv Columns")
         self.vlay_parttsvcols = QVBoxLayout(self.grp_parttsvcols)
         self.lst_parttsv = ColnamesDragDrop_ListWidget()
         self.lst_parttsv.setAcceptDrops(True)
@@ -483,6 +495,10 @@ class xASL_GUI_TSValter(QWidget):
         self.mainlay.addWidget(self.btn_reset)
         self.mainlay.addWidget(self.btn_altertsv)
         self.mainlay.addWidget(self.btn_revert)
+
+        # Add tooltips
+        for tipkey, tiptext in self.parent.exec_tips["Modjob_TSValter"].items():
+            getattr(self, tipkey).setToolTip(tiptext)
 
     def load_parttsvfile(self, from_reset: bool = False):
         if from_reset:

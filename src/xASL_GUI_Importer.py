@@ -108,6 +108,8 @@ class xASL_GUI_Importer(QMainWindow):
         # The importer UI setup
         self.mainsplit = QSplitter(Qt.Vertical)
         handle_path = str(Path(self.config["ProjectDir"]) / "media" / "3_dots_horizontal.svg")
+        if system() == "Windows":
+            handle_path = handle_path.replace("\\", "/")
         handle_style = 'QSplitter::handle {image: url(' + handle_path + ');}'
         self.mainsplit.setStyleSheet(handle_style)
         self.mainsplit.setHandleWidth(20)

@@ -886,7 +886,7 @@ def create_import_summary(import_summaries: list, config: dict):
     df = df.reindex(columns=appropriate_ordering)
     df = df.sort_values(by=["scan", "subject", "visit", "run"]).reset_index(drop=True)
     print(df)
-    now_str = datetime.now().strftime("%a-%b-%d-%Y %H:%M:%S")
+    now_str = datetime.now().strftime("%a-%b-%d-%Y %H-%M-%S")
     try:
         df.to_csv(analysis_dir / f"import_summary_{now_str}.tsv", sep='\t', index=False, na_rep='n/a')
     except PermissionError:

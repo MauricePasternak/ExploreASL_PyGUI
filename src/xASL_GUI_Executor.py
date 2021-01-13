@@ -23,6 +23,8 @@ import subprocess
 from shutil import rmtree
 from pathlib import Path
 from platform import system
+import signal
+from psutil import Process, NoSuchProcess
 
 
 class ExploreASL_WorkerSignals(QObject):
@@ -131,7 +133,26 @@ class ExploreASL_Worker(QRunnable):
         if self.is_running:
             if self.proc.poll() is None:
                 print("THE WORKER WAS FOUND TO STILL BE RUNNING. ATTEMPTING TO TERMINATE THE PROCESS NOW!")
-                self.proc.terminate()
+                # self.proc.terminate()
+
+                if system() == "Windows":
+                    self.kill_child_processes(self.proc.pid)
+                else:
+                    self.proc.kill()
+
+    # Developer Rant: Why the f*** can't the subprocess module properly send a SIGKILL signal to child processes
+    # on Windows like it does on POSIX?
+    # Credit to Neil from Stackoverflow (https://stackoverflow.com/users/14193/neil) for this fix
+    @staticmethod
+    def kill_child_processes(parent_pid, sig=signal.SIGTERM):
+        try:
+            parent = Process(parent_pid)
+        except NoSuchProcess as proc_execp:
+            print(f"{proc_execp}")
+            return
+        children = parent.children(recursive=True)
+        for process in children:
+            process.send_signal(sig)
 
 
 # noinspection PyCallingNonCallable,PyAttributeOutsideInit,PyCallByClass
@@ -210,6 +231,8 @@ class xASL_Executor(QMainWindow):
         self.splitter_rightside.setHandleWidth(25)
         self.splitter_leftside.setHandleWidth(25)
         handle_path = str(Path(self.config["ProjectDir"]) / "media" / "3_dots_horizontal.svg")
+        if system() == "Windows":
+            handle_path = handle_path.replace("\\", "/")
         handle_style = 'QSplitter::handle {image: url(' + handle_path + ');}'
         self.splitter_rightside.setStyleSheet(handle_style)
         self.splitter_leftside.setStyleSheet(handle_style)
@@ -317,7 +340,7 @@ class xASL_Executor(QMainWindow):
                 inner_btn_stop.setToolTip("Stop this study being run")
 
                 # Package it all in another FormLayout
-                inner_grp = QGroupBox(f"Study {inner_btn_browsedirs.row_idx}")
+                inner_grp = QGroupBox(title=f"Study {inner_btn_browsedirs.row_idx}")
                 inner_formlay = QFormLayout(inner_grp)
                 inner_formlay.addRow("Assigned Number of Cores", inner_cmb_ncores)
                 inner_hbox = QHBoxLayout()
@@ -635,7 +658,7 @@ class xASL_Executor(QMainWindow):
                       ["\n########################", "\nSpecific Stdout Errors:\n"] + specific_stdout_msg + \
                       ["\n########################", "\nSpecific Stderr Errors:\n"] + specific_stderr_msg
 
-                err_write_date_str = datetime.now().strftime("%a-%b-%d-%Y %H:%M:%S")
+                err_write_date_str = datetime.now().strftime("%a-%b-%d-%Y %H-%M-%S")
                 with open(study_dir / f"{err_write_date_str} ExploreASL run - errors.txt", 'w') as writer:
                     writer.writelines(msg)
 
@@ -883,7 +906,8 @@ class xASL_Executor(QMainWindow):
                 # Remember to re-activate widgets
                 self.set_widgets_activation_states(True)
                 return
-            progressbar.reset_colnames()
+            # progressbar.reset_colnames()
+            progressbar.setMaximum(workload)
             progressbar.setMaximum(workload)
             progressbar.setMinimum(0)
             progressbar.setValue(0)

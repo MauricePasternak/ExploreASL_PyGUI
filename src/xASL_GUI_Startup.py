@@ -91,6 +91,7 @@ def startup():
                     if len(local_result) != 0:
                         local_match = regex.search(local_result[0])
                         if local_match:
+                            print(f"Located MATLAB version number: {local_match.group()}")
                             master_config["MATLABROOT"] = local_match.group()
                             version_is_located = True
                             break

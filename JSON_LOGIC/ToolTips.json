@@ -49,7 +49,25 @@
     "le_quantset": "Specify the vector of actions to perform during quantification:\n1) Apply ScaleSlopes ASL4D\n2) Apply ScaleSlopes M0\n3) Convert PWI a.u. to label\n4) Quantify M0 a.u.\n5) Perform division by M0",
     "cmb_m0_algorithm": "Specify whether to use the newer M0 processing algorithm or the standard one",
     "spinbox_gmscale": "Specify whether the M0 image should be multiplied by a specific factor.\nThis is useful when you have background suppression but no M0 image acquired\nwithout suppression. If you know the M0 scalefactor, you can use the control\nimage as M0 and apply this factor to scale back what was suppressed by the\nbackground suppression",
-    "le_fslpath": "Specify the path to the FSL bin directory\n(i.e. /usr/local/fsl/bin/fsl"
+    "chk_removespikes": "Specify whether images that are motion outliers should be\ndiscarded (checked) or left alone (unchecked)",
+    "spinbox_spikethres": "Specify the minimum T-statistic required to define a motion spike",
+    "chk_motioncorrect": "Specify whether to perform motion correction on the\nASL timeseries (checked) or omit this step (unchecked)",
+    "chk_deltempfiles": "Specify whether to delete temporary files created\nduring a pipeline (checked) or retain them (unchecked)",
+    "chk_skipnoflair": "Specify whether to omit the processing of any subjects\nmissing FLAIR acquisitions (checked) or proceed anyway (unchecked)",
+    "chk_skipnoasl": "Specify whether to omit the processing of any subjects\nmissing ASL acquisitions (checked) or proceed anyway (unchecked)",
+    "chk_skipnom0":  "Specify whether to omit the processing of any subjects\nmissing M0 acquisitions (checked) or proceed anyway (unchecked)",
+    "chk_uset1dartel": "Specify whether to use the DARTEL algorithm on T1 images (checked)\nor omit this step (unchecked)",
+    "chk_usepwidartel": "Specify whether to use the DARTEL algorithm on PWI images (checked)\nor omit this step (unchecked)",
+    "chk_usebilatfilter": "Specify whether to use a bilateral filter to fix high-temporal, low-spatial\nfrequency artifacts in the ASL timeseries (checked) or omit\nthis step (unchecked)",
+    "cmb_segmethod": "Specify which underlying software to use during T1 image segmentation",
+    "cmb_imgcontrast": "Specify which image contrast is used for registration",
+    "cmb_affineregbase": "Specify if the ASL-T1w rigid-body registration is followed up by an affine registration:\n1) Based on PWI CoV - affine registration is conditionally enabled based on the spatial CoV of the PWI\n2) Enabled - affine registration is always enabled\n3) Disabled - affine registration is always disabled",
+    "cmb_dctreg": "Specify whether to use DCT registration on top of affine registration",
+    "chk_regm0toasl": "Specify whether, if a separate M0 is available, to\nregister it to the mean control ASL image",
+    "chk_usemniasdummy": "Specify whether, if a T1w image is missing, to\nutilize the MNI template as a stand-in (checked)\nor omit this (unchecked)",
+    "le_fslpath": "Specify the path to the FSL bin directory\n(i.e. /usr/local/fsl/bin/fsl",
+    "btn_make_parms": "Generates the DataPar.json file",
+    "btn_load_parms": "Loads in an existent DataPar.json file to auto-fill in all avaliable widgets"
   },
   "Executor": {
     "inner_cmb_ncores": "Specify the number of cores to allocate to this study.\nImportant points:\n\t-DO NOT specify more cores than there are subjects for the study\n\t-DO NOT specify more than one core for a study that will have the \n\tPopulation Module run on it",
@@ -58,6 +76,31 @@
     "cmb_modjob": "Specify the type of re-run or pre-processing modification you'd like to perform.\nCurrently the following options are avaliable:\n\t'Re-run a study': Re-run parts of a previously-run study\n\t'Alter participants.tsv': Add metadata to the tsv file such that biasfields for\n\tthat metadata may be created when running the Population module",
     "Modjob_RerunPrep": {
       "lock_tree": "Indicate which parts of the pipeline should be re-run for which \nmodules/subjects/runs/etc.\nThis window will delete all created .status files with the lock\ndirectory for the selected folders & files. When ExploreASL is\nre-run, it will detect these missing .status files and interpret\nthat as a signal to re-run that particular section of the study's\npipeline."
+    },
+    "Modjob_MergeDirs": {
+      "spin_nsrcdirs": "Indicate the number of studies that should be merged together.",
+      "chk_symlinks": "Indicate whether the merge directory should be real directories (unchecked) or symbolic pointers to real files (checked).\nThe latter saves diskspace at the detriment of depending on the original file existing.",
+      "chk_overwrite": "Indicate whether existing files in the merge destination should be overwritten during the merge operation (checked) or skipped (unchecked).",
+      "le_mergedst": "Indicate the path to the merge directory.\nFor example: /home/jsmith/MergeStudies/derivatives",
+      "le_studypath": "Specify the filepath to the root folder of your study.\nFor example: /home/jsmith/MyStudy/derivatives"
+    },
+    "Modjob_ModSidecars": {
+      "le_fromfile": "Indicate the path to the .csv or .tsv file specifying key-values to insert\ninto the json sidecars of subjects specified within said file",
+      "lst_subs": "Drag and Drop the directories of the subjects whose sidecars\nshould be altered with the user-specified key and value",
+      "le_key": "The key (i.e. M0_GMScaleFactor) that should be inserted into json sidecars",
+      "le_value": "The value that the indicated key within the json sidecar should take on",
+      "cmb_actiontype": "The specific action the user wishes to perform on the json sidecars"
+    },
+    "Modjob_TSValter": {
+      "le_metadatafile": "Indicate the path to the metadata file (.csv, .tsv, or .xlsx)\nwhose values should be transferred into participants.tsv",
+      "btn_loadmetadata": "This will load in the metadata from the metadata file\nand display the column names within the list widget below",
+      "lst_metadata": "These are the column names detected in the metadata file.\nDrag and drop the columns whose data should be transferred\ninto the adjacent participants.tsv list widget",
+      "le_metadata_subjectcol": "This must be the name of the column describing\nsubjects in the metadata file",
+      "lst_parttsv": "These are the column names that will be saved to participants.tsv\nDrag and drop the column names from the metadata list widget\ninto this list widget to indicate which columns of\nmetadata should be transferred",
+      "le_parttsv_subjectcol": "This must be the name of the column describing\nsubjects in the participants.tsv file",
+      "btn_reset": "This will restore all columns moved from the metadata list\nto the participants.tsv list back to their original position",
+      "btn_altertsv": "This will alter participants.tsv with the new data from the metadata file",
+      "btn_revert": "In the event that the user wishes to completely undo a participants.tsv\nalteration, this will consume the backup participants_orig.tsv in order\nto restore the original."
     }
   },
   "Plotting": {

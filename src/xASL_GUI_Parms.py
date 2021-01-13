@@ -55,6 +55,9 @@ class xASL_Parms(QMainWindow):
 
         self.UI_Setup_Basic()
         self.UI_Setup_Advanced()
+        # With all widgets set, give them tooltips
+        for widget_name, tiptext in self.parms_tips.items():
+            getattr(self, widget_name).setToolTip(tiptext)
 
         # After all UI is set up, make certain connections
         self.le_study_dir.textChanged.connect(self.update_asl_json_sidecar_data)
@@ -65,49 +68,35 @@ class xASL_Parms(QMainWindow):
         self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = self.make_droppable_clearable_le(
             btn_connect_to=self.set_exploreasl_dir,
             default='')
-        self.le_easl_dir.setToolTip(self.parms_tips["le_easl_dir"])
         self.le_studyname = QLineEdit(text="My Study")
-        self.le_studyname.setToolTip(self.parms_tips["le_studyname"])
         self.chk_overwrite_for_bids = QCheckBox(checked=True)
-        self.chk_overwrite_for_bids.setToolTip(self.parms_tips["chk_overwrite_for_bids"])
         self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = self.make_droppable_clearable_le(
             btn_connect_to=self.set_study_dir,
             default='')
-        self.le_study_dir.setToolTip(self.parms_tips["le_study_dir"])
         self.le_study_dir.setPlaceholderText("Indicate the analysis directory filepath here")
         self.le_subregex = QLineEdit(text='\\d+')
         self.lst_included_subjects = DandD_FileExplorer2ListWidget()
         self.lst_included_subjects.itemsAdded.connect(self.update_regex)
-        self.lst_included_subjects.setToolTip(self.parms_tips["lst_included_subjects"])
         self.lst_included_subjects.setMinimumHeight(self.config["ScreenSize"][1] // 5)
         self.btn_included_subjects = QPushButton("Clear Subjects", clicked=self.clear_included)
         self.lst_excluded_subjects = DandD_FileExplorer2ListWidget()
-        self.lst_excluded_subjects.setToolTip(self.parms_tips["lst_excluded_subjects"])
         self.lst_excluded_subjects.setMinimumHeight(self.config["ScreenSize"][1] // 10)
         self.btn_excluded_subjects = QPushButton("Clear Excluded", clicked=self.clear_excluded)
         self.le_run_names = QLineEdit(text="ASL_1",
                                       placeholderText="Indicate run names, each separated by a comma and space")
-        self.le_run_names.setToolTip(self.parms_tips["le_run_names"])
         self.le_run_options = QLineEdit(placeholderText="Indicate option names, each separated by a comma and space")
-        self.le_run_options.setToolTip(self.parms_tips["le_run_options"])
         self.cmb_vendor = self.make_cmb_and_items(["Siemens", "Philips", "GE", "GE_WIP"])
-        self.cmb_vendor.setToolTip(self.parms_tips["cmb_vendor"])
         self.cmb_sequencetype = self.make_cmb_and_items(["3D GRaSE", "2D EPI", "3D Spiral"])
-        self.cmb_sequencetype.setToolTip(self.parms_tips["cmb_sequencetype"])
         self.cmb_sequencetype.currentTextChanged.connect(self.update_readout_dim)
         self.cmb_labelingtype = self.make_cmb_and_items(["Pulsed ASL", "Pseudo-continuous ASL", "Continuous ASL"])
-        self.cmb_labelingtype.setToolTip(self.parms_tips["cmb_labelingtype"])
         self.cmb_labelingtype.currentTextChanged.connect(self.autocalc_slicereadouttime)
         self.cmb_m0_isseparate = self.make_cmb_and_items(["Proton density scan (M0) was acquired",
                                                           "Use mean control ASL as proton density mimic"])
-        self.cmb_m0_isseparate.setToolTip(self.parms_tips["cmb_m0_isseparate"])
         self.cmb_m0_posinasl = self.make_cmb_and_items(
             ["M0 exists as a separate scan", "M0 is the first ASL control-label pair",
              "M0 is the first ASL scan volume", "M0 is the second ASL scan volume"])
-        self.cmb_m0_posinasl.setToolTip(self.parms_tips["cmb_m0_posinasl"])
         self.cmb_quality = self.make_cmb_and_items(["Low", "High"])
         self.cmb_quality.setCurrentIndex(1)
-        self.cmb_quality.setToolTip(self.parms_tips["cmb_quality"])
 
         for desc, widget in zip(["ExploreASL Directory", "Name of Study", "Analysis Directory",
                                  "Dataset is in BIDS format?",
@@ -140,19 +129,14 @@ class xASL_Parms(QMainWindow):
         self.vlay_seqparms, self.scroll_seqparms, self.cont_seqparms = self.make_scrollbar_area(self.grp_seqparms)
         self.formlay_seqparms = QFormLayout(self.cont_seqparms)
         self.cmb_nsup_pulses = self.make_cmb_and_items(["0", "2", "4", "5"], 1)
-        self.cmb_nsup_pulses.setToolTip(self.parms_tips["cmb_nsup_pulses"])
         self.cmb_readout_dim = self.make_cmb_and_items(["3D", "2D"])
-        self.cmb_readout_dim.setToolTip(self.parms_tips["cmb_readout_dim"])
         self.spinbox_initialpld = QDoubleSpinBox(maximum=2500, minimum=0, value=1800)
         self.spinbox_initialpld.valueChanged.connect(self.autocalc_slicereadouttime)
-        self.spinbox_initialpld.setToolTip(self.parms_tips["spinbox_initialpld"])
         self.spinbox_labdur = QDoubleSpinBox(maximum=2000, minimum=0, value=800)
         self.spinbox_labdur.valueChanged.connect(self.autocalc_slicereadouttime)
-        self.spinbox_labdur.setToolTip(self.parms_tips["spinbox_labdur"])
         self.hlay_slice_readout = QHBoxLayout()
         self.cmb_slice_readout = self.make_cmb_and_items(["Use Indicated Value", "Use Shortest TR"])
         self.spinbox_slice_readout = QDoubleSpinBox(maximum=1000, minimum=0, value=37)
-        self.spinbox_slice_readout.setToolTip(self.parms_tips["spinbox_slice_readout"])
         self.hlay_slice_readout.addWidget(self.cmb_slice_readout)
         self.hlay_slice_readout.addWidget(self.spinbox_slice_readout)
         for description, widget in zip(["Number of Suppression Pulses", "Readout Dimension",
@@ -167,17 +151,11 @@ class xASL_Parms(QMainWindow):
          self.cont_quantparms) = self.make_scrollbar_area(self.grp_quantparms)
         self.formlay_quantparms = QFormLayout(self.cont_quantparms)
         self.spinbox_lambda = QDoubleSpinBox(maximum=1, minimum=0, value=0.9, singleStep=0.01)
-        self.spinbox_lambda.setToolTip(self.parms_tips["spinbox_lambda"])
         self.spinbox_artt2 = QDoubleSpinBox(maximum=100, minimum=0, value=50, singleStep=0.1)
-        self.spinbox_artt2.setToolTip(self.parms_tips["spinbox_artt2"])
         self.spinbox_bloodt1 = QDoubleSpinBox(maximum=2000, minimum=0, value=1650, singleStep=0.1)
-        self.spinbox_bloodt1.setToolTip(self.parms_tips["spinbox_bloodt1"])
         self.spinbox_tissuet1 = QDoubleSpinBox(maximum=2000, minimum=0, value=1240, singleStep=0.1)
-        self.spinbox_tissuet1.setToolTip(self.parms_tips["spinbox_tissuet1"])
         self.cmb_ncomparts = self.make_cmb_and_items(["1", "2"], 0)
-        self.cmb_ncomparts.setToolTip(self.parms_tips["cmb_ncomparts"])
         self.le_quantset = QLineEdit(text="1 1 1 1 1")
-        self.le_quantset.setToolTip(self.parms_tips["le_quantset"])
         for description, widget in zip(["Lambda", "Arterial T2*", "Blood T1",
                                         "Tissue T1", "Number of Compartments", "Quantification Settings"],
                                        [self.spinbox_lambda, self.spinbox_artt2, self.spinbox_bloodt1,
@@ -189,9 +167,7 @@ class xASL_Parms(QMainWindow):
         self.scroll_m0parms.setMinimumHeight(self.config["ScreenSize"][1] // 16)
         self.formlay_m0parms = QFormLayout(self.cont_m0parms)
         self.cmb_m0_algorithm = self.make_cmb_and_items(["New Image Processing", "Standard Processing"], 0)
-        self.cmb_m0_algorithm.setToolTip(self.parms_tips["cmb_m0_algorithm"])
         self.spinbox_gmscale = QDoubleSpinBox(maximum=100, minimum=0.01, value=1, singleStep=0.01)
-        self.spinbox_gmscale.setToolTip(self.parms_tips["spinbox_gmscale"])
         for description, widget in zip(["M0 Processing Algorithm", "GM Scale Factor"],
                                        [self.cmb_m0_algorithm, self.spinbox_gmscale]):
             self.formlay_m0parms.addRow(description, widget)
@@ -221,8 +197,7 @@ class xASL_Parms(QMainWindow):
                                         "Skip Subjects without ASL", "Skip subjects without M0", "Use T1 DARTEL",
                                         "Use PWI DARTEL", "Use Bilateral Filter", "Segmentation Method",
                                         "Image Contrast used for", "Use Affine Registration", "Use DCT Registration",
-                                        "Register M0 to ASL",
-                                        "Use MNI as Dummy Template"],
+                                        "Register M0 to ASL", "Use MNI as Dummy Template"],
                                        [self.chk_removespikes, self.spinbox_spikethres, self.chk_motioncorrect,
                                         self.chk_deltempfiles, self.chk_skipnoflair, self.chk_skipnoasl,
                                         self.chk_skipnom0, self.chk_uset1dartel, self.chk_usepwidartel,
@@ -237,7 +212,6 @@ class xASL_Parms(QMainWindow):
         self.formlay_envparms = QFormLayout(self.cont_envparms)
         (self.hlay_fslpath, self.le_fslpath,
          self.btn_fslpath) = self.make_droppable_clearable_le(btn_connect_to=self.set_fslpath)
-        self.le_fslpath.setToolTip(self.parms_tips["le_fslpath"])
         fsl_filepath = which("fsl")
         if fsl_filepath is not None:
             self.le_fslpath.setText(str(Path(fsl_filepath)))

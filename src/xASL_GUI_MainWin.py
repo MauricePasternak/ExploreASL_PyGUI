@@ -13,7 +13,7 @@ import json
 
 
 # Explore ASL Main Window
-# by Maurice Pasternak @ 2020
+# by Maurice Pasternak @ 2020, 2021
 class xASL_MainWin(QMainWindow):
     def __init__(self, config):
         super().__init__()

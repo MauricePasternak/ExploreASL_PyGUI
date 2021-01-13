@@ -32,6 +32,9 @@ def robust_read_csv(df_path: Union[Path, str], **kwargs):
         df = pd.read_excel(df_path, **kwargs)
     else:
         return None
+    for column in df.columns:
+        if column.startswith("Unnamed:"):
+            df.drop(column, axis=1, inplace=True)
     return df
 
 
