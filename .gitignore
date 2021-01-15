@@ -10,7 +10,7 @@ xASL_GUI_run.sh
 .idea
 __pycache__
 *MRI_viewer.mp4
-/venv/
+venv
 
 # Pyinstaller-related paths
 output

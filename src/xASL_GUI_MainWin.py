@@ -98,7 +98,7 @@ class xASL_MainWin(QMainWindow):
 
         # Setup the actions of the File menu
         self.menu_file.addAction("Save Master Config", self.save_config)
-        self.menu_file.addAction("Select Analysis Directory", self.set_analysis_dir_frombtn)
+        self.menu_file.addAction("Select Default Study Directory", self.set_analysis_dir_frombtn)
         self.menu_file.addSeparator()
         self.menu_file.addAction("Exit", self.close)
 

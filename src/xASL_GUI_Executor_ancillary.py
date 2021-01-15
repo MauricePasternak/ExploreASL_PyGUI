@@ -4,7 +4,7 @@ import re
 from platform import system
 from itertools import chain
 from pprint import pprint
-from typing import List, Set
+from typing import List, Set, Tuple
 
 
 def initialize_all_lock_dirs(analysis_dir: Path, regex: re.Pattern, run_options: str, run_names: list):
@@ -109,16 +109,27 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
         return structuralmod_dict, status_files
 
     def get_asl_workload(analysis_directory, study_subjects, session_names, aslmod_dict,
-                         skip_if_no_asl, skip_if_no_m0, skip_if_no_flair, workload_translator):
+                         skip_if_no_asl, skip_if_no_m0, skip_if_no_flair, workload_translator,
+                         conditions: List[Tuple[str, bool]] = None):
+        if conditions is None:
+            conditions = []
         workload = ["020_RealignASL.status",
                     "030_RegisterASL.status",
                     "040_ResampleASL.status",
                     "050_PreparePV.status",
                     "060_ProcessM0.status",
-                    "070_Quantification.status",
-                    "080_CreateAnalysisMask.status",
+                    "070_CreateAnalysisMask.status",
+                    "080_Quantification.status",
                     "090_VisualQC_ASL.status",
                     "999_ready.status"]
+
+        # conditions is a list of tuples whose first element is a workload filename that may be impacted and whose
+        # second element is a boolean that defines whether to remove it or not
+        for condition in conditions:
+            filename, to_remove = condition
+            if to_remove:
+                workload.remove(filename)
+
         # Must iterate through both the subject level listing AND the session level (ASL_1, ASL_2, etc.) listing
         status_files = []
         for subject in study_subjects:
@@ -179,6 +190,16 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
     subjects: List[str] = [sub.name for sub in analysis_dir.iterdir() if
                            all([regex.search(str(sub.name)), sub.is_dir(), sub.name not in ["lock", "Population"]])]
 
+    # Account for conditions that influence whether a .status file is to be removed from the expected workload or not
+    asl_conditions = []
+    # for statfile, corresponding_key, default in zip(["085_PVCorrection.status"],
+    #                                                 ["bPVCorrectionNativeSpace"],
+    #                                                 [True]):
+    #     try:
+    #         asl_conditions.append((statfile, not parmsdict[corresponding_key]))
+    #     except KeyError:
+    #         asl_conditions.append((statfile, default))
+
     # Use a dict to keep track of everything
     struct_dict = {subject: 0 for subject in subjects}
     asl_dict = {subject: {} for subject in subjects}
@@ -188,7 +209,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
                                         workload_translator=filename2workload)
         struct_dict, struct_status = s_res
         a_res = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict, skipnoasl, skipnom0, skipnoflair,
-                                 workload_translator=filename2workload)
+                                 workload_translator=filename2workload, conditions=asl_conditions)
         asl_dict, asl_status = a_res
 
         struct_totalworkload = sum(struct_dict.values())
@@ -201,7 +222,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
 
     elif run_options == "ASL":
         a_res = get_asl_workload(analysis_dir, subjects, sess_names, asl_dict, skipnoasl, skipnom0, skipnoflair,
-                                 workload_translator=filename2workload)
+                                 workload_translator=filename2workload, conditions=asl_conditions)
         asl_dict, asl_status = a_res
         asl_totalworkload = {asl_subject: sum(asl_dict[asl_subject].values()) for asl_subject in subjects}
         asl_totalworkload = sum(asl_totalworkload.values())

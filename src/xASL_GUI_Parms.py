@@ -3,11 +3,13 @@ from PySide2.QtGui import *
 from PySide2.QtCore import QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
 import json
+import re
 from pathlib import Path
 from tdda import rexpy
 from more_itertools import peekable
 from functools import partial
 from shutil import which
+from typing import List
 
 
 class xASL_Parms(QMainWindow):
@@ -43,8 +45,12 @@ class xASL_Parms(QMainWindow):
         self.mainlay.addWidget(self.tab_main)
         self.cont_basic = QWidget()
         self.cont_advanced = QWidget()
+        self.cont_proc_settings = QWidget()
         self.tab_main.addTab(self.cont_basic, "Basic Settings")
-        self.tab_main.addTab(self.cont_advanced, "Advanced Settings")
+        self.tab_main.addTab(self.cont_advanced, "Sequence && Quantification Settings")
+        self.tab_main.addTab(self.cont_proc_settings, "Processing && Masking Settings")
+        self.tab_main.adjustSize()
+
         self.mainlay.addWidget(self.btn_make_parms)
         self.mainlay.addWidget(self.btn_load_parms)
 
@@ -55,6 +61,7 @@ class xASL_Parms(QMainWindow):
 
         self.UI_Setup_Basic()
         self.UI_Setup_Advanced()
+        self.UI_Setup_ProcessingSettings()
         # With all widgets set, give them tooltips
         for widget_name, tiptext in self.parms_tips.items():
             getattr(self, widget_name).setToolTip(tiptext)
@@ -120,15 +127,15 @@ class xASL_Parms(QMainWindow):
         self.grp_seqparms = QGroupBox(title="Sequence Parameters")
         self.grp_quantparms = QGroupBox(title="Quantification Parameters")
         self.grp_m0parms = QGroupBox(title="M0 Parameters")
-        self.grp_procparms = QGroupBox(title="Processing Parameters")
         self.grp_envparms = QGroupBox(title="Environment Parameters")
-        for grp in [self.grp_seqparms, self.grp_quantparms, self.grp_m0parms, self.grp_procparms, self.grp_envparms]:
+        for grp in [self.grp_seqparms, self.grp_quantparms, self.grp_m0parms, self.grp_envparms]:
             self.vlay_advanced.addWidget(grp)
 
         # Set up the Sequence Parameters
         self.vlay_seqparms, self.scroll_seqparms, self.cont_seqparms = self.make_scrollbar_area(self.grp_seqparms)
         self.formlay_seqparms = QFormLayout(self.cont_seqparms)
         self.cmb_nsup_pulses = self.make_cmb_and_items(["0", "2", "4", "5"], 1)
+        self.le_sup_pulse_vec = QLineEdit(placeholderText="Vector of timings, in seconds, of suppression pulses")
         self.cmb_readout_dim = self.make_cmb_and_items(["3D", "2D"])
         self.spinbox_initialpld = QDoubleSpinBox(maximum=2500, minimum=0, value=1800)
         self.spinbox_initialpld.valueChanged.connect(self.autocalc_slicereadouttime)
@@ -139,10 +146,11 @@ class xASL_Parms(QMainWindow):
         self.spinbox_slice_readout = QDoubleSpinBox(maximum=1000, minimum=0, value=37)
         self.hlay_slice_readout.addWidget(self.cmb_slice_readout)
         self.hlay_slice_readout.addWidget(self.spinbox_slice_readout)
-        for description, widget in zip(["Number of Suppression Pulses", "Readout Dimension",
+        for description, widget in zip(["Number of Suppression Pulses", "Suppression Timings", "Readout Dimension",
                                         "Initial Post-Labeling Delay (ms)", "Labeling Duration (ms)",
                                         "Slice Readout Time (ms)"],
-                                       [self.cmb_nsup_pulses, self.cmb_readout_dim, self.spinbox_initialpld,
+                                       [self.cmb_nsup_pulses, self.le_sup_pulse_vec, self.cmb_readout_dim,
+                                        self.spinbox_initialpld,
                                         self.spinbox_labdur, self.hlay_slice_readout]):
             self.formlay_seqparms.addRow(description, widget)
 
@@ -155,11 +163,19 @@ class xASL_Parms(QMainWindow):
         self.spinbox_bloodt1 = QDoubleSpinBox(maximum=2000, minimum=0, value=1650, singleStep=0.1)
         self.spinbox_tissuet1 = QDoubleSpinBox(maximum=2000, minimum=0, value=1240, singleStep=0.1)
         self.cmb_ncomparts = self.make_cmb_and_items(["1", "2"], 0)
-        self.le_quantset = QLineEdit(text="1 1 1 1 1")
-        for description, widget in zip(["Lambda", "Arterial T2*", "Blood T1",
-                                        "Tissue T1", "Number of Compartments", "Quantification Settings"],
+        self.chk_quant_applyss_asl = QCheckBox(checked=True)
+        self.chk_quant_applyss_m0 = QCheckBox(checked=True)
+        self.chk_quant_pwi2label = QCheckBox(checked=True)
+        self.chk_quant_quantifym0 = QCheckBox(checked=True)
+        self.chk_quant_divbym0 = QCheckBox(checked=True)
+        self.chk_save_cbf4d = QCheckBox(checked=False)
+        for description, widget in zip(["Lambda", "Arterial T2*", "Blood T1", "Tissue T1", "Number of Compartments",
+                                        "Apply Scaling to ASL", "Apply Scaling to M0", "Convert PWI to Label",
+                                        "Quantify M0", "Divide by M0", "Save CBF as Timeseries"],
                                        [self.spinbox_lambda, self.spinbox_artt2, self.spinbox_bloodt1,
-                                        self.spinbox_tissuet1, self.cmb_ncomparts, self.le_quantset]):
+                                        self.spinbox_tissuet1, self.cmb_ncomparts, self.chk_quant_applyss_asl,
+                                        self.chk_quant_applyss_m0, self.chk_quant_pwi2label, self.chk_quant_quantifym0,
+                                        self.chk_quant_divbym0, self.chk_save_cbf4d]):
             self.formlay_quantparms.addRow(description, widget)
 
         # Set up the remaining M0 Parameters
@@ -171,40 +187,6 @@ class xASL_Parms(QMainWindow):
         for description, widget in zip(["M0 Processing Algorithm", "GM Scale Factor"],
                                        [self.cmb_m0_algorithm, self.spinbox_gmscale]):
             self.formlay_m0parms.addRow(description, widget)
-
-        # Set up the Processing Parameters
-        self.vlay_procparms, self.scroll_procparms, self.cont_procparms = self.make_scrollbar_area(self.grp_procparms)
-        self.formlay_procparms = QFormLayout(self.cont_procparms)
-        self.chk_removespikes = QCheckBox(checked=True)
-        self.spinbox_spikethres = QDoubleSpinBox(maximum=1, minimum=0, value=0.01, singleStep=0.01)
-        self.chk_motioncorrect = QCheckBox(checked=True)
-        self.chk_deltempfiles = QCheckBox(checked=True)
-        self.chk_skipnoflair = QCheckBox(checked=False)
-        self.chk_skipnoasl = QCheckBox(checked=True)
-        self.chk_skipnom0 = QCheckBox(checked=False)
-        self.chk_uset1dartel = QCheckBox(checked=True)
-        self.chk_usepwidartel = QCheckBox(checked=False)
-        self.chk_usebilatfilter = QCheckBox(checked=False)
-        self.cmb_segmethod = self.make_cmb_and_items(["CAT12", "SPM12"], 0)
-        self.cmb_imgcontrast = self.make_cmb_and_items(["Automatic", "Control --> T1w", "CBF --> pseudoCBF",
-                                                        "Force CBF --> pseudoCBF"], 0)
-        self.cmb_affineregbase = self.make_cmb_and_items(["Based on PWI CoV", "Enabled", "Disabled"])
-        self.cmb_dctreg = self.make_cmb_and_items(["Disabled", "Enabled + no PVC", "Enabled + PVC"])
-        self.chk_regm0toasl = QCheckBox(checked=True)
-        self.chk_usemniasdummy = QCheckBox(checked=False)
-        for description, widget in zip(["Remove Spikes", "Spike Removal Threshold", "Correct for Motion",
-                                        "Delete Temporary Files", "Skip Subjects without FLAIR",
-                                        "Skip Subjects without ASL", "Skip subjects without M0", "Use T1 DARTEL",
-                                        "Use PWI DARTEL", "Use Bilateral Filter", "Segmentation Method",
-                                        "Image Contrast used for", "Use Affine Registration", "Use DCT Registration",
-                                        "Register M0 to ASL", "Use MNI as Dummy Template"],
-                                       [self.chk_removespikes, self.spinbox_spikethres, self.chk_motioncorrect,
-                                        self.chk_deltempfiles, self.chk_skipnoflair, self.chk_skipnoasl,
-                                        self.chk_skipnom0, self.chk_uset1dartel, self.chk_usepwidartel,
-                                        self.chk_usebilatfilter, self.cmb_segmethod, self.cmb_imgcontrast,
-                                        self.cmb_affineregbase, self.cmb_dctreg, self.chk_regm0toasl,
-                                        self.chk_usemniasdummy]):
-            self.formlay_procparms.addRow(description, widget)
 
         # Set up the Environment Parameters
         self.vlay_envparms, self.scroll_envparms, self.cont_envparms = self.make_scrollbar_area(self.grp_envparms)
@@ -219,6 +201,88 @@ class xASL_Parms(QMainWindow):
         for desc, widget in zip(["Path to FSL bin directory", "Output CBF native space maps?"],
                                 [self.hlay_fslpath, self.chk_outputcbfmaps]):
             self.formlay_envparms.addRow(desc, widget)
+
+    def UI_Setup_ProcessingSettings(self):
+        self.vlay_procsettings = QVBoxLayout(self.cont_proc_settings)
+
+        self.grp_genpparms = QGroupBox(title="General Processing Parameters")
+        self.grp_strpparms = QGroupBox(title="Structural Processing Parameters")
+        self.grp_aslpparms = QGroupBox(title="ASL Processing Parameters")
+        self.grp_maskparms = QGroupBox(title="Masking Parameters")
+        for grp in [self.grp_genpparms, self.grp_strpparms, self.grp_aslpparms, self.grp_maskparms]:
+            self.vlay_procsettings.addWidget(grp)
+
+        # Set up the General Processing Parameters
+        self.vlay_genpparms, self.scroll_genpparms, self.cont_genpparms = self.make_scrollbar_area(self.grp_genpparms)
+        self.formlay_genpparms = QFormLayout(self.cont_genpparms)
+        self.chk_removespikes = QCheckBox(checked=True)
+        self.spinbox_spikethres = QDoubleSpinBox(maximum=1, minimum=0, value=0.01, singleStep=0.01)
+        self.chk_motioncorrect = QCheckBox(checked=True)
+        self.chk_deltempfiles = QCheckBox(checked=True)
+        self.chk_skipnoflair = QCheckBox(checked=False)
+        self.chk_skipnoasl = QCheckBox(checked=True)
+        self.chk_skipnom0 = QCheckBox(checked=False)
+        for desc, widget in zip(["Remove Spikes", "Spike Removal Threshold", "Correct for Motion",
+                                 "Delete Temporary Files", "Skip Subjects without FLAIR",
+                                 "Skip Subjects without ASL", "Skip subjects without M0"],
+                                [self.chk_removespikes, self.spinbox_spikethres, self.chk_motioncorrect,
+                                 self.chk_deltempfiles, self.chk_skipnoflair, self.chk_skipnoasl,
+                                 self.chk_skipnom0]):
+            self.formlay_genpparms.addRow(desc, widget)
+
+        # Set up the Structural Processing Parameters
+        self.vlay_strpparms, self.scroll_strpparms, self.cont_strpparms = self.make_scrollbar_area(self.grp_strpparms)
+        self.formlay_strpparms = QFormLayout(self.cont_strpparms)
+        self.cmb_segmethod = self.make_cmb_and_items(["CAT12", "SPM12"], 0)
+        self.chk_runlongreg = QCheckBox(checked=False)
+        self.chk_run_dartel = QCheckBox(checked=False)
+        self.chk_hammersroi = QCheckBox(checked=False)
+        self.chk_fixcat12res = QCheckBox(checked=False)
+
+        for desc, widget in zip(["Segmentation Method", "Run DARTEL Module", "Longitudinal Registration", "Hammers ROI",
+                                 "Fix CAT12 Resolution"],
+                                [self.cmb_segmethod, self.chk_run_dartel, self.chk_runlongreg, self.chk_hammersroi,
+                                 self.chk_fixcat12res]):
+            self.formlay_strpparms.addRow(desc, widget)
+
+        # Set up the ASL Processing Parameters
+        self.vlay_aslpparms, self.scroll_aslpparms, self.cont_aslpparms = self.make_scrollbar_area(self.grp_aslpparms)
+        self.formlay_aslpparms = QFormLayout(self.cont_aslpparms)
+
+        self.cmb_imgcontrast = self.make_cmb_and_items(["Automatic", "Control --> T1w", "CBF --> pseudoCBF",
+                                                        "Force CBF --> pseudoCBF"], 0)
+        self.cmb_affineregbase = self.make_cmb_and_items(["Based on PWI CoV", "Enabled", "Disabled"])
+        self.cmb_dctreg = self.make_cmb_and_items(["Disabled", "Enabled + no PVC", "Enabled + PVC"])
+        self.chk_regm0toasl = QCheckBox(checked=True)
+        self.chk_usemniasdummy = QCheckBox(checked=False)
+        self.chk_nativepvc = QCheckBox(checked=False)
+        self.chk_gaussianpvc = QCheckBox(checked=False)
+        self.hlay_pvckernel = QHBoxLayout()
+        self.spinbox_pvckernel_1 = QSpinBox(minimum=1, maximum=20, value=5)
+        self.spinbox_pvckernel_2 = QSpinBox(minimum=1, maximum=20, value=5)
+        self.spinbox_pvckernel_3 = QSpinBox(minimum=1, maximum=20, value=1)
+        for spinbox in [self.spinbox_pvckernel_1, self.spinbox_pvckernel_2, self.spinbox_pvckernel_3]:
+            self.hlay_pvckernel.addWidget(spinbox)
+        for desc, widget in zip(["Image Contrast used for",
+                                 "Use Affine Registration", "Use DCT Registration", "Register M0 to ASL",
+                                 "Use MNI as Dummy Template", "Perform Native PVC", "Gaussian Kernel for PVC",
+                                 "PVC Kernel Dimensions"],
+                                [self.cmb_imgcontrast,
+                                 self.cmb_affineregbase, self.cmb_dctreg, self.chk_regm0toasl, self.chk_usemniasdummy,
+                                 self.chk_nativepvc, self.chk_gaussianpvc, self.hlay_pvckernel]):
+            self.formlay_aslpparms.addRow(desc, widget)
+
+        # Set up the Masking Parameters
+        self.vlay_maskparms, self.scroll_maskparms, self.cont_maskparms = self.make_scrollbar_area(self.grp_maskparms)
+        self.formlay_maskparms = QFormLayout(self.cont_maskparms)
+        self.chk_suscepmask = QCheckBox(checked=True)
+        self.chk_subjectvasmask = QCheckBox(checked=True)
+        self.chk_subjecttismask = QCheckBox(checked=True)
+        self.chk_wholebrainmask = QCheckBox(checked=True)
+        for desc, widget in zip(["Susceptibility Mask", "Vascular Mask", "Tissue Mask", "Wholebrain Mask"],
+                                [self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask,
+                                 self.chk_wholebrainmask]):
+            self.formlay_maskparms.addRow(desc, widget)
 
     ################################
     # Json Sidecar Related Functions
@@ -472,7 +536,7 @@ class xASL_Parms(QMainWindow):
 
     # Clears the currently-excluded subjects list
     def clear_excluded(self):
-        self.lst_study_parms_exclusions.clear()
+        self.lst_excluded_subjects.clear()
 
     # Updates the current recognized regex
     def update_regex(self):
@@ -555,22 +619,37 @@ class xASL_Parms(QMainWindow):
                    "Use mean control ASL as proton density mimic": "UseControlAsM0"}
             [self.cmb_m0_isseparate.currentText()],
             "M0_GMScaleFactor": float(self.spinbox_gmscale.value()),
+            "M0PositionInASL4D": {"M0 is the first ASL control-label pair": "[1 2]",
+                                  "M0 is the first ASL scan volume": 1,
+                                  "M0 is the second ASL scan volume": 2,
+                                  "M0 exists as a separate scan": 0,
+                                  }[self.cmb_m0_posinasl.currentText()],
+
+            # Sequence Parameters
             "readout_dim": self.cmb_readout_dim.currentText(),
             "Vendor": self.cmb_vendor.currentText(),
             "Sequence": {"3D Spiral": "3D_spiral", "3D GRaSE": "3D_GRASE", "2D EPI": "2D_EPI"}
             [self.cmb_sequencetype.currentText()],
+
+            # General Processing Parameters
             "Quality": {"High": 1, "Low": 0}[self.cmb_quality.currentText()],
             "DELETETEMP": int(self.chk_deltempfiles.isChecked()),
-            "SPIKE_REMOVAL": int(self.chk_removespikes.isChecked()),
-            "SpikeRemovalThreshold": float(self.spinbox_spikethres.value()),
             "SkipIfNoFlair": int(self.chk_skipnoflair.isChecked()),
             "SkipIfNoM0": int(self.chk_skipnom0.isChecked()),
             "SkipIfNoASL": int(self.chk_skipnoasl.isChecked()),
-            "T1_DARTEL": int(self.chk_uset1dartel.isChecked()),
-            "PWI_DARTEL": int(self.chk_usepwidartel.isChecked()),
-            "BILAT_FILTER": int(self.chk_usebilatfilter.isChecked()),
-            "motion_correction": int(self.chk_motioncorrect.isChecked()),
+
+            # Structural Processing Parameters
             "SegmentSPM12": {"SPM12": 1, "CAT12": 0}[self.cmb_segmethod.currentText()],
+            "bRunModule_LongReg": int(self.chk_runlongreg.isChecked()),
+            "bRunModule_DARTEL": int(self.chk_run_dartel.isChecked()),
+            "bHammersCAT12": int(self.chk_hammersroi.isChecked()),
+            "bFixResolution": int(self.chk_fixcat12res.isChecked()),
+
+            # ASL Processing Parameters
+            "SPIKE_REMOVAL": int(self.chk_removespikes.isChecked()),
+            "SpikeRemovalThreshold": float(self.spinbox_spikethres.value()),
+            "motion_correction": int(self.chk_motioncorrect.isChecked()),
+
             "bRegistrationContrast": {"Automatic": 2, "Control --> T1w": 0, "CBF --> pseudoCBF": 1,
                                       "Force CBF --> pseudoCBF": 3}[self.cmb_imgcontrast.currentText()],
             "bAffineRegistration": {"Based on PWI CoV": 2, "Enabled": 1, "Disabled": 0}
@@ -579,11 +658,20 @@ class xASL_Parms(QMainWindow):
             [self.cmb_dctreg.currentText()],
             "bRegisterM02ASL": int(self.chk_removespikes.isChecked()),
             "bUseMNIasDummyStructural": int(self.chk_usemniasdummy.isChecked()),
-            "ApplyQuantification": self.prep_quantparms(),
+            "bPVCorrectionNativeSpace": int(self.chk_nativepvc.isChecked()),
+            "bPVCorrectionGaussianMM": int(self.chk_gaussianpvc.isChecked()),
+            "PVCorrectionNativeSpaceKernel": self.prep_pvc_kernel_vec(),
+
+            # Environment Parameters
             "FSLdirectory": self.le_fslpath.text(),
             "MakeNIfTI4DICOM": int(self.chk_outputcbfmaps.isChecked()),
+
+            # Quantification Parameters
+            "ApplyQuantification": self.prep_quantparms(),
             "Q": {
                 "BackGrSupprPulses": int(self.cmb_nsup_pulses.currentText()),
+                "BackgroundSuppressionNumberPulses": int(self.cmb_nsup_pulses.currentText()),
+                "BackgroundSuppressionPulseTime": self.prep_suppression_vec(),
                 "LabelingType": {"Pulsed ASL": "PASL",
                                  "Pseudo-continuous ASL": "CASL",
                                  "Continuous ASL": "CASL"
@@ -595,6 +683,10 @@ class xASL_Parms(QMainWindow):
                 "T2art": float(self.spinbox_artt2.value()),
                 "TissueT1": float(self.spinbox_tissuet1.value()),
                 "nCompartments": int(self.cmb_ncomparts.currentText())
+            },
+            # Masking Parameters
+            "S": {
+                "bMasking": self.prep_masking_vec()
             }
         }
 
@@ -669,25 +761,37 @@ class xASL_Parms(QMainWindow):
                                          widget=self.cmb_m0_posinasl,
                                          translator={"[1 2]": "M0 is the first ASL control-label pair",
                                                      1: "M0 is the first ASL scan volume",
-                                                     2: "M0 is the second ASL scan volume"}),
+                                                     2: "M0 is the second ASL scan volume",
+                                                     0: "M0 exists as a separate scan"
+                                                     }),
+
+            # Sequence Parameters
             "readout_dim": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_readout_dim),
             "Vendor": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_vendor),
             "Sequence": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_sequencetype,
                                 translator={"3D_spiral": "3D Spiral", "3D_GRASE": "3D GRaSE", "2D_EPI": "2D EPI"}),
+
+            # General Processing Parameters
             "Quality": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_quality,
                                translator={0: "Low", 1: "High"}),
             "DELETETEMP": self.chk_deltempfiles.setChecked,
-            "SPIKE_REMOVAL": self.chk_removespikes.setChecked,
-            "SpikeRemovalThreshold": self.spinbox_spikethres.setValue,
             "SkipIfNoFlair": self.chk_skipnoflair.setChecked,
             "SkipIfNoM0": self.chk_skipnom0.setChecked,
             "SkipIfNoASL": self.chk_skipnoasl.setChecked,
-            "T1_DARTEL": self.chk_uset1dartel.setChecked,
-            "PWI_DARTEL": self.chk_usepwidartel.setChecked,
-            "BILAT_FILTER": self.chk_usebilatfilter.setChecked,
-            "motion_correction": self.chk_motioncorrect.setChecked,
+
+            # Structural Processing Parameters
             "SegmentSPM12": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_segmethod,
                                     translator={1: "SPM12", 0: "CAT12"}),
+            "bRunModule_LongReg": self.chk_runlongreg.setChecked,
+            "bRunModule_DARTEL": self.chk_run_dartel.setChecked,
+            "bHammersCAT12": self.chk_hammersroi.setChecked,
+            "bFixResolution": self.chk_fixcat12res.setChecked,
+
+            # ASL Processing Parameters
+            "SPIKE_REMOVAL": self.chk_removespikes.setChecked,
+            "SpikeRemovalThreshold": self.spinbox_spikethres.setValue,
+            "motion_correction": self.chk_motioncorrect.setChecked,
+
             "bRegistrationContrast": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                              widget=self.cmb_imgcontrast,
                                              translator={2: "Automatic", 0: "Control --> T1w", 1: "CBF --> pseudoCBF",
@@ -700,12 +804,22 @@ class xASL_Parms(QMainWindow):
                                         translator={0: "Disabled", 1: "Enabled + no PVC", 2: "Enabled + PVC"}),
             "bRegisterM02ASL": self.chk_regm0toasl.setChecked,
             "bUseMNIasDummyStructural": self.chk_usemniasdummy.setChecked,
+            "bPVCorrectionNativeSpace": self.chk_nativepvc.setChecked,
+            "bPVCorrectionGaussianMM": self.chk_gaussianpvc.setChecked,
+            "PVCorrectionNativeSpaceKernel": self.get_pvc_kernel_vec,
+
+            # Environment Parameters
             "MakeNIfTI4DICOM": self.chk_outputcbfmaps.setChecked,
-            "ApplyQuantification": self.get_quantparms,
             "FSLdirectory": self.le_fslpath.setText,
+
+            # Quantification Parameters
+            "ApplyQuantification": self.get_quantparms,
             "Q": {
                 "BackGrSupprPulses": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
                                              widget=self.cmb_nsup_pulses),
+                "BackgroundSuppressionNumberPulses": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
+                                                             widget=self.cmb_nsup_pulses),
+                "BackgroundSuppressionPulseTime": self.get_suppression_vec,
                 "LabelingType": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                         widget=self.cmb_labelingtype,
                                         translator={"PASL": "Pulsed ASL", "CASL": "Pseudo-continuous ASL",
@@ -718,11 +832,24 @@ class xASL_Parms(QMainWindow):
                 "TissueT1": self.spinbox_tissuet1.setValue,
                 "nCompartments": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
                                          widget=self.cmb_ncomparts)
+            },
+            # Masking Parameters
+            "S": {
+                "bMasking": self.get_masking_vec
             }
         }
 
-        to_bool = ["DELETETEMP", "SPIKE_REMOVAL", "SkipIfNoFlair", "SkipIfNoM0", "SkipIfNoASL", "T1_DARTEL",
-                   "PWI_DARTEL", "BILAT_FILTER", "motion_correction", "bRegisterM02ASL", "bUseMNIasDummyStructural"]
+        to_bool = {
+            # General Proc Parms
+            "DELETETEMP", "SPIKE_REMOVAL", "SkipIfNoFlair", "SkipIfNoM0", "SkipIfNoASL", "PWI_DARTEL", "BILAT_FILTER",
+            # Structural Proc Parms
+            "T1_DARTEL", "bRunModule_LongReg", "bRunModule_DARTEL", "bHammersCAT12", "bFixResolution",
+            # ASL Proc Parms
+            "motion_correction", "bRegisterM02ASL", "bUseMNIasDummyStructural", "bPVCorrectionNativeSpace",
+            "bPVCorrectionGaussianMM",
+            # Quantification Parms
+            "SaveCBF4D"
+        }
 
         for key, call in parms.items():
             try:
@@ -750,6 +877,9 @@ class xASL_Parms(QMainWindow):
                 print(f"TypeError encountered with key: {key}")
                 print(te)
 
+        # Followup functions to perform
+        self.fill_subject_list(parms)  # Fill the list and exclusion widgets
+
         if len(self.import_error_logger) > 0:
             errors = "\n -".join(self.import_error_logger)
             QMessageBox().warning(self,
@@ -759,6 +889,14 @@ class xASL_Parms(QMainWindow):
 
     @staticmethod
     def main_setter(argument, widget, action, translator=None):
+        """
+        Convenience setter function for setting widgets to the approprivate values during json loading
+
+        :param argument: The input coming from the json value being read in
+        :param widget: The widget that will be influenced
+        :param action: A string denoting what kind of argument this is so as to facilitate an appropriate response
+        :param translator: For comboboxes, a mapping of the json key to a string item within the combobox
+        """
         if action == "le_setText_commajoin":  # Lineedit; arguments is a list
             if isinstance(argument, list) and len(argument) > 1:
                 widget.setText(", ".join(argument))
@@ -795,15 +933,39 @@ class xASL_Parms(QMainWindow):
             return self.le_run_options.text().split(", ")
 
     def prep_quantparms(self):
-        parms_logvec = self.le_quantset.text().split(" ")
-        if all([len(parms_logvec) == 5,  # Must be 5 1s or 0s
-                all([x in ['1', '0'] for x in parms_logvec])]):  # Check that all are 1s or 0s
-            return [int(option) for option in parms_logvec]
-        else:
-            QMessageBox().warning(self,
-                                  "Incorrect Input for Quantification Settings",
-                                  "Must be a series of five 1s or 0s separated by single spaces",
-                                  QMessageBox.Ok)
+        quant_wids = [self.chk_quant_applyss_asl, self.chk_quant_applyss_m0, self.chk_quant_pwi2label,
+                      self.chk_quant_quantifym0, self.chk_quant_divbym0]
+        return [int(widget.isChecked()) for widget in quant_wids]
+
+    # noinspection PyTypeChecker
+    def prep_suppression_vec(self):
+        str_timings = self.le_sup_pulse_vec.text()
+        if str_timings == "":
+            return []
+        num_timings: List[str] = str_timings.split(",")
+        idx: int
+        for idx, timing in enumerate(num_timings.copy()):
+            timing = timing.strip()
+            isdigit_flag = self.isDigit(timing)
+            if not isdigit_flag:
+                return []
+            num_timings[idx] = float(timing)
+        return num_timings
+
+    def prep_pvc_kernel_vec(self):
+        return [self.spinbox_pvckernel_1.value(), self.spinbox_pvckernel_2.value(), self.spinbox_pvckernel_3.value()]
+
+    def prep_masking_vec(self):
+        return [int(self.chk_suscepmask.isChecked()), int(self.chk_subjectvasmask.isChecked()),
+                int(self.chk_subjecttismask.isChecked()), int(self.chk_wholebrainmask.isChecked())]
+
+    @staticmethod
+    def isDigit(val: str):
+        try:
+            float(val)
+            return True
+        except ValueError:
+            return False
 
     ###############################################
     # Convenience methods for translation from json
@@ -827,12 +989,83 @@ class xASL_Parms(QMainWindow):
             return
         self.cmb_imgcontrast.setCurrentIndex(index)
 
-    def get_quantparms(self, value):
-        if any([len(value) != 5, sum([str(val).isdigit() for val in value]) != 5]):
+    def get_quantparms(self, quant_vector: list):
+        if any([len(quant_vector) != 5,
+                not all([str(val).isdigit() for val in quant_vector]),
+                not all([int(val) in [0, 1] for val in quant_vector])
+                ]):
             self.import_error_logger.append("Quantification Settings")
             return
-        str_value = " ".join([str(val) for val in value])
-        self.le_quantset.setText(str_value)
+        quant_wids = [self.chk_quant_applyss_asl, self.chk_quant_applyss_m0, self.chk_quant_pwi2label,
+                      self.chk_quant_quantifym0, self.chk_quant_divbym0]
+        for wiget, val in zip(quant_wids, quant_vector):
+            wiget.setChecked(bool(val))
+
+    def get_suppression_vec(self, suppr_vec: List[float]):
+        if len(suppr_vec) == 0:
+            self.le_sup_pulse_vec.setText("")
+        if any([not all([self.isDigit(str(x)) for x in suppr_vec])]):
+            self.import_error_logger.append("Suppression Timings Vector")
+            self.le_sup_pulse_vec.setText("")
+            return
+        str_suppr_vec = ", ".join([str(suppr_val) for suppr_val in suppr_vec])
+        self.le_sup_pulse_vec.setText(str_suppr_vec)
+
+    def get_pvc_kernel_vec(self, pvc_vec):
+        try:
+            if any([len(pvc_vec) != 3,
+                    not all([str(x).isdigit() for x in pvc_vec])
+                    ]):
+                self.import_error_logger.append("PVC Kernel Dimensions")
+                return
+        except ValueError:
+            self.import_error_logger.append("PVC Kernel Dimensions - Value Error")
+            return
+        for widget, val in zip([self.spinbox_pvckernel_1, self.spinbox_pvckernel_2, self.spinbox_pvckernel_3], pvc_vec):
+            widget.setValue(val)
+
+    def get_masking_vec(self, masking_vec: list):
+        try:
+            if any([len(masking_vec) != 4,
+                    not all([str(x).isdigit() for x in masking_vec])
+                    ]):
+                self.import_error_logger.append("Masking Vector")
+                return
+        except ValueError:
+            self.import_error_logger.append("Masking Vector - Value Error")
+            return
+        for widget, val in zip([self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask,
+                                self.chk_wholebrainmask], masking_vec):
+            widget.setChecked(bool(val))
+
+    def fill_subject_list(self, loaded_parms: dict):
+        try:
+            analysis_dir = Path(loaded_parms["D"]["ROOT"]).resolve()
+            if any([not analysis_dir.exists(), not analysis_dir.is_dir()]):
+                return
+            if loaded_parms["subject_regexp"] == "":
+                return
+            regex: re.Pattern = re.compile(loaded_parms["subject_regexp"])
+            includedsubs = [path.name for path in analysis_dir.iterdir()
+                            if all([path.name not in ["lock", "Population"],  # Filter out default directories
+                                    regex.search(path.name),  # Must match the indicated regex
+                                    path.name not in loaded_parms["exclusion"],  # Cannot be an excluded subject
+                                    path.is_dir()  # Must be a directory
+                                    ])]
+            print(f"{includedsubs=}")
+            if len(includedsubs) > 0:
+                self.lst_included_subjects.clear()
+                self.lst_included_subjects.addItems(includedsubs)
+
+            excludedsubs = loaded_parms["exclusion"]
+            print(f'{excludedsubs=}')
+            if len(excludedsubs) > 0:
+                self.lst_excluded_subjects.clear()
+                self.lst_excluded_subjects.addItems(excludedsubs)
+
+        except KeyError as subload_kerr:
+            print(f"{self.fill_subject_list.__name__} received a KeyError: {subload_kerr}")
+            return
 
     ############################################
     # Convenience methods for generating widgets

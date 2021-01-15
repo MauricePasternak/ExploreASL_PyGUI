@@ -469,7 +469,7 @@ class xASL_GUI_Dehybridizer(QWidget):
         from the main widget in the event that the backup step was omitted
         """
         workers = []
-        path_grp: List[Iterable[Path]]
+        path_grp: Iterable[Path]
         for path_grp in self.paths:
             expander_worker = Dehybridizer_ExpandWorker(paths=path_grp, translator=self.translator)
             expander_worker.signals.signal_done_expanding.connect(self.re_enable_dehybridizer)
