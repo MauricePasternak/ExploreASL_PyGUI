@@ -10,6 +10,7 @@ from src.xASL_GUI_FileExplorer import xASL_FileExplorer
 import os
 from pathlib import Path
 import json
+import re
 
 
 # Explore ASL Main Window
@@ -99,6 +100,7 @@ class xASL_MainWin(QMainWindow):
         # Setup the actions of the File menu
         self.menu_file.addAction("Save Master Config", self.save_config)
         self.menu_file.addAction("Select Default Study Directory", self.set_analysis_dir_frombtn)
+        self.menu_file.addAction("Specify MATLABROOT", self.set_local_matlabroot)
         self.menu_file.addSeparator()
         self.menu_file.addAction("Exit", self.close)
 
@@ -157,6 +159,45 @@ class xASL_MainWin(QMainWindow):
             # Update user config to have a new default analysis dir to refer to in on future startups
             self.config["DefaultRootDir"] = str(directory)
             self.save_config()
+
+    def set_local_matlabroot(self):
+        directory: str = QFileDialog.getExistingDirectory(QFileDialog(),
+                                                          "Select the path to the MATLAB bin directory",
+                                                          self.config["DefaultRootDir"],  # Default dir
+                                                          QFileDialog.ShowDirsOnly)  # Display options
+        if directory == "":
+            return
+        directory: Path = Path(directory)
+        try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            matlab_cmd_path = next(directory.rglob("matlab"))
+            if matlab_cmd_path.name not in ["matlab", "matlab.exe"]:
+                QApplication.restoreOverrideCursor()
+                QMessageBox.warning(self, "Invalid MATLAB directory",
+                                    "The matlab command could not be located downstream from the indicated filepath, "
+                                    "suggesting that this is not a valid MATLAB directory", QMessageBox.Ok)
+                return
+
+        except StopIteration:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "Invalid MATLAB directory",
+                                "The matlab command could not be located downstream from the indicated filepath, "
+                                "suggesting that this is not a valid MATLAB directory", QMessageBox.Ok)
+            return
+
+        QApplication.restoreOverrideCursor()
+        matlabver_regex = re.compile(r"R\d{4}[ab]")
+        match = matlabver_regex.search(str(directory))
+        if match:
+            self.config["MATLABROOT"] = str(directory)
+            QMessageBox.information(self, "Registered MATLAB directory",
+                                    f"The GUI has detected MATLAB version {match.group()} on this machine",
+                                    QMessageBox.Ok)
+            self.save_config()
+        else:
+            QMessageBox.information(self, "Invalid MATLAB directory",
+                                    "The version number could not be discerned from the provided filepath",
+                                    QMessageBox.Ok)
 
     def communicate_config_change(self):
         self.parmsmaker.config = self.config

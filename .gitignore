@@ -11,7 +11,6 @@ xASL_GUI_run.sh
 __pycache__
 *MRI_viewer.mp4
 venv
-
 # Pyinstaller-related paths
 output
 pyinstaller_script.sh

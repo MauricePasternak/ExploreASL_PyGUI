@@ -1,13 +1,16 @@
 import os
 from PySide2.QtGui import QIcon
 from PySide2.QtCore import QSize
-from PySide2.QtWidgets import (QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QCheckBox, QHBoxLayout, QPushButton)
+from PySide2.QtWidgets import (QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit, QCheckBox, QHBoxLayout, QPushButton,
+                               QVBoxLayout, QScrollArea, QWidget)
 from src.xASL_GUI_HelperClasses import (DandD_Graphing_ListWidget2LineEdit, DandD_FileExplorer2LineEdit)
+from typing import Tuple
 
 
 def set_widget_icon(widget, config: dict, icon_name: str, size: tuple = None):
     """
     Convenience function for setting a widget to contain an icon of a particular size
+
     :param widget: the widget for which an icon should be set
     :param config: the config instance, so that the appropriate filepath stored may be accessed
     :param icon_name: the basename of the icon
@@ -41,6 +44,7 @@ def disconnect_widget_and_reset(widget, target_signal, default):
     """
     Convenience function for disconnecting a widget from a signal and resetting the widget back to a default value
     without triggering those previous connections
+
     :param widget: the widget to disconnect
     :param target_signal: the signal to disconnect from
     :param default: the default value to change to after wards
@@ -64,6 +68,7 @@ def disconnect_widget_and_reset(widget, target_signal, default):
 def make_droppable_clearable_le(le_connect_to=None, btn_connect_to=None, default='', **kwargs):
     """
     Function for creating a typical QLineEdit-QPushButton pair encapsulated within a QHboxLayout.
+
     :param le_connect_to: the function that the lineedit's textChanged signal should connect to, if any
     :param btn_connect_to: the function that the pushbutton's clicked signal should connect to, if any
     :param default: the default text that should be present in the lineedit
@@ -81,3 +86,22 @@ def make_droppable_clearable_le(le_connect_to=None, btn_connect_to=None, default
     hlay.addWidget(le)
     hlay.addWidget(btn)
     return hlay, le, btn
+
+
+def make_scrollbar_area(parent, orientation: str = "v",
+                        margins: Tuple[int, int, int, int] = (0, 0, 0, 0)) -> Tuple[QVBoxLayout, QScrollArea, QWidget]:
+    """
+    Function for creating a QVBoxLayout within which is placed a QScrollArea set to a QWidget container
+
+    :param parent: The parent widget of the layout to be returned
+    :param orientation: The type of layout to return - "v" or "h" for QVBoxLayout or QHBoxLayout, respectively. Default
+    is vertical.
+    :param margins: The margins to set around the layout. Tuple of (left, top, right, bottom) as integers
+    """
+    o_dict = {"v": QVBoxLayout, "h": QHBoxLayout}
+    vlay, scrollarea, container = o_dict[orientation](parent), QScrollArea(), QWidget()
+    vlay.setContentsMargins(*margins)
+    scrollarea.setWidget(container)
+    scrollarea.setWidgetResizable(True)
+    vlay.addWidget(scrollarea)
+    return vlay, scrollarea, container

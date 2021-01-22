@@ -2,6 +2,8 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
+from src.xASL_GUI_Executor_ancillary import is_earlier_version
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area, make_droppable_clearable_le
 import json
 import re
 from pathlib import Path
@@ -72,16 +74,21 @@ class xASL_Parms(QMainWindow):
 
     def UI_Setup_Basic(self):
         self.formlay_basic = QFormLayout(self.cont_basic)
-        self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = self.make_droppable_clearable_le(
+        self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
             btn_connect_to=self.set_exploreasl_dir,
             default='')
         self.le_studyname = QLineEdit(text="My Study")
         self.chk_overwrite_for_bids = QCheckBox(checked=True)
-        self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = self.make_droppable_clearable_le(
+        self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = make_droppable_clearable_le(
             btn_connect_to=self.set_study_dir,
             default='')
         self.le_study_dir.setPlaceholderText("Indicate the analysis directory filepath here")
+
         self.le_subregex = QLineEdit(text='\\d+')
+        self.le_subregex.setVisible(False)
+        self.chk_showregex_field = QCheckBox("Show Current Regex", checked=False)
+        self.chk_showregex_field.stateChanged.connect(self.le_subregex.setVisible)
+
         self.lst_included_subjects = DandD_FileExplorer2ListWidget()
         self.lst_included_subjects.itemsAdded.connect(self.update_regex)
         self.lst_included_subjects.setMinimumHeight(self.config["ScreenSize"][1] // 5)
@@ -89,9 +96,6 @@ class xASL_Parms(QMainWindow):
         self.lst_excluded_subjects = DandD_FileExplorer2ListWidget()
         self.lst_excluded_subjects.setMinimumHeight(self.config["ScreenSize"][1] // 10)
         self.btn_excluded_subjects = QPushButton("Clear Excluded", clicked=self.clear_excluded)
-        self.le_run_names = QLineEdit(text="ASL_1",
-                                      placeholderText="Indicate run names, each separated by a comma and space")
-        self.le_run_options = QLineEdit(placeholderText="Indicate option names, each separated by a comma and space")
         self.cmb_vendor = self.make_cmb_and_items(["Siemens", "Philips", "GE", "GE_WIP"])
         self.cmb_sequencetype = self.make_cmb_and_items(["3D GRaSE", "2D EPI", "3D Spiral"])
         self.cmb_sequencetype.currentTextChanged.connect(self.update_readout_dim)
@@ -108,18 +112,16 @@ class xASL_Parms(QMainWindow):
         for desc, widget in zip(["ExploreASL Directory", "Name of Study", "Analysis Directory",
                                  "Dataset is in BIDS format?",
                                  "Subjects to Assess\n(Drag and Drop Directories)",
-                                 "Subjects to Exclude\n(Drag and Drop Directories)",
-                                 "Run Names", "Run Options", "Vendor", "Sequence Type", "Labelling Type",
-                                 "M0 was acquired?", "M0 Position in ASL", "Quality"],
+                                 "Subjects to Exclude\n(Drag and Drop Directories)", "Vendor", "Sequence Type",
+                                 "Labelling Type", "M0 was acquired?", "M0 Position in ASL", "Quality"],
                                 [self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
-                                 self.chk_overwrite_for_bids,
-                                 self.lst_included_subjects, self.lst_excluded_subjects,
-                                 self.le_run_names, self.le_run_options, self.cmb_vendor, self.cmb_sequencetype,
-                                 self.cmb_labelingtype, self.cmb_m0_isseparate, self.cmb_m0_posinasl,
-                                 self.cmb_quality]):
+                                 self.chk_overwrite_for_bids, self.lst_included_subjects, self.lst_excluded_subjects,
+                                 self.cmb_vendor, self.cmb_sequencetype, self.cmb_labelingtype,
+                                 self.cmb_m0_isseparate, self.cmb_m0_posinasl, self.cmb_quality]):
             self.formlay_basic.addRow(desc, widget)
-        self.formlay_basic.insertRow(5, "", self.btn_included_subjects)
-        self.formlay_basic.insertRow(7, "", self.btn_excluded_subjects)
+        self.formlay_basic.insertRow(4, self.chk_showregex_field, self.le_subregex)
+        self.formlay_basic.insertRow(6, "", self.btn_included_subjects)
+        self.formlay_basic.insertRow(8, "", self.btn_excluded_subjects)
 
     def UI_Setup_Advanced(self):
         # First, set up the groupboxes and add them to the advanced tab layout
@@ -132,7 +134,7 @@ class xASL_Parms(QMainWindow):
             self.vlay_advanced.addWidget(grp)
 
         # Set up the Sequence Parameters
-        self.vlay_seqparms, self.scroll_seqparms, self.cont_seqparms = self.make_scrollbar_area(self.grp_seqparms)
+        self.vlay_seqparms, self.scroll_seqparms, self.cont_seqparms = make_scrollbar_area(self.grp_seqparms)
         self.formlay_seqparms = QFormLayout(self.cont_seqparms)
         self.cmb_nsup_pulses = self.make_cmb_and_items(["0", "2", "4", "5"], 1)
         self.le_sup_pulse_vec = QLineEdit(placeholderText="Vector of timings, in seconds, of suppression pulses")
@@ -155,8 +157,7 @@ class xASL_Parms(QMainWindow):
             self.formlay_seqparms.addRow(description, widget)
 
         # Set up the Quantification Parameters
-        (self.vlay_quantparms, self.scroll_quantparms,
-         self.cont_quantparms) = self.make_scrollbar_area(self.grp_quantparms)
+        self.vlay_quantparms, self.scroll_quantparms, self.cont_quantparms = make_scrollbar_area(self.grp_quantparms)
         self.formlay_quantparms = QFormLayout(self.cont_quantparms)
         self.spinbox_lambda = QDoubleSpinBox(maximum=1, minimum=0, value=0.9, singleStep=0.01)
         self.spinbox_artt2 = QDoubleSpinBox(maximum=100, minimum=0, value=50, singleStep=0.1)
@@ -179,7 +180,7 @@ class xASL_Parms(QMainWindow):
             self.formlay_quantparms.addRow(description, widget)
 
         # Set up the remaining M0 Parameters
-        self.vlay_m0parms, self.scroll_m0parms, self.cont_m0parms = self.make_scrollbar_area(self.grp_m0parms)
+        self.vlay_m0parms, self.scroll_m0parms, self.cont_m0parms = make_scrollbar_area(self.grp_m0parms)
         self.scroll_m0parms.setMinimumHeight(self.config["ScreenSize"][1] // 16)
         self.formlay_m0parms = QFormLayout(self.cont_m0parms)
         self.cmb_m0_algorithm = self.make_cmb_and_items(["New Image Processing", "Standard Processing"], 0)
@@ -189,11 +190,11 @@ class xASL_Parms(QMainWindow):
             self.formlay_m0parms.addRow(description, widget)
 
         # Set up the Environment Parameters
-        self.vlay_envparms, self.scroll_envparms, self.cont_envparms = self.make_scrollbar_area(self.grp_envparms)
+        self.vlay_envparms, self.scroll_envparms, self.cont_envparms = make_scrollbar_area(self.grp_envparms)
         self.scroll_envparms.setMinimumHeight(self.config["ScreenSize"][1] // 17.5)
         self.formlay_envparms = QFormLayout(self.cont_envparms)
         (self.hlay_fslpath, self.le_fslpath,
-         self.btn_fslpath) = self.make_droppable_clearable_le(btn_connect_to=self.set_fslpath)
+         self.btn_fslpath) = make_droppable_clearable_le(btn_connect_to=self.set_fslpath)
         fsl_filepath = which("fsl")
         if fsl_filepath is not None:
             self.le_fslpath.setText(str(Path(fsl_filepath)))
@@ -213,7 +214,7 @@ class xASL_Parms(QMainWindow):
             self.vlay_procsettings.addWidget(grp)
 
         # Set up the General Processing Parameters
-        self.vlay_genpparms, self.scroll_genpparms, self.cont_genpparms = self.make_scrollbar_area(self.grp_genpparms)
+        self.vlay_genpparms, self.scroll_genpparms, self.cont_genpparms = make_scrollbar_area(self.grp_genpparms)
         self.formlay_genpparms = QFormLayout(self.cont_genpparms)
         self.chk_removespikes = QCheckBox(checked=True)
         self.spinbox_spikethres = QDoubleSpinBox(maximum=1, minimum=0, value=0.01, singleStep=0.01)
@@ -231,7 +232,7 @@ class xASL_Parms(QMainWindow):
             self.formlay_genpparms.addRow(desc, widget)
 
         # Set up the Structural Processing Parameters
-        self.vlay_strpparms, self.scroll_strpparms, self.cont_strpparms = self.make_scrollbar_area(self.grp_strpparms)
+        self.vlay_strpparms, self.scroll_strpparms, self.cont_strpparms = make_scrollbar_area(self.grp_strpparms)
         self.formlay_strpparms = QFormLayout(self.cont_strpparms)
         self.cmb_segmethod = self.make_cmb_and_items(["CAT12", "SPM12"], 0)
         self.chk_runlongreg = QCheckBox(checked=False)
@@ -246,7 +247,7 @@ class xASL_Parms(QMainWindow):
             self.formlay_strpparms.addRow(desc, widget)
 
         # Set up the ASL Processing Parameters
-        self.vlay_aslpparms, self.scroll_aslpparms, self.cont_aslpparms = self.make_scrollbar_area(self.grp_aslpparms)
+        self.vlay_aslpparms, self.scroll_aslpparms, self.cont_aslpparms = make_scrollbar_area(self.grp_aslpparms)
         self.formlay_aslpparms = QFormLayout(self.cont_aslpparms)
 
         self.cmb_imgcontrast = self.make_cmb_and_items(["Automatic", "Control --> T1w", "CBF --> pseudoCBF",
@@ -273,7 +274,7 @@ class xASL_Parms(QMainWindow):
             self.formlay_aslpparms.addRow(desc, widget)
 
         # Set up the Masking Parameters
-        self.vlay_maskparms, self.scroll_maskparms, self.cont_maskparms = self.make_scrollbar_area(self.grp_maskparms)
+        self.vlay_maskparms, self.scroll_maskparms, self.cont_maskparms = make_scrollbar_area(self.grp_maskparms)
         self.formlay_maskparms = QFormLayout(self.cont_maskparms)
         self.chk_suscepmask = QCheckBox(checked=True)
         self.chk_subjectvasmask = QCheckBox(checked=True)
@@ -609,8 +610,6 @@ class xASL_Parms(QMainWindow):
             "name": self.le_studyname.text(),
             "D": {"ROOT": self.le_study_dir.text()},
             "subject_regexp": self.le_subregex.text(),
-            "SESSIONS": self.prep_run_names(),
-            "session": {"options": self.prep_run_options()},
             "exclusion": [self.lst_excluded_subjects.item(row).text() for row in
                           range(self.lst_excluded_subjects.count())],
             "M0_conventionalProcessing":
@@ -690,11 +689,11 @@ class xASL_Parms(QMainWindow):
             }
         }
 
-        if self.cmb_m0_posinasl.currentText() != "M0 exists as a separate scan":
-            parms_m0_pos_translate = {"M0 is the first ASL control-label pair": "[1 2]",
-                                      "M0 is the first ASL scan volume": 1,
-                                      "M0 is the second ASL scan volume": 2}
-            json_parms["M0PositionInASL4D"] = parms_m0_pos_translate[self.cmb_m0_posinasl.currentText()]
+        # Compatibility issue with "M0PositionInASL4D"
+        if all([is_earlier_version(easl_dir=Path(self.le_easl_dir.text()), threshold_higher=150),
+                json_parms.get("M0PositionInASL4D") == 0]):
+            del json_parms["M0PositionInASL4D"]
+
         try:
             with open(study_dir / "DataPar.json", 'w') as w:
                 json.dump(json_parms, w, indent=3)
@@ -746,9 +745,6 @@ class xASL_Parms(QMainWindow):
             "name": self.le_studyname.setText,
             "D": {"ROOT": self.le_study_dir.setText},
             "subject_regexp": self.le_subregex.setText,
-            "SESSIONS": partial(self.main_setter, action="le_setText_commajoin", widget=self.le_run_names),
-            "session": {
-                "options": partial(self.main_setter, action="le_setText_commajoin", widget=self.le_run_options)},
             "exclusion": self.lst_excluded_subjects.addItems,
             "M0_conventionalProcessing": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                                  widget=self.cmb_m0_algorithm,
@@ -920,18 +916,6 @@ class xASL_Parms(QMainWindow):
     #############################################
     # Convenience methods for translation to json
     #############################################
-    def prep_run_names(self):
-        if "," not in self.le_run_names.text():
-            return [self.le_run_names.text()]
-        else:
-            return self.le_run_names.text().split(", ")
-
-    def prep_run_options(self):
-        if "," not in self.le_run_options.text():
-            return [self.le_run_options.text()]
-        else:
-            return self.le_run_options.text().split(", ")
-
     def prep_quantparms(self):
         quant_wids = [self.chk_quant_applyss_asl, self.chk_quant_applyss_m0, self.chk_quant_pwi2label,
                       self.chk_quant_quantifym0, self.chk_quant_divbym0]
@@ -1072,40 +1056,9 @@ class xASL_Parms(QMainWindow):
     ############################################
 
     @staticmethod
-    def make_droppable_clearable_le(le_connect_to=None, btn_connect_to=None, default=''):
-        """
-        Convenience function for creating a lineedit-button pair within a HBoxlayout
-        @param le_connect_to: Optional; the function that the linedit's textChanged signal should connect to
-        @param btn_connect_to: Optional; the function that the button's clicked signal should connect to
-        @param default: the default text to specify
-        @return: HBoxlayout, DandD_FileExplorer2LineEdit, QPushButton, in that order
-        """
-        hlay = QHBoxLayout()
-        le = DandD_FileExplorer2LineEdit()
-        le.setText(default)
-        le.setClearButtonEnabled(True)
-        if le_connect_to is not None:
-            le.textChanged.connect(le_connect_to)
-        btn = QPushButton("...", )
-        if btn_connect_to is not None:
-            btn.clicked.connect(btn_connect_to)
-        hlay.addWidget(le)
-        hlay.addWidget(btn)
-        return hlay, le, btn
-
-    @staticmethod
     def make_cmb_and_items(items, default=None):
         cmb = QComboBox()
         cmb.addItems(items)
         if default is not None:
             cmb.setCurrentIndex(default)
         return cmb
-
-    @staticmethod
-    def make_scrollbar_area(grpwidget: QGroupBox):
-        vlay, scrollarea, container = QVBoxLayout(grpwidget), QScrollArea(), QWidget()
-        vlay.setContentsMargins(0, 0, 0, 0)
-        scrollarea.setWidget(container)
-        scrollarea.setWidgetResizable(True)
-        vlay.addWidget(scrollarea)
-        return vlay, scrollarea, container

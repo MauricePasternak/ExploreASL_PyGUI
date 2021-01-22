@@ -44,7 +44,7 @@ class xASL_GUI_MergeDirs(QWidget):
                                         ["Number of Studies to Merge", "Create Symlinks?", "Overwrite Existing?"],
                                         ["spin_nsrcdirs", "chk_symlinks", "chk_overwrite"]):
             self.formlay_settings.addRow(desc, widget)
-            widget.setToolTip(self.parent.exec_tips["Modjob_RerunPrep"][tipkey])
+            widget.setToolTip(self.parent.exec_tips["Modjob_MergeDirs"][tipkey])
 
         # Group 2 - Source Directories
         self.grp_srcdirs = QGroupBox(title="Directories to Merge")
@@ -77,7 +77,7 @@ class xASL_GUI_MergeDirs(QWidget):
         self.mainlay.addWidget(self.btn_mergedirs)
         for widget, tipkey in zip([self.le_mergedst, self.btn_mergedirs],
                                   ["le_mergedst", "btn_mergedirs"]):
-            widget.setToolTip(self.parent.exec_tips["Modjob_RerunPrep"][tipkey])
+            widget.setToolTip(self.parent.exec_tips["Modjob_MergeDirs"][tipkey])
 
     def add_remove_srcdirs(self, n_dirs: int):
         # Add widgets
@@ -85,7 +85,7 @@ class xASL_GUI_MergeDirs(QWidget):
             for _ in range(abs(n_dirs - len(self.list_le_srcdirs))):
                 hlay, le, btn = self.make_le_btn_pair("Specify the path to a study directory", self.select_dir,
                                                       self.can_merge)
-                le.setToolTip(self.parent.exec_tips["Modjob_RerunPrep"]["le_studypath"])
+                le.setToolTip(self.parent.exec_tips["Modjob_MergeDirs"]["le_studypath"])
                 self.list_le_srcdirs.append(le)
                 self.list_hlay_srcdirs.append(hlay)
                 self.list_btn_srcdirs.append(btn)

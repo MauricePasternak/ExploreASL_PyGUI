@@ -24,84 +24,98 @@
 ---
 ## Installation
 
-### For Linux
+### For Developers
 
 Pre-requisites:
 
-- (Optional for Step 1) You have `git` installed. This can be verified by the command `which git` in your command line / terminal
+- Ensure both git, python3.8, and pip3 are present on your system.
 
-- You have python 3.8 installed. [A quick guide to doing so can be found here](https://tecadmin.net/install-python-3-8-ubuntu/). Ubuntu 20.04 onwards comes with this by default.
+Steps:
 
-(tested thus far for Ubuntu 20.04)
-
-1) Preferably, open a terminal, change directory to the location you would like ExploreASL_GUI to be installed. 
-For those not familiar with navigating your filesystem, an excellent tutorial [can be found by clicking on this link](https://www.youtube.com/watch?v=j6vKLJxAKfw&t=10s&ab_channel=CoreySchafer).
-Once you are within your desired directory, clone this github repository via command:
+1) In your directory of choice, clone this github repository via command:
 
        git clone https://github.com/MauricePasternak/ExploreASL_GUI.git
    
    Alternatively, download the zip folder and extract it to your desired destination.
 
-2) Using the terminal, navigate to the ExploreASL_GUI directory (ExploreASL_GUI-master if you opted for zip & extraction). It contains the install script `ExploreASL_GUI_Linux_Install.sh`
+2) Inside the ExploreASL_GUI directory, create the necessary Python 3.8 virtual environment
 
-3) Install via the following command:
+       python3.8 -m venv venv
 
-       ./ExploreASL_GUI_Linux_Install.sh
-   
-   You will be requested to give your sudo password so that the program may be accessible to Applications
+3) Install necessary packages via:
 
-### For Windows
+       pip3 install -r requirements.txt
 
-\**To be updated once executable is made avaliable**
+4) Activate the virtual environment.**
 
-### For MacOS
+   On Windows this is through:
 
-\**To be updated**
+       \venv\Scripts\activate.bat
 
-## Uninstallation
+   On Linux & macOS this is through:
 
-### For Linux
+       source venv/bin/activate
 
-1) Navigate to the ExploreASL_GUI directory via terminal.
+5) Run the main script via:
 
-2) Uninstall via the following command:
+       python3.8 xASL_GUI_Run.py
 
-       ./ExploreASL_GUI_Linux_Uninstall.sh
-       
-   You will be requested to give your sudo password once so that .desktop file in /usr/local/applications may be removed as well.
-   
-3) Remember to `cd` out of the no-longer-existent ExploreASL_GUI directory or close the terminal.
+**It is necessary to re-activate the virtual environment each time the shell originally activating it is shut down. [Windows](https://www.youtube.com/watch?v=APOPm01BVrk&ab_channel=CoreySchafer) or [Linux/macOS](https://www.youtube.com/watch?v=Kg1Yvry_Ydk&ab_channel=CoreySchafer) Users unfamiliar with Python virtual environments are advised to familiarize themselves with these concepts before following through with the above steps.
 
-### For Windows
+### For Non-developers
 
-\**To be updated once executable is made avaliable**
-
-### For MacOS
-
-\**To be updated**
+*To be updated* 
 
 ---
 ## Features
 
-The graphical user interface is split into 4 main modules existing as separate windows linked together by a central hub from which they can be launched:
+### Main Widgets
+
+The graphical user interface is split into 4 main modules existing as separate windows linked together by a central file explorer hub from which they can be launched:
 
 ![Image of MainWindow](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/MainWindow.png)
 
-The first module most users will utilize is the Importer Module. The user defines the source directory (root) of their dataset and which eventually contains dicom files at terminal directories within the folder structure. This module then converts the dicoms therein into nifti volumes within a BIDS-compliant data structure, [utilizing Chris Rorden's dcm2niix executable in the process](https://github.com/rordenlab/dcm2niix):
+The first module most users will utilize is the Importer Module. The user defines the root directory of their dataset and which eventually contains dicom files at terminal directories within the folder structure. This module then converts the dicoms therein into nifti volumes within a BIDS-compliant data structure, [utilizing Chris Rorden's dcm2niix executable in the process](https://github.com/rordenlab/dcm2niix):
 
 ![Image of Importer](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Importer.png)
 
-The main ExploreASL program has over 40 adjustable parameters to account for ASL acquisition variability. Defining these parameters is simplified through the ParmsMaker Module and the resulting DataPar.json file is automatically saved to the indicated study directory. In addition, existing DataPar.json files can be re-loaded, edited, and then re-saved back into the study directory.
+Sometimes directories may have multiple pieces of information on the same directory level. An additional submodule, Folder Unpack, can pry apart such directories into their separate components. For example a directory level with syntax subject_visit may be expanded into SUBJECT/subject/VISIT/visit, where SUBJECT and VISIT may be user-specified parent folders containing all the described names (i.e. subjects, scans, etc.)
+
+![Image of Dehybridizer](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Dehybridizer.png)
+
+The main ExploreASL program has over 55 adjustable parameters to account for ASL acquisition variability. Defining these parameters is simplified through the ParmsMaker Module and the resulting DataPar.json file is automatically saved to the indicated study directory. In addition, existing DataPar.json files can be re-loaded, edited, and then re-saved back into the study directory.
 
 ![Image of ParmsMaker](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/ParmsMaker.png)
 
-Once data is imported and parameters defined, the user will be prepared to run the main program. The Executor Module allows for multi-processing analysis of multiple studies and/or multiple subjects per study simultaneously.
+Once data is imported and parameters defined, the user will be prepared to run the main program. The Executor Module allows for multi-processing analysis of multiple studies and/or multiple subjects per study simultaneously. Specific studies may be terminated at any time.
 
 ![Image of Executor](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Executor.png)
 
 Finally, with the data analyzed, the user may feel free to visualize the processed dataset. The Post Processing & Visualization Module allows for users to interactively drag & drop all loaded data to generate publication-quality plots and load in both functional & structural MRI scans based on user clicks on specific datapoints.
 
 ![Image of PostProc](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/PostProc.png)
+
+### Modification Jobs
+
+Multiple modification jobs are avaliable to allow or re-runs, tweaks prior to a re-run, or otherwise assistance with meta-analysis between studies.
+
+Progress in ExploreASL is handled through the creation of .status files that indicate the completion of critical steps. This GUI eases the user specification of .status files to remove, allowing only those particular steps to be repeated.
+
+![Image of Modjob Rerun](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_Rerun.png)
+
+Users may wish to include additional covariates during the creation of biasfields when the Population Module is re-run. An SQL-like one-sided merge is performed that allows automatic & hassle-free addition of thousands of rows of metadata as opposed to careful user copy & pasting.
+
+![Image of Modjob AlterTSV](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_AlterTSV.png)
+
+Although the DICOM --> NIFTI import process covers most expected ASL flavors, it is feasible that certain subjects & scans may require very specific settings indicated in the JSON files corresponding to each image volume. It is possible to specify which JSONs require specific key-value pairs to be introduced either through user drag & dropping of subject directories or through a comma-separated-values configuration file.
+
+Finally, with the data analyzed, the user may feel free to visualize the processed dataset. The Post Processing & Visualization Module allows for users to interactively drag & drop all loaded data to generate publication-quality plots and load in both functional & structural MRI scans based on user clicks on specific datapoints.
+
+![Image of Modjob ModJSONSidecars](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_ModJSONSidecars.png)
+
+Users may with to which to merge multiple analysis directories (i.e. to perform the Population Module for meta-analysis purposes). To avoid the tedious task of copy-pasting potentially thousands of files and directories, the GUI can accomplish this with the user only needing to specify the destination and the directories to merge. Symlinks are supported to save disk space.
+
+![Image of Modjob MergeDirs](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_MergeDirs.png)
 
 From start to finish, this GUI is designed to streamline the processing and eventual publication of arterial spin labelling image data.
 

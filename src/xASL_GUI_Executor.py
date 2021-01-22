@@ -11,8 +11,7 @@ from PySide2.QtWidgets import *
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from src.xASL_GUI_Executor_ancillary import (initialize_all_lock_dirs, calculate_anticipated_workload,
-                                             calculate_missing_STATUS, interpret_statusfile_errors)
+from src.xASL_GUI_Executor_ancillary import *
 from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer
 from src.xASL_GUI_Executor_Modjobs import (xASL_GUI_RerunPrep, xASL_GUI_TSValter,
                                            xASL_GUI_ModSidecars, xASL_GUI_MergeDirs)
@@ -25,6 +24,7 @@ from pathlib import Path
 from platform import system
 import signal
 from psutil import Process, NoSuchProcess
+from typing import Union
 
 
 class ExploreASL_WorkerSignals(QObject):
@@ -547,6 +547,14 @@ class xASL_Executor(QMainWindow):
                         checks.clear()
                         self.btn_runExploreASL.setEnabled(False)
                         return
+                    except json.decoder.JSONDecodeError as json_err:
+                        QMessageBox.warning(self, self.exec_errs["BadDataParFileJson"][0],
+                                            f"{self.exec_errs['BadDataParFileJson'][1]}{json_err}", QMessageBox.Ok)
+                        le_analysisdir.clear()
+                        checks.clear()
+                        self.btn_runExploreASL.setEnabled(False)
+                        return
+
                 n_subjects = sum([True if re.search(regex, path.name) else False
                                   for path in Path(le_analysisdir.text()).iterdir()])
                 if n_subjects >= int(cmb_cores.currentText()):
@@ -764,15 +772,20 @@ class xASL_Executor(QMainWindow):
     ###################################################################################################################
     def run_Explore_ASL(self):
 
-        # Immediately abandon this if the MATLAB version is not newer
-        v_path = Path(self.config["MATLABROOT"]).name
-        if not re.search(r"R\d{4}[ab]", v_path):
+        # Immediately abandon this if the MATLAB version is not compatible with batch commands
+        v_path = self.config["MATLABROOT"]
+        matlab_ver_regex = re.compile(r"R(\d{4})[ab]")
+        matlab_ver_match = matlab_ver_regex.search(v_path)
+        try:
+            if not int(matlab_ver_match.group(1)) >= 2019:
+                QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
+                                      self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
+                return
+        except AttributeError:
             QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
                                   self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
-            del v_path
             return
-        else:  # Otherwise, garbage collect
-            del v_path
+        del v_path, matlab_ver_regex, matlab_ver_match
 
         if self.config["DeveloperMode"]:
             print("%" * 60)
@@ -826,7 +839,6 @@ class xASL_Executor(QMainWindow):
                             str_regex = str_regex.strip('^$')
                         regex: re.Pattern = re.compile(str_regex)
                         explore_asl_path: str = parms["MyPath"]
-                        run_names: list = parms["SESSIONS"]
                     except KeyError as parms_keyerror:
                         QMessageBox().warning(self, self.exec_errs["BadDataParFile"][0],
                                               self.exec_errs["BadDataParFile"][1] + f"{parms_keyerror}", QMessageBox.Ok)
@@ -865,7 +877,7 @@ class xASL_Executor(QMainWindow):
                         1,  # Skip the pause
                         ii + 1,  # iWorker
                         int(box.currentText()),  # nWorkers
-                        translator[run_opts.currentText()],  # Processing options
+                        translator[run_opts.currentText()],  # Which modules Structural, ASL, Both, Population
                         str_regex)  # For catching errors for particular subjects
 
                     inner_worker_block.append(worker)
@@ -876,11 +888,12 @@ class xASL_Executor(QMainWindow):
             self.workers.append(inner_worker_block)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 3 - Create all lock directories in advance; this will give the watcher full oversight
-            initialize_all_lock_dirs(analysis_dir=ana_path,
-                                     regex=regex,
-                                     run_options=run_opts.currentText(),
-                                     run_names=run_names)
+            # Step 3 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
+            # maxvalue from that
+            # This now ALSO makes the lock dirs that do not exist
+            workload, expected_status_files = calculate_anticipated_workload(parmsdict=parms,
+                                                                             run_options=run_opts.currentText(),
+                                                                             translators=self.exec_translators)
 
             # Also delete any directories called "locked" in the study
             locked_dirs = peekable(ana_path.rglob("locked"))
@@ -894,12 +907,6 @@ class xASL_Executor(QMainWindow):
                         print(f"{lock_err}...but proceeding to recursive delete")
                         rmtree(path=lock_dir, ignore_errors=True)
 
-            # %%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
-            # maxvalue from that
-            workload, expected_status_files = calculate_anticipated_workload(parmsdict=parms,
-                                                                             run_options=run_opts.currentText(),
-                                                                             translators=self.exec_translators)
             if not workload or len(expected_status_files) == 0:
                 QMessageBox.information(self, self.exec_errs["NoWorkloadDetected"][0],
                                         self.exec_errs["NoWorkloadDetected"][1], QMessageBox.Ok)
@@ -920,19 +927,20 @@ class xASL_Executor(QMainWindow):
                 pprint(expected_status_files)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 5 - Create a Watcher for that study
+            # Step 4 - Create a Watcher for that study
             watcher = ExploreASL_Watcher(target=path.text(),  # the analysis directory
                                          regex=str_regex,  # the regex used to recognize subjects
                                          watch_debt=debt,  # the debt used to determine when to stop watching
                                          study_idx=study_idx,
                                          # the identifier used to know which progressbar to signal
                                          translators=self.exec_translators,
-                                         config=self.config
+                                         config=self.config,
+                                         datapar_dict=parms
                                          )
             self.textedit_textoutput.append(f"Setting a Watcher thread on {ana_path}")
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 6 - Set up watcher connections
+            # Step 5 - Set up watcher connections
             # Connect the watcher to signal to the text output
             watcher.signals.update_text_output_signal.connect(self.update_text)
             # Connect the watcher to signal to the progressbar
@@ -942,7 +950,7 @@ class xASL_Executor(QMainWindow):
             self.watchers.append(watcher)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 7 - Set up worker connections
+            # Step 6 - Set up worker connections
             # Worker connections setup within a study
             for idx, worker in enumerate(inner_worker_block):
                 # Connect the finished signal to the watcher debt to help it understand when it should stop watching
@@ -994,10 +1002,11 @@ class ExploreASL_Watcher(QRunnable):
     3)
     """
 
-    def __init__(self, target, regex, watch_debt, study_idx, translators, config):
+    def __init__(self, target, regex, watch_debt, study_idx, translators, config, datapar_dict: dict):
         super().__init__()
         self.signals = ExploreASL_WatcherSignals()
         self.dir_to_watch = Path(target) / "lock"
+        self.datapar_dict = datapar_dict
 
         # Regexes
         self.subject_regex = re.compile(regex)
@@ -1027,7 +1036,11 @@ class ExploreASL_Watcher(QRunnable):
                                path=str(self.dir_to_watch),
                                recursive=True)
         self.stuct_status_file_translator: dict = translators["Structural_Module_Filename2Description"]
-        self.asl_status_file_translator: dict = translators["ASL_Module_Filename2Description"]
+        if is_earlier_version(easl_dir=self.datapar_dict["MyPath"], threshold_higher=140):
+            self.asl_status_file_translator: dict = translators["ASL_Module_Filename2Description_PRE140"]
+        else:
+            self.asl_status_file_translator: dict = translators["ASL_Module_Filename2Description"]
+
         self.pop_status_file_translator: dict = translators["Population_Module_Filename2Description"]
         self.workload_translator: dict = translators["ExploreASL_Filename2Workload"]
         if self.config["DeveloperMode"]:
