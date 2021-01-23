@@ -8,9 +8,10 @@ from src.xASL_GUI_Graph_FacetManager import xASL_GUI_FacetManager
 from src.xASL_GUI_Graph_FacetArtist import xASL_GUI_FacetArtist
 from src.xASL_GUI_Graph_MRIViewManager import xASL_GUI_MRIViewManager
 from src.xASL_GUI_Graph_MRIViewArtist import xASL_GUI_MRIViewArtist
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area, set_formlay_options
 from json import load
 from pathlib import Path
+from platform import system
 
 
 # noinspection PyCallingNonCallable
@@ -50,6 +51,14 @@ class xASL_Plotting(QMainWindow):
 
         # Main Widgets setup
         self.UI_Setup_Docker()
+
+        # MacOS addtional actions
+        if system() == "Darwin":
+            set_formlay_options(self.formlay_directories, vertical_spacing=0)
+            self.hlay_analysis_dir.setContentsMargins(5, 0, 5, 0)
+            self.hlay_metadata.setContentsMargins(5, 0, 5, 0)
+            self.vlay_directories.setSpacing(0)
+            self.vlay_directories.addStretch(1)
 
     def resizeEvent(self, event):
         self.dock.setMaximumHeight(self.height())
@@ -104,7 +113,7 @@ class xASL_Plotting(QMainWindow):
         self.btn_load_in_data.clicked.connect(self.loader.load_exploreasl_data)
         self.btn_load_in_data.clicked.connect(self.full_reset)
 
-        self.formlay_directories.addRow("Analysis Directory", self.hlay_analysis_dir)
+        self.formlay_directories.addRow("Study Directory", self.hlay_analysis_dir)
         self.formlay_directories.addRow("Metadata/Covariates file", self.hlay_metadata)
         self.formlay_directories.addRow("Which Atlas", self.cmb_atlas_selection)
         self.formlay_directories.addRow("Which Partial-Volume Statistic", self.cmb_pvc_selection)

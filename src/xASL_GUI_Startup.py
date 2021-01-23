@@ -15,24 +15,24 @@ import re
 
 def get_local_matlab() -> (bool, Union[str, None]):
     matlab_cmd_path = which("matlab")
+    matlab_ver_regex = re.compile(r"R\d{4}[ab]")
     # Get version #
-    on_path, matlab_ver = False, None
+    matlab_ver = None
 
     # Is on PATH
     if matlab_cmd_path is not None:
-        on_path = True
-        matlab_ver_regex = re.compile(r".*R\d{4}[ab]")
+
         match = matlab_ver_regex.search(matlab_cmd_path)
 
         # If the version number was found
         if match:
             print(f"shutil method was a success and located: {match.group()}")
             matlab_ver = match.group()
-            return on_path, matlab_ver
+            return matlab_ver, matlab_cmd_path
 
         # Otherwise,
         # For Linux/MacOS with promising root
-        if system() != "Windows" and '/usr/' in matlab_cmd_path:
+        if system() == "Linux" and '/usr/' in matlab_cmd_path:
             print(f"User clearly has the matlab command in {matlab_cmd_path}, but the version number could not be "
                   f"ascertained. Attempting to locate around '/usr/local/")
             for search_pattern in ["/usr/local/matlab**/bin", "/usr/local/**/MATLAB/*/bin"]:
@@ -41,27 +41,35 @@ def get_local_matlab() -> (bool, Union[str, None]):
                     local_match = matlab_ver_regex.search(local_result[0])
                     if local_match:
                         matlab_ver = local_match.group()
-                        return on_path, matlab_ver
+                        return matlab_ver, matlab_cmd_path
                 except StopIteration:
                     continue
 
         # If no luck so far, resort to using subprocess since matlab is on PATH
         if matlab_ver is None:
             print("Version was not readily visible in PATH. Attempting backup subprocess method to extract version")
-            regex = re.compile("'(.*)'")
             result = subprocess.run(["matlab", "-nosplash", "-nodesktop", "-batch", "matlabroot"],
                                     capture_output=True, text=True)
-            match = regex.search(result.stdout)
+            match = matlab_ver_regex.search(result.stdout)
             if result.returncode == 0 and match:
                 matlab_ver = match.group(1)
-            return on_path, matlab_ver
+            return matlab_ver, matlab_cmd_path
 
         # Windows or no lucky search pattern
-        return on_path, matlab_ver
+        return matlab_ver, matlab_cmd_path
 
     # Not on PATH
     else:
-        return on_path, matlab_ver
+        if system() != "Darwin":
+            return matlab_ver, matlab_cmd_path
+        # MacOS, default installation to Applications seems to avoid adding MATLAB to PATH. Look for it in applications
+        applications_path = Path("/Applications").resolve()
+        try:
+            matlab_cmd_path = str(next(applications_path.rglob("bin/matlab")))
+            matlab_ver = matlab_ver_regex.search(matlab_cmd_path).group()
+            return matlab_ver, matlab_cmd_path
+        except (StopIteration, AttributeError):
+            return matlab_ver, matlab_cmd_path
 
 
 def startup():
@@ -114,19 +122,21 @@ def startup():
             sys.exit(0)
 
         if check_for_local == QMessageBox.Yes:
-            status, version = get_local_matlab()
-            if status:
-                if version:
-                    master_config["MATLABROOT"] = version
-                else:
-                    QMessageBox.information(QWidget(), "No MATLAB Version Found",
-                                            "The MATLAB version at this time is required for the main module to run.\n"
-                                            "You may find the functionality of the GUI compromised until this is "
-                                            "ameliorated.", QMessageBox.Ok)
+            version, cmd_path = get_local_matlab()
+            master_config["MATLAB_VER"] = version
+            master_config["MATLAB_CMD_PATH"] = cmd_path
+            if cmd_path is None:
+                QMessageBox.warning(QWidget(), "No MATLAB Command Found",
+                                    "The matlab command could not be found on this local system. ASL analysis "
+                                    "cannot be locally performed without the GUI knowing from where MATLAB can be "
+                                    "launched.", QMessageBox.Ok)
+            elif cmd_path is not None and version is None:
+                QMessageBox.warning(QWidget(), "No MATLAB Version Found",
+                                    f"The matlab command was found at:\n{str(cmd_path)}.\nHowever, the version could "
+                                    f"not be determined. The GUI requires knowledge of the MATLAB version being run "
+                                    f"in order to process data", QMessageBox.Ok)
             else:
-                QMessageBox.information(QWidget(), "No MATLAB found on PATH",
-                                        "MATLAB was not on PATH. You may find the functionality of the GUI compromised "
-                                        "until this is ameliorated.", QMessageBox.Ok)
+                pass
         else:
             QMessageBox.information(QWidget(), "No off-local support at the current time",
                                     "The current version of ExploreASL_GUI does not offer support for compiled or "

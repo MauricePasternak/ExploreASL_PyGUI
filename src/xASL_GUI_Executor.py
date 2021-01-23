@@ -15,11 +15,11 @@ from src.xASL_GUI_Executor_ancillary import *
 from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer
 from src.xASL_GUI_Executor_Modjobs import (xASL_GUI_RerunPrep, xASL_GUI_TSValter,
                                            xASL_GUI_ModSidecars, xASL_GUI_MergeDirs)
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le)
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le, set_formlay_options)
 from pprint import pprint
 from collections import defaultdict
 import subprocess
-from shutil import rmtree
+from shutil import rmtree, which
 from pathlib import Path
 from platform import system
 import signal
@@ -57,7 +57,7 @@ class ExploreASL_Worker(QRunnable):
         # PREPARE ARGUMENTS AND RUN THE UNDERLYING PROGRAM
         ##################################################
 
-        exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args[0:-1]
+        mpath, exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args[0:-1]
         subject_regex_str = self.args[-1]
 
         # Generate the string that the command line will feed into the complied MATLAB session
@@ -68,7 +68,9 @@ class ExploreASL_Worker(QRunnable):
                     f"{nworkers}, " \
                     f"[{' '.join([str(item) for item in imodules])}])"
 
-        cmds = ["matlab",
+        matlab_cmd = "matlab" if which("matlab") is not None else mpath
+
+        cmds = [f"{matlab_cmd}",
                 "-nodesktop",
                 "-nosplash",
                 "-batch",
@@ -271,6 +273,9 @@ class xASL_Executor(QMainWindow):
 
         self.cont_progbars = QWidget(self.grp_taskschedule)
         self.formlay_progbars = QFormLayout(self.cont_progbars)
+        if system() == "Darwin":
+            set_formlay_options(self.formlay_progbars)
+            self.vlay_taskschedule.setSpacing(0)
 
         # Need python lists to keep track of row additions/removals; findChildren's ordering is incorrect
         self.formlay_lineedits_list = []
@@ -292,7 +297,7 @@ class xASL_Executor(QMainWindow):
         self.vlay_textoutput = QVBoxLayout(self.grp_textoutput)
         self.textedit_textoutput = QTextEdit(self.grp_textoutput)
         self.textedit_textoutput.setPlaceholderText("Processing Progress will appear within this window")
-        self.textedit_textoutput.setFontPointSize(8)
+        self.textedit_textoutput.setFontPointSize(8 if system() != "Darwin" else 10)
         self.vlay_textoutput.addWidget(self.textedit_textoutput)
 
     # Rare exception of a UI function that is also technically a setter; this will dynamically alter the number of
@@ -342,6 +347,10 @@ class xASL_Executor(QMainWindow):
                 # Package it all in another FormLayout
                 inner_grp = QGroupBox(title=f"Study {inner_btn_browsedirs.row_idx}")
                 inner_formlay = QFormLayout(inner_grp)
+                if system() == "Darwin":
+                    set_formlay_options(inner_formlay, vertical_spacing=0)
+                    for widget in [inner_cmb_ncores, inner_le, inner_cmb_procopts, inner_btn_stop]:
+                        widget.setSizePolicy(QSizePolicy.Expanding,  QSizePolicy.Preferred)
                 inner_formlay.addRow("Assigned Number of Cores", inner_cmb_ncores)
                 inner_hbox = QHBoxLayout()
                 inner_hbox.addWidget(inner_le)
@@ -396,6 +405,7 @@ class xASL_Executor(QMainWindow):
     def UI_Setup_ProcessModification(self):
         self.vlay_procmod = QVBoxLayout(self.grp_procmod)
         self.formlay_promod = QFormLayout()
+
         # Set up the widgets in this section
         self.cmb_modjob = QComboBox(self.grp_procmod)
         self.cmb_modjob.addItems(["Re-run a study", "Alter participants.tsv",
@@ -421,6 +431,12 @@ class xASL_Executor(QMainWindow):
         self.formlay_promod.addRow("Path to analysis dir to modify", self.hlay_modjob)
         self.vlay_procmod.addLayout(self.formlay_promod)
         self.vlay_procmod.addWidget(self.btn_runmodjob)
+
+        if system() == "Darwin":
+            set_formlay_options(self.formlay_promod, vertical_spacing=0)
+            self.btn_runmodjob.setMinimumHeight(90)
+            for widget in [self.cmb_modjob, self.le_modjob]:
+                widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     # Runs the selected modification widget
     # noinspection PyCallByClass
@@ -773,11 +789,12 @@ class xASL_Executor(QMainWindow):
     def run_Explore_ASL(self):
 
         # Immediately abandon this if the MATLAB version is not compatible with batch commands
-        v_path = self.config["MATLABROOT"]
-        matlab_ver_regex = re.compile(r"R(\d{4})[ab]")
-        matlab_ver_match = matlab_ver_regex.search(v_path)
+        if self.config["MATLAB_VER"] is None:
+            QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
+                                  self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
+            return
         try:
-            if not int(matlab_ver_match.group(1)) >= 2019:
+            if not int(re.search(r"R(\d{4})[ab]", self.config["MATLAB_VER"]).group(1)) >= 2019:
                 QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
                                       self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
                 return
@@ -785,7 +802,6 @@ class xASL_Executor(QMainWindow):
             QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
                                   self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
             return
-        del v_path, matlab_ver_regex, matlab_ver_match
 
         if self.config["DeveloperMode"]:
             print("%" * 60)
@@ -871,6 +887,7 @@ class xASL_Executor(QMainWindow):
             for ii in range(box.count()):
                 if ii < int(box.currentText()):
                     worker = ExploreASL_Worker(
+                        self.config["MATLAB_CMD_PATH"],  # Backup matlab command path
                         explore_asl_path,  # The exploreasl filepath
                         str(parms_file),  # The filepath to parms
                         1,  # Process the data

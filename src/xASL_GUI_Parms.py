@@ -3,7 +3,7 @@ from PySide2.QtGui import *
 from PySide2.QtCore import QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
 from src.xASL_GUI_Executor_ancillary import is_earlier_version
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area, make_droppable_clearable_le
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area, make_droppable_clearable_le, set_formlay_options
 import json
 import re
 from pathlib import Path
@@ -12,6 +12,7 @@ from more_itertools import peekable
 from functools import partial
 from shutil import which
 from typing import List
+from platform import system
 
 
 class xASL_Parms(QMainWindow):
@@ -72,6 +73,11 @@ class xASL_Parms(QMainWindow):
         self.le_study_dir.textChanged.connect(self.update_asl_json_sidecar_data)
         self.resize(self.minimumSizeHint())
 
+        # Additional MacOS actions
+        if system() == "Darwin":
+            self.btn_load_parms.setMinimumHeight(60)
+            self.btn_make_parms.setMinimumHeight(60)
+
     def UI_Setup_Basic(self):
         self.formlay_basic = QFormLayout(self.cont_basic)
         self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
@@ -86,7 +92,7 @@ class xASL_Parms(QMainWindow):
 
         self.le_subregex = QLineEdit(text='\\d+')
         self.le_subregex.setVisible(False)
-        self.chk_showregex_field = QCheckBox("Show Current Regex", checked=False)
+        self.chk_showregex_field = QCheckBox(text="Show Current Regex", checked=False)
         self.chk_showregex_field.stateChanged.connect(self.le_subregex.setVisible)
 
         self.lst_included_subjects = DandD_FileExplorer2ListWidget()
@@ -110,18 +116,28 @@ class xASL_Parms(QMainWindow):
         self.cmb_quality.setCurrentIndex(1)
 
         for desc, widget in zip(["ExploreASL Directory", "Name of Study", "Analysis Directory",
-                                 "Dataset is in BIDS format?",
-                                 "Subjects to Assess\n(Drag and Drop Directories)",
-                                 "Subjects to Exclude\n(Drag and Drop Directories)", "Vendor", "Sequence Type",
+                                 "Dataset is in BIDS format?", self.chk_showregex_field,
+                                 "Subjects to Assess\n(Drag and Drop Directories)", "",
+                                 "Subjects to Exclude\n(Drag and Drop Directories)", "",
+                                 "Vendor", "Sequence Type",
                                  "Labelling Type", "M0 was acquired?", "M0 Position in ASL", "Quality"],
                                 [self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
-                                 self.chk_overwrite_for_bids, self.lst_included_subjects, self.lst_excluded_subjects,
+                                 self.chk_overwrite_for_bids, self.le_subregex,
+                                 self.lst_included_subjects, self.btn_included_subjects,
+                                 self.lst_excluded_subjects, self.btn_excluded_subjects,
                                  self.cmb_vendor, self.cmb_sequencetype, self.cmb_labelingtype,
                                  self.cmb_m0_isseparate, self.cmb_m0_posinasl, self.cmb_quality]):
+
             self.formlay_basic.addRow(desc, widget)
-        self.formlay_basic.insertRow(4, self.chk_showregex_field, self.le_subregex)
-        self.formlay_basic.insertRow(6, "", self.btn_included_subjects)
-        self.formlay_basic.insertRow(8, "", self.btn_excluded_subjects)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
+        # MacOS specific additional actions
+        if system() == "Darwin":
+            set_formlay_options(self.formlay_basic, row_wrap_policy="dont_wrap", vertical_spacing=5)
+            self.lst_included_subjects.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def UI_Setup_Advanced(self):
         # First, set up the groupboxes and add them to the advanced tab layout
@@ -155,6 +171,11 @@ class xASL_Parms(QMainWindow):
                                         self.spinbox_initialpld,
                                         self.spinbox_labdur, self.hlay_slice_readout]):
             self.formlay_seqparms.addRow(description, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
 
         # Set up the Quantification Parameters
         self.vlay_quantparms, self.scroll_quantparms, self.cont_quantparms = make_scrollbar_area(self.grp_quantparms)
@@ -178,6 +199,11 @@ class xASL_Parms(QMainWindow):
                                         self.chk_quant_applyss_m0, self.chk_quant_pwi2label, self.chk_quant_quantifym0,
                                         self.chk_quant_divbym0, self.chk_save_cbf4d]):
             self.formlay_quantparms.addRow(description, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
 
         # Set up the remaining M0 Parameters
         self.vlay_m0parms, self.scroll_m0parms, self.cont_m0parms = make_scrollbar_area(self.grp_m0parms)
@@ -188,6 +214,11 @@ class xASL_Parms(QMainWindow):
         for description, widget in zip(["M0 Processing Algorithm", "GM Scale Factor"],
                                        [self.cmb_m0_algorithm, self.spinbox_gmscale]):
             self.formlay_m0parms.addRow(description, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
 
         # Set up the Environment Parameters
         self.vlay_envparms, self.scroll_envparms, self.cont_envparms = make_scrollbar_area(self.grp_envparms)
@@ -202,6 +233,19 @@ class xASL_Parms(QMainWindow):
         for desc, widget in zip(["Path to FSL bin directory", "Output CBF native space maps?"],
                                 [self.hlay_fslpath, self.chk_outputcbfmaps]):
             self.formlay_envparms.addRow(desc, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
+
+        # Additional MacOS settings:
+        if system() == "Darwin":
+            for formlay, vspacing in zip([self.formlay_seqparms, self.formlay_quantparms, self.formlay_m0parms,
+                                          self.formlay_envparms],
+                                         [5, 5, 5, 5]):
+                set_formlay_options(formlay, row_wrap_policy="dont_wrap", vertical_spacing=vspacing)
+            self.cmb_slice_readout.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     def UI_Setup_ProcessingSettings(self):
         self.vlay_procsettings = QVBoxLayout(self.cont_proc_settings)
@@ -230,6 +274,11 @@ class xASL_Parms(QMainWindow):
                                  self.chk_deltempfiles, self.chk_skipnoflair, self.chk_skipnoasl,
                                  self.chk_skipnom0]):
             self.formlay_genpparms.addRow(desc, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
 
         # Set up the Structural Processing Parameters
         self.vlay_strpparms, self.scroll_strpparms, self.cont_strpparms = make_scrollbar_area(self.grp_strpparms)
@@ -245,6 +294,11 @@ class xASL_Parms(QMainWindow):
                                 [self.cmb_segmethod, self.chk_run_dartel, self.chk_runlongreg, self.chk_hammersroi,
                                  self.chk_fixcat12res]):
             self.formlay_strpparms.addRow(desc, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
 
         # Set up the ASL Processing Parameters
         self.vlay_aslpparms, self.scroll_aslpparms, self.cont_aslpparms = make_scrollbar_area(self.grp_aslpparms)
@@ -272,6 +326,11 @@ class xASL_Parms(QMainWindow):
                                  self.cmb_affineregbase, self.cmb_dctreg, self.chk_regm0toasl, self.chk_usemniasdummy,
                                  self.chk_nativepvc, self.chk_gaussianpvc, self.hlay_pvckernel]):
             self.formlay_aslpparms.addRow(desc, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
 
         # Set up the Masking Parameters
         self.vlay_maskparms, self.scroll_maskparms, self.cont_maskparms = make_scrollbar_area(self.grp_maskparms)
@@ -284,6 +343,22 @@ class xASL_Parms(QMainWindow):
                                 [self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask,
                                  self.chk_wholebrainmask]):
             self.formlay_maskparms.addRow(desc, widget)
+            if system() == "Darwin":
+                try:
+                    widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                except AttributeError:
+                    continue
+
+        # Additional MacOS settings:
+        if system() == "Darwin":
+            for formlay, vspacing in zip([self.formlay_genpparms, self.formlay_strpparms, self.formlay_aslpparms,
+                                          self.formlay_maskparms],
+                                         [5, 5, 5, 5]):
+                set_formlay_options(formlay, row_wrap_policy="dont_wrap", vertical_spacing=vspacing)
+
+            self.spinbox_pvckernel_1.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            self.spinbox_pvckernel_2.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            self.spinbox_pvckernel_3.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     ################################
     # Json Sidecar Related Functions
@@ -600,9 +675,15 @@ class xASL_Parms(QMainWindow):
     def saveparms2json(self):
         # Defensive programming first
         study_dir = Path(self.le_study_dir.text())
-        if any([self.le_study_dir.text() == '', not study_dir.exists(), not study_dir.is_dir()]):
+        if any([self.le_study_dir.text() == '', not study_dir.exists(), not study_dir.is_dir()
+                ]):
             QMessageBox().warning(self.parent(), self.parms_errs["InvalidStudyDirectory"][0],
                                   self.parms_errs["InvalidStudyDirectory"][1], QMessageBox.Ok)
+            return
+        if self.le_subregex.text() in ["", "^$"]:
+            QMessageBox().warning(self.parent(), "Invalid Regex",
+                                  f"The detected regex:\n{self.le_subregex.text()}\n"
+                                  f"is an valid regex for matching subject names", QMessageBox.Ok)
             return
 
         json_parms = {
