@@ -182,7 +182,7 @@ class xASL_MainWin(QMainWindow):
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
             if system() != "Windows":
-                matlab_cmd_path = next(directory.rglob("bin/matlab"))
+                matlab_cmd_path = next(directory.rglob("matlab"))
             else:
                 matlab_cmd_path = next(directory.rglob("matlab.exe"))
         except StopIteration:

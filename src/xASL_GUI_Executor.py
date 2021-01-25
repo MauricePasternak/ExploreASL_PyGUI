@@ -57,7 +57,7 @@ class ExploreASL_Worker(QRunnable):
         # PREPARE ARGUMENTS AND RUN THE UNDERLYING PROGRAM
         ##################################################
 
-        mpath, exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args[0:-1]
+        mpath, mver, exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args[0:-1]
         subject_regex_str = self.args[-1]
 
         # Generate the string that the command line will feed into the complied MATLAB session
@@ -67,15 +67,21 @@ class ExploreASL_Worker(QRunnable):
                     f"{iworker}, " \
                     f"{nworkers}, " \
                     f"[{' '.join([str(item) for item in imodules])}])"
-
         matlab_cmd = "matlab" if which("matlab") is not None else mpath
+        if mver >= 2019:
+            cmds = [f"{matlab_cmd}",
+                    "-nodesktop",
+                    "-nosplash",
+                    "-batch",
+                    f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"]
+        else:
+            cmds = [f"{matlab_cmd}",
+                    "-nosplash",
+                    "-nodisplay",
+                    "-r",
+                    f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
 
-        cmds = [f"{matlab_cmd}",
-                "-nodesktop",
-                "-nosplash",
-                "-batch",
-                f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}"]
-
+        print(f"{cmds=}")
         self.proc = subprocess.Popen(cmds, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.is_running = True
 
@@ -350,7 +356,7 @@ class xASL_Executor(QMainWindow):
                 if system() == "Darwin":
                     set_formlay_options(inner_formlay, vertical_spacing=0)
                     for widget in [inner_cmb_ncores, inner_le, inner_cmb_procopts, inner_btn_stop]:
-                        widget.setSizePolicy(QSizePolicy.Expanding,  QSizePolicy.Preferred)
+                        widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 inner_formlay.addRow("Assigned Number of Cores", inner_cmb_ncores)
                 inner_hbox = QHBoxLayout()
                 inner_hbox.addWidget(inner_le)
@@ -789,18 +795,48 @@ class xASL_Executor(QMainWindow):
     def run_Explore_ASL(self):
 
         # Immediately abandon this if the MATLAB version is not compatible with batch commands
-        if self.config["MATLAB_VER"] is None:
-            QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
-                                  self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
+        if self.config["MATLAB_VER"] is None or not isinstance(self.config["MATLAB_VER"], str):
+            QMessageBox().warning(self, "Unknown MATLAB version",
+                                  "The MATLAB version must be known for this to run. "
+                                  "See the main menu for specifying a MATLAB command path "
+                                  "which will also determine the appropriate version", QMessageBox.Ok)
             return
+
+        # Immediately abandone this if the MATLAB command path is not known
+        if self.config["MATLAB_CMD_PATH"] is None or not Path(self.config["MATLAB_CMD_PATH"]).resolve().exists():
+            QMessageBox().warning(self, "Unknown MATLAB command path",
+                                  "The path to the matlab command (MacOS/Linux) or matlab.exe must be known for this "
+                                  "to run. You may specify this using the main menu under "
+                                  "File --> Specify path to MATLAB executable, ",
+                                  QMessageBox.Ok)
+            return
+
         try:
-            if not int(re.search(r"R(\d{4})[ab]", self.config["MATLAB_VER"]).group(1)) >= 2019:
-                QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
-                                      self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
+            mlab_ver = int(re.search(r"R(\d{4})[ab]", self.config["MATLAB_VER"]).group(1))
+            # Immediately abandon this if the MATLAB version is too old
+            if mlab_ver < 2017:
+                QMessageBox().warning(self, "MATLAB is too old",
+                                      f"The MATLAB version on this machine: {mlab_ver}\nis not compatible with "
+                                      f"ExploreASL. Please contact your system administrator for upgrading your "
+                                      f"MATLAB installation to at least 2017a for MacOS or Linux, or to at least 2019a "
+                                      f"for Windows.", QMessageBox.Ok)
                 return
+            # Or if too old for Windows due to the lack of the -nodisplay option
+            if system() == "Windows" and not mlab_ver >= 2019:
+                QMessageBox().warning(self, "Incompatible MATLAB version with Windows",
+                                      f"Due to the issues with MATLAB's Windows implementation, this program cannot "
+                                      f"launch ExploreASL on MATLAB versions prior to 2019a on Windows systems. Please "
+                                      f"contact your system administrator for upgrading your MATLAB installation to at "
+                                      f"least 2019a for Windows or 2017a for MacOS or Linux.",
+                                      QMessageBox.Ok)
+                return
+        # Or if something went wrong getting the version
         except AttributeError:
-            QMessageBox().warning(self, self.exec_errs["IncompatibleMATLAB"][0],
-                                  self.exec_errs["IncompatibleMATLAB"][1], QMessageBox.Ok)
+            QMessageBox().warning(self, "Unknown MATLAB version",
+                                  "The MATLAB version must be known for this to run. "
+                                  "See the main menu under File --> Specify path to MATLAB executable for specifying "
+                                  "a MATLAB command path which will also determine the appropriate version",
+                                  QMessageBox.Ok)
             return
 
         if self.config["DeveloperMode"]:
@@ -888,6 +924,7 @@ class xASL_Executor(QMainWindow):
                 if ii < int(box.currentText()):
                     worker = ExploreASL_Worker(
                         self.config["MATLAB_CMD_PATH"],  # Backup matlab command path
+                        mlab_ver,
                         explore_asl_path,  # The exploreasl filepath
                         str(parms_file),  # The filepath to parms
                         1,  # Process the data

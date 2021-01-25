@@ -52,7 +52,7 @@ def get_local_matlab() -> (bool, Union[str, None]):
                                     capture_output=True, text=True)
             match = matlab_ver_regex.search(result.stdout)
             if result.returncode == 0 and match:
-                matlab_ver = match.group(1)
+                matlab_ver = match.group()
             return matlab_ver, matlab_cmd_path
 
         # Windows or no lucky search pattern
