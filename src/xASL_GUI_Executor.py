@@ -814,11 +814,11 @@ class xASL_Executor(QMainWindow):
         try:
             mlab_ver = int(re.search(r"R(\d{4})[ab]", self.config["MATLAB_VER"]).group(1))
             # Immediately abandon this if the MATLAB version is too old
-            if mlab_ver < 2017:
+            if mlab_ver < 2016:
                 QMessageBox().warning(self, "MATLAB is too old",
                                       f"The MATLAB version on this machine: {mlab_ver}\nis not compatible with "
                                       f"ExploreASL. Please contact your system administrator for upgrading your "
-                                      f"MATLAB installation to at least 2017a for MacOS or Linux, or to at least 2019a "
+                                      f"MATLAB installation to at least 2016a for MacOS or Linux, or to at least 2019a "
                                       f"for Windows.", QMessageBox.Ok)
                 return
             # Or if too old for Windows due to the lack of the -nodisplay option
@@ -827,7 +827,7 @@ class xASL_Executor(QMainWindow):
                                       f"Due to the issues with MATLAB's Windows implementation, this program cannot "
                                       f"launch ExploreASL on MATLAB versions prior to 2019a on Windows systems. Please "
                                       f"contact your system administrator for upgrading your MATLAB installation to at "
-                                      f"least 2019a for Windows or 2017a for MacOS or Linux.",
+                                      f"least 2019a for Windows or 2016a for MacOS or Linux.",
                                       QMessageBox.Ok)
                 return
         # Or if something went wrong getting the version
