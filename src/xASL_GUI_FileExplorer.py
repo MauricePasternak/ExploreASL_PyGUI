@@ -333,7 +333,7 @@ class xASL_FileView(QTreeView):
         if proposed_filepath.exists():
             QMessageBox.information(self, "Directory already exists",
                                     f"The specified name {proposed_basename} already exists within:\n"
-                                    f"{orig_dirname}\n"
+                                    f"{self.orig_filepath}\n"
                                     f"Please specify a different name")
             self.full_close_editor()
             return

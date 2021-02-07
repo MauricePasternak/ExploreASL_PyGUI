@@ -1,6 +1,5 @@
 import json
 from os import cpu_count
-import re
 from itertools import chain
 from time import sleep
 from datetime import datetime
@@ -24,7 +23,7 @@ from pathlib import Path
 from platform import system
 import signal
 from psutil import Process, NoSuchProcess
-from typing import Union
+import re
 
 
 class ExploreASL_WorkerSignals(QObject):
@@ -89,7 +88,7 @@ class ExploreASL_Worker(QRunnable):
         print(f"RESULTs for IWorker {iworker} of {nworkers}:"
               f"\n\tReturn code = {self.proc.returncode}")
         # print(f"{stdout=}")
-        # print(f"{stderr=}")
+        print(f"{stderr=}")
         self.is_running = False
 
         worker_analysis_dir = re.search(r'.*analysis', par_path).group()
@@ -689,9 +688,11 @@ class xASL_Executor(QMainWindow):
                       ["\n########################", "\nSpecific Stderr Errors:\n"] + specific_stderr_msg
 
                 err_write_date_str = datetime.now().strftime("%a-%b-%d-%Y %H-%M-%S")
-                with open(study_dir / f"{err_write_date_str} ExploreASL run - errors.txt", 'w') as writer:
-                    writer.writelines(msg)
-
+                try:
+                    with open(study_dir / f"{err_write_date_str} ExploreASL run - errors.txt", 'w') as writer:
+                        writer.writelines(msg)
+                except OSError:
+                    pass
             dirs_string = "\n".join([str(analysis_dir) for analysis_dir in postrun_diagnosis.keys()])
             QMessageBox().warning(self, self.exec_errs["UnsuccessfulExploreASLrun"][0],
                                   self.exec_errs["UnsuccessfulExploreASLrun"][1] + f"{dirs_string}\n" +
@@ -989,6 +990,7 @@ class xASL_Executor(QMainWindow):
                                          # the identifier used to know which progressbar to signal
                                          translators=self.exec_translators,
                                          config=self.config,
+                                         anticipated_paths=set(expected_status_files),
                                          datapar_dict=parms
                                          )
             self.textedit_textoutput.append(f"Setting a Watcher thread on {ana_path}")
@@ -1056,10 +1058,12 @@ class ExploreASL_Watcher(QRunnable):
     3)
     """
 
-    def __init__(self, target, regex, watch_debt, study_idx, translators, config, datapar_dict: dict):
+    def __init__(self, target, regex, watch_debt, study_idx, translators, config, anticipated_paths: set,
+                 datapar_dict: dict):
         super().__init__()
         self.signals = ExploreASL_WatcherSignals()
         self.dir_to_watch = Path(target) / "lock"
+        self.anticipated_paths: set = anticipated_paths
         self.datapar_dict = datapar_dict
 
         # Regexes
@@ -1110,6 +1114,7 @@ class ExploreASL_Watcher(QRunnable):
 
     def determine_skip(self, which_dict, created_status_path: Path, subject=None, run=None):
         msgs_to_return = []
+        # Choose the appropriate translator dictionary first and create an iterator out of it
         if which_dict == "ASL":
             iterator = iter(self.asl_status_file_translator.items())
         elif which_dict == "Structural":
@@ -1125,6 +1130,11 @@ class ExploreASL_Watcher(QRunnable):
         # Then, keep appending msgs until a nonexistant file is reached
         for statusfile_key, description in iterator:
             if created_status_path.with_name(statusfile_key).exists():
+                created_time = datetime.fromtimestamp(created_status_path.with_name(statusfile_key).stat().st_ctime)
+                # Omit recently-created files that may appear out of a race condition
+                if (datetime.now() - created_time).seconds < 10:
+                    continue
+
                 if which_dict == "ASL":
                     msgs_to_return.append(f"Skipping {description} for subject {subject} ; run {run}")
                 elif which_dict == "Structural":
@@ -1147,7 +1157,7 @@ class ExploreASL_Watcher(QRunnable):
         created_path = Path(created_path)
         msg = None
         workload_val = None
-        files_to_skip = None
+        files_to_skip = []
 
         if created_path.is_dir():  # Lock dir
             n_statfile = len(list(created_path.parent.glob("*.status")))
@@ -1165,14 +1175,14 @@ class ExploreASL_Watcher(QRunnable):
             if detected_module.group(1) == "Structural" and detected_subject:
                 msg = f"Completed {self.struct_status_file_translator[created_path.name]} in the Structural module " \
                       f"for subject: {detected_subject.group()}"
-                files_to_skip = self.determine_skip(which_dict="Structural", created_status_path=created_path,
-                                                    subject=detected_subject.group())
+                # files_to_skip = self.determine_skip(which_dict="Structural", created_status_path=created_path,
+                #                                     subject=detected_subject.group())
             elif detected_module.group(1) == "ASL" and detected_subject:
                 run = self.asl_struct_regex.search(str(created_path)).group(2)
                 msg = f"Completed {self.asl_status_file_translator[created_path.name]} in the ASL module " \
                       f"for subject: {detected_subject.group()} ; run: {run}"
-                files_to_skip = self.determine_skip(which_dict="ASL", created_status_path=created_path,
-                                                    subject=detected_subject.group(), run=run)
+                # files_to_skip = self.determine_skip(which_dict="ASL", created_status_path=created_path,
+                #                                     subject=detected_subject.group(), run=run)
             elif detected_module.group(1) == "Population":
                 msg = f"Completed {self.pop_status_file_translator[created_path.name]} in the Population module"
                 files_to_skip = self.determine_skip(which_dict="Population", created_status_path=created_path)
@@ -1185,10 +1195,14 @@ class ExploreASL_Watcher(QRunnable):
         # Emit the message to inform the user of the most recent progress
         if msg:
             self.signals.update_text_output_signal.emit(msg)
-            print(f"{files_to_skip=}")
-            if files_to_skip is not None:
+            # print(f"{files_to_skip=}")
+            if len(files_to_skip) > 0:
                 for file_msg in files_to_skip:
                     self.signals.update_text_output_signal.emit(file_msg)
+
+        # Avoid emitting workload values for anything that was not an anticipated path
+        if created_path not in self.anticipated_paths:
+            return
 
         # Emit the workload value associated with the completion of that status file as well as the study idx so that
         # the appropriate progressbar is updated

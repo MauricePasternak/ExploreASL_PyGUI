@@ -206,6 +206,10 @@ A: In the main window's menu, you'll find File --> Specify path to MATLAB execut
 
 A: Use the main window's menu: File --> Specify path to MATLAB executable. The program will prompt the user for the filepath to the matlab command. Go far enough into the folder structure such that `R####a` or `R####b` (where #### is the release year of the version, such as 2019) is indicated in the filepath. That version will be specifically re-registered for use by the GUI.
 
+> **Q: I have a formidable computer with dozens of cores, and I got a Segmentation Violation Detected error in the "ExploreASL run - errors.txt" file. What does this mean?**
+
+A: It's not a fault of the GUI or ExploreASL itself. It's a fault of MATLAB and how its glnax64 library plays with the current kernel/version of your operating system, leading to a crash when a significant number of cores are used for an extended period of time. You can simply press "Run ExploreASL" again. The program will pick up approximately from where it left off thanks to the .status file system. 
+
 ---
 
 ## License

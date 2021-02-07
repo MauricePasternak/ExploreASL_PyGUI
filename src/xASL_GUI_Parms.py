@@ -1,7 +1,7 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import QSize
-from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
+from src.xASL_GUI_HelperClasses import DandD_FileExplorer2ListWidget
 from src.xASL_GUI_Executor_ancillary import is_earlier_version
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area, make_droppable_clearable_le, set_formlay_options
 import json
@@ -702,7 +702,7 @@ class xASL_Parms(QMainWindow):
             "M0PositionInASL4D": {"M0 is the first ASL control-label pair": "[1 2]",
                                   "M0 is the first ASL scan volume": 1,
                                   "M0 is the second ASL scan volume": 2,
-                                  "M0 exists as a separate scan": 0,
+                                  "M0 exists as a separate scan": None,
                                   }[self.cmb_m0_posinasl.currentText()],
 
             # Sequence Parameters
@@ -772,7 +772,7 @@ class xASL_Parms(QMainWindow):
 
         # Compatibility issue with "M0PositionInASL4D"
         if all([is_earlier_version(easl_dir=Path(self.le_easl_dir.text()), threshold_higher=150),
-                json_parms.get("M0PositionInASL4D") == 0]):
+                json_parms.get("M0PositionInASL4D") is None]):
             del json_parms["M0PositionInASL4D"]
 
         try:
@@ -839,7 +839,7 @@ class xASL_Parms(QMainWindow):
                                          translator={"[1 2]": "M0 is the first ASL control-label pair",
                                                      1: "M0 is the first ASL scan volume",
                                                      2: "M0 is the second ASL scan volume",
-                                                     0: "M0 exists as a separate scan"
+                                                     None: "M0 exists as a separate scan"
                                                      }),
 
             # Sequence Parameters

@@ -1,10 +1,7 @@
 from pathlib import Path
-from more_itertools import peekable
 import re
 from platform import system
-from itertools import chain
-from pprint import pprint
-from typing import List, Set, Tuple, Union
+from typing import List, Tuple, Union
 
 
 def is_earlier_version(easl_dir: Union[Path, str], threshold_higher: int = 140, threshold_lower: int = 0):

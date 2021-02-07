@@ -2,19 +2,20 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
-from src.xASL_GUI_DCM2BIDS import get_dicom_directories, asldcm2bids_onedir, create_import_summary, \
-    bids_m0_followup
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options
 from src.xASL_GUI_Dehybridizer import xASL_GUI_Dehybridizer
+from src.xASL_GUI_DCM2NIFTI import *
 from tdda import rexpy
 from pprint import pprint
 from collections import OrderedDict
-from more_itertools import divide
+from more_itertools import divide, flatten
 import json
 from os import chdir
 from platform import system
 from pathlib import Path
 from typing import List
+import logging
+from datetime import datetime
 
 
 class Importer_WorkerSignals(QObject):
@@ -31,7 +32,7 @@ class Importer_Worker(QRunnable):
     Worker thread for running the import for a particular group.
     """
 
-    def __init__(self, dcm_dirs, config, use_legacy_mode):
+    def __init__(self, dcm_dirs: List[Path], config: dict, use_legacy_mode: bool, name: str = None):
         self.dcm_dirs: List[Path] = dcm_dirs
         self.import_config: dict = config
         self.use_legacy_mode: bool = use_legacy_mode
@@ -39,18 +40,31 @@ class Importer_Worker(QRunnable):
         self.signals = Importer_WorkerSignals()
         self.import_summaries = []
         self.failed_runs = []
+
+        logger = logging.Logger(name=name, level=logging.DEBUG)
+        self.converter = DCM2NIFTI_Converter(config=config, name=name, logger=logger, b_legacy=use_legacy_mode)
         print("Initialized Worker with args:\n")
         pprint(self.import_config)
 
     def run(self):
         for dicom_dir in self.dcm_dirs:
-            result, last_job, import_summary = asldcm2bids_onedir(dcm_dir=dicom_dir,
-                                                                  config=self.import_config,
-                                                                  legacy_mode=self.use_legacy_mode)
-            if result:
-                self.import_summaries.append(import_summary)
+            # result, last_job, import_summary = asldcm2bids_onedir(dcm_dir=dicom_dir,
+            #                                                       config=self.import_config,
+            #                                                       legacy_mode=self.use_legacy_mode)
+            # if result:
+            #     self.import_summaries.append(import_summary)
+            # else:
+            #     self.failed_runs.append((str(dicom_dir), last_job))
+            success, job_description = self.converter.process_dcm_dir(dcm_dir=dicom_dir)
+            if success:
+                self.import_summaries.append(self.converter.summary_data.copy())
             else:
-                self.failed_runs.append((str(dicom_dir), last_job))
+                self.failed_runs.append(job_description)
+
+        # self.signals.signal_send_summaries.emit(self.import_summaries)
+
+        # Cleanup handlers and such
+        self.converter.logger.removeHandler(self.converter.handler)
 
         self.signals.signal_send_summaries.emit(self.import_summaries)
         if len(self.failed_runs) > 0:
@@ -81,7 +95,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.run_regex = None
         self.scan_regex = None
         self.run_aliases = OrderedDict()
-        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
+        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "T2" "M0", "FLAIR"])
         self.cmb_runaliases_dict = {}
         self.threadpool = QThreadPool()
         self.import_summaries = []
@@ -218,10 +232,10 @@ class xASL_GUI_Importer(QMainWindow):
     def Setup_UI_UserSpecifyScanAliases(self):
         # Next specify the scan aliases
         self.grp_scanaliases = QGroupBox(title="Specify Scan Aliases")
-        self.cmb_scanaliases_dict = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
+        self.cmb_scanaliases_dict = dict.fromkeys(["ASL4D", "T1", "T2", "M0", "FLAIR"])
         self.formlay_scanaliases = QFormLayout(self.grp_scanaliases)
-        for description, scantype in zip(["ASL scan alias:\n(Mandatory)", "T1 scan alias:\n(Mandatory)",
-                                          "M0 scan alias:\n(Optional)", "FLAIR scan alias:\n(Optional)"],
+        for description, scantype in zip(["ASL scan alias", "T1 scan alias:", "T2 scan alias",
+                                          "M0 scan alias:", "FLAIR scan alias:"],
                                          self.cmb_scanaliases_dict.keys()):
             cmb = QComboBox(self.grp_scanaliases)
             cmb.setToolTip("Specify the folder name that corresponds to the indicated type of scan on the left")
@@ -278,8 +292,10 @@ class xASL_GUI_Importer(QMainWindow):
         :param level: which lineedit, in python index terms, emitted this signal
         """
         # Requirements to proceed
-        if any([self.rawdir == "", not Path(self.rawdir).exists(),
-                Path(self.rawdir).name not in ["raw", "analysis"]]):
+        if any([self.rawdir == "",
+                not Path(self.rawdir).exists(),
+                not Path(self.rawdir).is_dir()
+                ]):
             return
 
         # Check if a reset is needed
@@ -330,7 +346,7 @@ class xASL_GUI_Importer(QMainWindow):
         elif dir_type == "Scan":
             self.scan_regex = self.infer_regex(list(set(basenames)))
             print(f"Scan regex: {self.scan_regex}")
-            self.reset_scan_alias_cmbs(basenames=list(set(basenames)))
+            self.reset_scan_alias_cmbs(basenames=sorted(set(basenames)))
             del directories, basenames
 
         elif dir_type == "Dummy":
@@ -359,7 +375,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.clear_run_alias_cmbs_and_les()
         self.reset_scan_alias_cmbs(basenames=None)
         self.run_aliases = OrderedDict()
-        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
+        self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "T2", "M0", "FLAIR"])
 
         if self.config["DeveloperMode"]:
             print("clear_widgets engaged due to a change in the indicated Raw directory")
@@ -387,7 +403,7 @@ class xASL_GUI_Importer(QMainWindow):
 
         if "Scan" not in used_directories and self.scan_regex is not None:
             self.scan_regex = None
-            self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "M0", "FLAIR"])
+            self.scan_aliases = dict.fromkeys(["ASL4D", "T1", "T2", "M0", "FLAIR"])
             self.reset_scan_alias_cmbs(basenames=None)
 
     def clear_receivers(self):
@@ -542,10 +558,17 @@ class xASL_GUI_Importer(QMainWindow):
         :param state: the boolean state of whether the widgets should be enabled or not
         """
         self.btn_run_importer.setEnabled(state)
+        self.btn_clear_receivers.setEnabled(state)
         self.btn_setrootdir.setEnabled(state)
         self.le_rootdir.setEnabled(state)
+
+        le: QLineEdit
         for le in self.levels.values():
             le.setEnabled(state)
+
+        cmb: QComboBox
+        for cmb in self.cmb_scanaliases_dict.values():
+            cmb.setEnabled(state)
 
     ##################################
     # SECTION - RETRIEVAL OF VARIABLES
@@ -720,6 +743,8 @@ class xASL_GUI_Importer(QMainWindow):
         print("Clearing Import workers from memory, re-enabling widgets, and resetting current directory")
         self.import_workers.clear()
         self.set_widgets_on_or_off(state=True)
+        QApplication.restoreOverrideCursor()
+
         chdir(self.config["ScriptsDir"])
         analysis_dir = Path(self.import_parms["RawDir"]).parent / "analysis"
         if not analysis_dir.exists():
@@ -727,14 +752,39 @@ class xASL_GUI_Importer(QMainWindow):
                                   self.import_errs["ImportCritError"][1], QMessageBox.Ok)
             return
 
+        # Concatenate the tmpImport_Converter_###.log files into a single log placed in the study directory
+        # Also, remove the log files in the process
+        logs = []
+        log_files = sorted(Path(self.import_parms["RawDir"]).glob("tmpImport_Converter*.log"))
+        for log_file in log_files:
+            with open(log_file, "r") as log_reader:
+                logs.append(log_reader.read())
+            log_file.unlink(missing_ok=True)
+
+        now_str = datetime.now().strftime("%a-%b-%d-%Y_%H-%M-%S")
+        try:
+            log_path = analysis_dir / f"Import_Log_{now_str}.log"
+            with open(log_path, "w") as log_writer:
+                log_writer.write(f"\n{'#' * 50}\n".join(logs))
+        except PermissionError:
+            log_path = analysis_dir / f"Import_Log_{now_str}_backup.log"
+            with open(log_path, "w") as log_writer:
+                log_writer.write("\n\n".join(logs))
+
         # Create the import summary
         create_import_summary(import_summaries=self.import_summaries, config=self.import_parms)
 
         # If there were any failures, write them to disk now
         if len(self.failed_runs) > 0:
             try:
-                with open(analysis_dir / "import_summary_failed.json", 'w') as failed_writer:
-                    json.dump(dict(self.failed_runs), failed_writer, indent=3)
+                # with open(analysis_dir / "import_summary_failed.json", 'w') as failed_writer:
+                #     json.dump(dict(self.failed_runs), failed_writer, indent=3)
+                with open(analysis_dir / "Import_Failed_Imports.txt", "w") as failed_writer:
+                    failed_writer.writelines([line + "\n" for line in self.failed_runs])
+                QMessageBox().warning(self, "Errors Occurred during Import",
+                                      f"Please see the Import_Failed_Imports.txt and {log_path.name} files to "
+                                      f"determine what went wrong.", QMessageBox.Ok)
+
             except FileNotFoundError:
                 QMessageBox().warning(self, self.import_errs["ImportCritError"][0],
                                       self.import_errs["ImportCritError"][1], QMessageBox.Ok)
@@ -769,7 +819,7 @@ class xASL_GUI_Importer(QMainWindow):
                                    "https://openfmri.org/dataset/ds000117/"],
             "Funding": ["UK Medical Research Council (MC_A060_5PR10)"]
         }
-        with open(analysis_dir / "dataset_description.json"), 'w' as dataset_writer:
+        with open(analysis_dir / "dataset_description.json", 'w') as dataset_writer:
             json.dump(template, dataset_writer, indent=3)
 
     ########################
@@ -800,20 +850,21 @@ class xASL_GUI_Importer(QMainWindow):
             return
 
         # Get the dicom directories
-        dicom_dirs = get_dicom_directories(config=self.import_parms)
+        subject_dirs: List[Tuple[Path]] = get_dicom_directories(config=self.import_parms)
 
         if self.config["DeveloperMode"]:
             print("Detected the following dicom directories:")
-            pprint(dicom_dirs)
+            pprint(subject_dirs)
             print('\n')
 
-        # Create workers
-        NTHREADS = 4
-        dicom_dirs = list(divide(NTHREADS, dicom_dirs))
-        for ddirs in dicom_dirs:
-            worker = Importer_Worker(ddirs,  # The list of dicom directories
-                                     self.import_parms,  # The import parameters
-                                     self.chk_uselegacy.isChecked())  # Whether to use legacy mode or not
+        NTHREADS = min([len(subject_dirs), 4])
+        for idx, subjects_subset in enumerate(divide(NTHREADS, subject_dirs)):
+            dicom_dirs = flatten(subjects_subset)
+            worker = Importer_Worker(dcm_dirs=dicom_dirs,  # The list of dicom directories
+                                     config=self.import_parms,  # The import parameters
+                                     use_legacy_mode=self.chk_uselegacy.isChecked(),
+                                     name=f"Converter_{str(idx).zfill(3)}"
+                                     )  # Whether to use legacy mode or not
             worker.signals.signal_send_summaries.connect(self.create_import_summary_file)
             worker.signals.signal_send_errors.connect(self.update_failed_runs_log)
             self.import_workers.append(worker)
@@ -823,6 +874,7 @@ class xASL_GUI_Importer(QMainWindow):
         for worker in self.import_workers:
             self.threadpool.start(worker)
 
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         print(r"""
   ______            _                          _____ _         _____ _    _ _____ 
  |  ____|          | |                  /\    / ____| |       / ____| |  | |_   _|
