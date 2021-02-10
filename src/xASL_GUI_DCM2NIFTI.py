@@ -16,6 +16,7 @@ from platform import system
 from pathlib import Path
 from typing import Union, List, Tuple
 from datetime import datetime
+import re
 
 pd.set_option("display.width", 600)
 pd.set_option("display.max_columns", 15)
@@ -56,14 +57,33 @@ def get_value(subset, remaining_tags: List[Tuple[int]], default=None):
 
         item = subset[hex_pair].value
         if isinstance(item, pydicom.DataElement):
-            return item.value
+            # Logic: no remaining tags can remain. If this is the case, an index error will be raised and the item can
+            # be returned. Otherwise, there are remaining tags and this must be a false hit (i.e. float where there
+            # should be a Sequence object).
+            try:
+                if len(remaining_tags[1:]) == 0:
+                    return item.value
+                else:
+                    return default
+            except IndexError:
+                return item.value
+
         elif isinstance(item, pydicom.Sequence) and len(item) > 0:
             return get_value(subset=item[0], remaining_tags=remaining_tags[1:], default=default)
         else:
-            return item
+            # Logic: no remaining tags can remain. If this is the case, an index error will be raised and the item can
+            # be returned. Otherwise, there are remaining tags and this must be a false hit (i.e. float where there
+            # should be a Sequence object).
+            try:
+                if len(remaining_tags[1:]) == 0:
+                    return item
+                else:
+                    return default
+            except IndexError:
+                return item
 
 
-def get_dicom_value(data: pydicom.Dataset, tags: List[List[tuple]], default=None):
+def get_dicom_value(data: pydicom.Dataset, tags: List[List[tuple]], default=None, for_byte_array=None):
     """
     Convenience function for retrieving the value of a dicom tag. Otherwise, returns the indicated default.
 
@@ -72,6 +92,8 @@ def get_dicom_value(data: pydicom.Dataset, tags: List[List[tuple]], default=None
     to a value. Each 2nd-level inner list contains length-2 tuples that are each steps to getting to the
     desired value.
     :param default: the default value to return if nothing can be found
+    :param for_byte_array: a byte string to use with regex in the event that the given tags result in a bytearray
+    such that the expected string will be extracted
     :return: value: the first valid value associated with the tag
     """
     detected_values = []
@@ -111,7 +133,18 @@ def get_dicom_value(data: pydicom.Dataset, tags: List[List[tuple]], default=None
                         return float(value.decode())
                     except UnicodeDecodeError:
                         # Rare scenario. A byte array is returned. Unable to parse this at the current time.
-                        return default
+                        if not for_byte_array:
+                            return default
+                        try:
+                            match = re.search(for_byte_array, value)
+                            if not match:
+                                return default
+                            return match.group(1).decode()
+
+                        except Exception as e:
+                            print(f"Encountered EXCEPTION: {e}")
+                            return default
+
             return value
 
     return default
@@ -230,8 +263,16 @@ class DCM2NIFTI_Converter:
                                 "default": 0},
             "ScanOptions": {"tags": [[(0x0018, 0x0022)]],
                             "default": ""},
-            "SpectrallySelectedSuppression": {"tags": [[(0x0018, 0x9025)], [(0x2005, 0x140F), (0x0018, 0x9025)]],
-                                              "default": None}
+            "SpectrallySelectedSuppression": {"tags": [
+                [(0x0018, 0x9025)],
+                [(0x2005, 0x110F), (0x0018, 0x9025)],
+                [(0x2005, 0x120F), (0x0018, 0x9025)],
+                [(0x2005, 0x140F), (0x0018, 0x9025)],
+                [(0x2005, 0x140F)],
+                [(0x2005, 0x110F)]
+            ],
+                "default": None,
+                "for_byte_array": b'\x18\x00%\x90\x04\x00\x00\x00(FAT|WATER|NONE|FAT_AND_WATER)'}
         }
         self.summary_data = {}
         self.logger.info(f"Initialized Logger for {name}")
@@ -252,7 +293,12 @@ class DCM2NIFTI_Converter:
             self.logger.info(f"Beginning Module - {desc}")
             successfully_completed = func(dcm_dir)
             if not successfully_completed:
-                return False, f"\nERROR at section {desc}"
+                return False, f"\nERROR_LISTING FOR DICOM DIRECTORY WITH GIVENS:\n\t" \
+                              f"SUBECT: {self.subject}\n\t" \
+                              f"VISIT: {self.visit}\n\t" \
+                              f"RUN: {self.run}\n\t" \
+                              f"SCAN: {self.scan}\n\t" \
+                              f"ERROR at section {desc}"
             else:
                 self.logger.info(f"Completed Module - {desc}\n")
 
@@ -380,8 +426,10 @@ class DCM2NIFTI_Converter:
 
         self.dcm_info = {}.fromkeys(self.tags_dict.keys())
         self.dcm_info["Manufacturer"] = manufacturer
+        value: dict
         for key, value in self.tags_dict.items():
-            result = get_dicom_value(data=dcm_data, tags=value["tags"], default=value["default"])
+            result = get_dicom_value(data=dcm_data, tags=value["tags"], default=value["default"],
+                                     for_byte_array=value.get("for_byte_array", None))
             if isinstance(result, MultiValue):
                 result = list(result)
             # Additional processing for specific keys

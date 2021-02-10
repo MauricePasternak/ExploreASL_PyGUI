@@ -7,13 +7,10 @@ from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options
 from json import load
 from pathlib import Path
 import shutil
-import re
-import sys
-from glob import iglob, glob
 from pprint import pprint
 from platform import system
 from more_itertools import divide
-from typing import List, Tuple, Iterable
+from typing import Iterable
 
 
 # noinspection PyAttributeOutsideInit
@@ -304,7 +301,7 @@ class xASL_GUI_Dehybridizer(QWidget):
         except ValueError:
             QMessageBox().warning(self, self.dehyb_errs["ImpossibleDirDepth"][0],
                                   self.dehyb_errs["ImpossibleDirDepth"][1], QMessageBox.Ok)
-            del delimiter, dir_tuple, path, nlevels, from_root
+            del delimiter, path, nlevels
             return
 
         left_bases = set(left_bases)

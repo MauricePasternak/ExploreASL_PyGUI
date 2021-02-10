@@ -1,5 +1,6 @@
-from PySide2.QtWidgets import QLineEdit, QAbstractItemView, QListWidget
-from PySide2.QtCore import Qt, Signal, QModelIndex
+from PySide2.QtWidgets import QLineEdit, QAbstractItemView, QListWidget, QPushButton
+from PySide2.QtCore import Qt, Signal, QModelIndex, QSize
+from PySide2.QtGui import QFont, QIcon
 import os
 from pathlib import Path
 
@@ -207,3 +208,30 @@ class DandD_FileExplorer2ListWidget(QListWidget):
             self.itemsAdded.emit()
         else:
             event.ignore()
+
+
+class xASL_PushButton(QPushButton):
+    """
+    Convenience Class in making a QPushButton
+    """
+    def __init__(self, parent=None, text: str = None, func: callable = None, fixed_height: int = None,
+                 fixed_width: int = None, font: QFont = None, icon: QIcon = None, icon_size: QSize = None,
+                 enabled: bool = None):
+        super(xASL_PushButton, self).__init__()
+        if parent:
+            self.setParent(parent)
+        if text:
+            self.setText(text)
+        if func:
+            self.clicked.connect(func)
+        if fixed_width:
+            self.setFixedWidth(fixed_width)
+        if fixed_height:
+            self.setFixedHeight(fixed_height)
+        if font:
+            self.setFont(font)
+        if icon and icon_size:
+            self.setIcon(icon)
+            self.setIconSize(icon_size)
+        if enabled is not None:
+            self.setEnabled(enabled)

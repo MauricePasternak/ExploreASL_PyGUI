@@ -340,7 +340,7 @@ class xASL_FileView(QTreeView):
 
         if self.orig_filepath.is_dir():
             try:
-                self.orig_filepath.rename(proposed_filepath)
+                self.orig_filepath.replace(proposed_filepath)
             except FileNotFoundError:
                 QMessageBox.information(self, "Illegal file or directory name specified",
                                         f"The specified name {proposed_basename} is not a valid path ending for "
@@ -353,7 +353,7 @@ class xASL_FileView(QTreeView):
             if proposed_filepath.suffix == "":
                 proposed_filepath = proposed_filepath.with_suffix(self.orig_filepath.suffix)
             try:
-                self.orig_filepath.rename(proposed_filepath)
+                self.orig_filepath.replace(proposed_filepath)
             except FileNotFoundError:
                 QMessageBox.information(self, "Illegal file or directory name specified",
                                         f"The specified name {proposed_basename} is not a valid path ending for "

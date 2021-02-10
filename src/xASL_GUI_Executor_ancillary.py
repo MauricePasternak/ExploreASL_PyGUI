@@ -112,6 +112,10 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
                         "050_PreparePV.status", "060_ProcessM0.status", "070_CreateAnalysisMask.status",
                         "080_Quantification.status", "090_VisualQC_ASL.status", "999_ready.status"}
 
+        # The "060_ProcessM0.status" file is never generated if an integer or float is the value for the M0 parameter
+        if isinstance(parms["M0"], (int, float)):
+            workload.remove("060_ProcessM0.status")
+
         # conditions is a list of tuples whose first element is a workload filename that may be impacted and whose
         # second element is a boolean that defines whether to remove it or not
         if conditions is None:

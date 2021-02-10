@@ -1,19 +1,19 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
+from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, xASL_PushButton
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options
 from src.xASL_GUI_Dehybridizer import xASL_GUI_Dehybridizer
 from src.xASL_GUI_DCM2NIFTI import *
 from tdda import rexpy
 from pprint import pprint
 from collections import OrderedDict
-from more_itertools import divide, flatten
+from more_itertools import divide, flatten, collapse
 import json
 from os import chdir
 from platform import system
 from pathlib import Path
-from typing import List
+from typing import List, Iterator, Set
 import logging
 from datetime import datetime
 
@@ -24,6 +24,8 @@ class Importer_WorkerSignals(QObject):
     """
     signal_send_summaries = Signal(list)  # Signal sent by worker to process the summaries of imported files
     signal_send_errors = Signal(list)  # Signal sent by worker to indicate the file where something has failed
+    signal_update_progressbar = Signal()  # Signal sent by worker to indicate a completed directory
+    signal_confirm_terminate = Signal()  # Signal sent by worker to indicate a termination had occurred
 
 
 # noinspection PyUnresolvedReferences
@@ -32,14 +34,16 @@ class Importer_Worker(QRunnable):
     Worker thread for running the import for a particular group.
     """
 
-    def __init__(self, dcm_dirs: List[Path], config: dict, use_legacy_mode: bool, name: str = None):
-        self.dcm_dirs: List[Path] = dcm_dirs
+    def __init__(self, dcm_dirs: Iterator[Path], config: dict, use_legacy_mode: bool, name: str = None):
+        self.dcm_dirs: Iterator[Path] = dcm_dirs
         self.import_config: dict = config
         self.use_legacy_mode: bool = use_legacy_mode
         super().__init__()
         self.signals = Importer_WorkerSignals()
         self.import_summaries = []
         self.failed_runs = []
+        self.name = name
+        self._terminated = False
 
         logger = logging.Logger(name=name, level=logging.DEBUG)
         self.converter = DCM2NIFTI_Converter(config=config, name=name, logger=logger, b_legacy=use_legacy_mode)
@@ -48,31 +52,36 @@ class Importer_Worker(QRunnable):
 
     def run(self):
         for dicom_dir in self.dcm_dirs:
-            # result, last_job, import_summary = asldcm2bids_onedir(dcm_dir=dicom_dir,
-            #                                                       config=self.import_config,
-            #                                                       legacy_mode=self.use_legacy_mode)
-            # if result:
-            #     self.import_summaries.append(import_summary)
-            # else:
-            #     self.failed_runs.append((str(dicom_dir), last_job))
-            success, job_description = self.converter.process_dcm_dir(dcm_dir=dicom_dir)
-            if success:
-                self.import_summaries.append(self.converter.summary_data.copy())
-            else:
-                self.failed_runs.append(job_description)
-
-        # self.signals.signal_send_summaries.emit(self.import_summaries)
+            if not self._terminated:
+                success, job_description = self.converter.process_dcm_dir(dcm_dir=dicom_dir)
+                if success:
+                    self.import_summaries.append(self.converter.summary_data.copy())
+                    self.signals.signal_update_progressbar.emit()
+                else:
+                    self.failed_runs.append(job_description)
+                    self.signals.signal_update_progressbar.emit()
 
         # Cleanup handlers and such
-        self.converter.logger.removeHandler(self.converter.handler)
+        if not self._terminated:
+            self.converter.logger.removeHandler(self.converter.handler)
 
-        self.signals.signal_send_summaries.emit(self.import_summaries)
-        if len(self.failed_runs) > 0:
-            self.signals.signal_send_errors.emit(self.failed_runs)
+            self.signals.signal_send_summaries.emit(self.import_summaries)
+            if len(self.failed_runs) > 0:
+                self.signals.signal_send_errors.emit(self.failed_runs)
+
+        else:
+            self.signals.signal_confirm_terminate.emit()
+
+    @Slot()
+    def slot_stop_import(self):
+        print(f"{self.name} received a termination signal! Terminating at the next available DICOM dir.")
+        self._terminated = True
 
 
 # noinspection PyCallingNonCallable
 class xASL_GUI_Importer(QMainWindow):
+    signal_stop_import = Signal()
+
     def __init__(self, parent_win=None):
         # Parent window is fed into the constructor to allow for communication with parent window devices
         super().__init__(parent=parent_win)
@@ -107,6 +116,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
         self.mainlay.setContentsMargins(0, 5, 0, 0)
+        self.resize(self.config["ScreenSize"][0] // 3.5, self.height())  # Hack, window a bit too wide without this
 
         # The central tab widget and its setup
         self.central_tab_widget = QTabWidget()
@@ -132,15 +142,25 @@ class xASL_GUI_Importer(QMainWindow):
         self.Setup_UI_UserSpecifyScanAliases()
         self.Setup_UI_UserSpecifyRunAliases()
 
-        self.btn_run_importer = QPushButton("Run ASL2BIDS", clicked=self.run_importer)
-        self.btn_run_importer.setFont(self.labfont)
-        self.btn_run_importer.setFixedHeight(50)
-        self.btn_run_importer.setEnabled(False)
-        self.btn_run_importer.setIcon(QIcon(str(Path(self.config["ProjectDir"]) / "media" / "import_win10_64x64.png")))
-        self.btn_run_importer.setIconSize(QSize(40, 40))
+        # Img_vars
+        icon_import = QIcon(str(Path(self.config["ProjectDir"]) / "media" / "import_win10_64x64.png"))
+        icon_terminate = QIcon(str(Path(self.config["ProjectDir"]) / "media" / "stop_processing.png"))
 
-        self.mainsplit.addWidget(self.btn_run_importer)
-        # self.mainsplit.setSizes([250, 325, 300, 50])
+        # Bottom split: the progressbar and Run/Stop buttons
+        self.cont_runbtns = QWidget()
+        self.mainsplit.addWidget(self.cont_runbtns)
+        self.vlay_runbtns = QVBoxLayout(self.cont_runbtns)
+        self.progbar_import = QProgressBar(orientation=Qt.Horizontal, minimum=0, value=0, maximum=1, textVisible=True)
+        if system() == "Darwin":
+            self.progbar_import.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.btn_run_importer = xASL_PushButton(text="Convert DICOM to NIFTI", func=self.run_importer,
+                                                font=self.labfont, fixed_height=50, enabled=False, icon=icon_import,
+                                                icon_size=QSize(40, 40))
+        self.btn_terminate_importer = xASL_PushButton(enabled=False, icon=icon_terminate, icon_size=QSize(40, 40),
+                                                      func=self.signal_stop_import.emit)
+        self.vlay_runbtns.addStretch(1)
+        for widget in [self.progbar_import, self.btn_run_importer, self.btn_terminate_importer]:
+            self.vlay_runbtns.addWidget(widget)
         self.vlay_import.addWidget(self.mainsplit)
 
         # The dehybridizer UI setup
@@ -425,7 +445,9 @@ class xASL_GUI_Importer(QMainWindow):
         # will be reset for each combobox in the process. Reconnect after changes.
         cmb: QComboBox
         for key, cmb in self.cmb_scanaliases_dict.items():
+            print(f"reset_scan_alias_cmbs resettings for key {key}")
             cmb.currentTextChanged.disconnect(self.update_scan_aliases)
+            cmb.currentTextChanged.disconnect(self.is_ready_import)
             cmb.clear()
             cmb.addItems(["Select an alias"] + basenames)
             cmb.currentTextChanged.connect(self.update_scan_aliases)
@@ -534,10 +556,11 @@ class xASL_GUI_Importer(QMainWindow):
             self.btn_run_importer.setEnabled(False)
             return
 
-        # Next requirement; a minimum of "ASL4D" and "T1" must have their aliases specified
-        # if any([self.scan_aliases["ASL4D"] is None, self.scan_aliases["T1"] is None]):
-        #     self.btn_run_importer.setEnabled(False)
-        #     return
+        # Next requirement; at least one scan must be indicated
+        cmb_texts: Set[str] = {cmb.currentText() for cmb in self.cmb_scanaliases_dict.values()}
+        if len(cmb_texts) <= 1:
+            self.btn_run_importer.setEnabled(False)
+            return
 
         # Next requirement; if Run is indicated, the aliases and ordering must both be unique
         if "Run" in current_texts and len(self.cmb_runaliases_dict) > 0:
@@ -614,19 +637,6 @@ class xASL_GUI_Importer(QMainWindow):
         scan directory
         @return: status, whether the operation was a success; scan_aliases, the mapping
         """
-        # try:
-        #     if any([self.scan_aliases["ASL4D"] is None,
-        #             self.scan_aliases["T1"] is None]):
-        #         QMessageBox().warning(self,
-        #                               "Invalid scan aliases entered",
-        #                               "At minimum, the aliases corresponding to the ASL and T1-weighted scans "
-        #                               "should be specified",
-        #                               QMessageBox.Ok)
-        #         return False, None
-        # except KeyError as e:
-        #     print(f'ENCOUNTERED KEYERROR: {e}')
-        #     return False, None
-
         # Filter out scans that have None to avoid problems down the line
         scan_aliases = {key: value for key, value in self.scan_aliases.items() if value is not None}
 
@@ -706,9 +716,37 @@ class xASL_GUI_Importer(QMainWindow):
     #############################################
     # SECTION - CONCURRENT AND POST-RUN FUNCTIONS
     #############################################
+    @Slot()
+    def slot_update_progressbar(self):
+        self.progbar_import.setValue(self.progbar_import.value() + 1)
+
+    @Slot()
+    def slot_cleanup_postterminate(self):
+        self.n_import_workers -= 1
+        if len(self.import_summaries) > 0:
+            self.import_summaries.clear()
+        if len(self.failed_runs) > 0:
+            self.failed_runs.clear()
+
+        # Don't proceed until all importer workers are finished
+        if self.n_import_workers > 0 or self.import_parms is None:
+            return
+
+        # Reset the widgets and cursor
+        self.set_widgets_on_or_off(state=True)
+        self.btn_terminate_importer.setEnabled(False)
+
+        analysis_dir = Path(self.import_parms["RawDir"]).parent / "analysis"
+        if analysis_dir.exists():
+            QMessageBox.warning(self, "Cleanup Post-Termination",
+                                f"An import job was terminated by the user.\nThe following directory was made in the "
+                                f"process:\n{str(analysis_dir)}\nBe warned that this directory likely has subjects "
+                                f"with missing scans due to this.", QMessageBox.Ok)
+
+        QApplication.restoreOverrideCursor()
 
     @Slot(list)
-    def create_import_summary_file(self, signalled_summaries: list):
+    def slot_is_ready_postprocessing(self, signalled_summaries: list):
         """
         Creates the summary file. Increments the "debt" due to launching workers back towards zero. Resets widgets
         once importer workers are done.
@@ -727,7 +765,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.import_postprocessing()
 
     @Slot(list)
-    def update_failed_runs_log(self, signalled_failed_runs: list):
+    def slot_update_failed_runs_log(self, signalled_failed_runs: list):
         """
         Updates the attribute failed_runs in order to write the json file summarizing failed runs once everything is
         complete
@@ -743,6 +781,7 @@ class xASL_GUI_Importer(QMainWindow):
         print("Clearing Import workers from memory, re-enabling widgets, and resetting current directory")
         self.import_workers.clear()
         self.set_widgets_on_or_off(state=True)
+        self.btn_terminate_importer.setEnabled(False)
         QApplication.restoreOverrideCursor()
 
         chdir(self.config["ScriptsDir"])
@@ -774,21 +813,6 @@ class xASL_GUI_Importer(QMainWindow):
         # Create the import summary
         create_import_summary(import_summaries=self.import_summaries, config=self.import_parms)
 
-        # If there were any failures, write them to disk now
-        if len(self.failed_runs) > 0:
-            try:
-                # with open(analysis_dir / "import_summary_failed.json", 'w') as failed_writer:
-                #     json.dump(dict(self.failed_runs), failed_writer, indent=3)
-                with open(analysis_dir / "Import_Failed_Imports.txt", "w") as failed_writer:
-                    failed_writer.writelines([line + "\n" for line in self.failed_runs])
-                QMessageBox().warning(self, "Errors Occurred during Import",
-                                      f"Please see the Import_Failed_Imports.txt and {log_path.name} files to "
-                                      f"determine what went wrong.", QMessageBox.Ok)
-
-            except FileNotFoundError:
-                QMessageBox().warning(self, self.import_errs["ImportCritError"][0],
-                                      self.import_errs["ImportCritError"][1], QMessageBox.Ok)
-
         # If the settings is BIDS...
         if not self.chk_uselegacy.isChecked():
             # Ensure all M0 jsons have the appropriate "IntendedFor" field if this is in BIDS
@@ -799,7 +823,28 @@ class xASL_GUI_Importer(QMainWindow):
 
             # Create the "bidsignore" file
             with open(analysis_dir / ".bidsignore", 'w') as ignore_writer:
-                ignore_writer.writelines(["import_summary.tsv\n", "DataPar.json\n"])
+                to_ignore = ["Import_Log_*.log\n", "Import_Failed*.txt\n", "Import_Dataframe_*.tsv\n"]
+                ignore_writer.writelines(to_ignore)
+                del to_ignore
+
+        # If there were any failures, write them to disk now
+        if len(self.failed_runs) > 0:
+            try:
+                # with open(analysis_dir / "import_summary_failed.json", 'w') as failed_writer:
+                #     json.dump(dict(self.failed_runs), failed_writer, indent=3)
+                with open(analysis_dir / "Import_Failed_Imports.txt", "w") as failed_writer:
+                    failed_writer.writelines([line + "\n" for line in self.failed_runs])
+                QMessageBox().warning(self, "Errors Occurred during Import",
+                                      f"Please see the Import_Failed_Imports.txt and {log_path.name} files to "
+                                      f"determine what went wrong.", QMessageBox.Ok)
+            except FileNotFoundError:
+                QMessageBox().warning(self, self.import_errs["ImportCritError"][0],
+                                      self.import_errs["ImportCritError"][1], QMessageBox.Ok)
+        else:
+            # Finally, a Message confirming a successful import
+            QMessageBox.information(self, "Import was a Success",
+                                    f"You have successfully imported the DICOM dataset into NIFTI format.\n"
+                                    f"The study directory is located at:\n{str(analysis_dir)}", QMessageBox.Ok)
 
     @staticmethod
     def create_dataset_description_template(analysis_dir: Path):
@@ -852,6 +897,10 @@ class xASL_GUI_Importer(QMainWindow):
         # Get the dicom directories
         subject_dirs: List[Tuple[Path]] = get_dicom_directories(config=self.import_parms)
 
+        # Set the progressbar
+        self.progbar_import.setValue(0)
+        self.progbar_import.setMaximum(len(list(collapse(subject_dirs))))
+
         if self.config["DeveloperMode"]:
             print("Detected the following dicom directories:")
             pprint(subject_dirs)
@@ -865,8 +914,11 @@ class xASL_GUI_Importer(QMainWindow):
                                      use_legacy_mode=self.chk_uselegacy.isChecked(),
                                      name=f"Converter_{str(idx).zfill(3)}"
                                      )  # Whether to use legacy mode or not
-            worker.signals.signal_send_summaries.connect(self.create_import_summary_file)
-            worker.signals.signal_send_errors.connect(self.update_failed_runs_log)
+            self.signal_stop_import.connect(worker.slot_stop_import)
+            worker.signals.signal_send_summaries.connect(self.slot_is_ready_postprocessing)
+            worker.signals.signal_send_errors.connect(self.slot_update_failed_runs_log)
+            worker.signals.signal_confirm_terminate.connect(self.slot_cleanup_postterminate)
+            worker.signals.signal_update_progressbar.connect(self.slot_update_progressbar)
             self.import_workers.append(worker)
             self.n_import_workers += 1
 
@@ -874,24 +926,9 @@ class xASL_GUI_Importer(QMainWindow):
         for worker in self.import_workers:
             self.threadpool.start(worker)
 
+        # Change the cursor
+        self.btn_terminate_importer.setEnabled(True)
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        print(r"""
-  ______            _                          _____ _         _____ _    _ _____ 
- |  ____|          | |                  /\    / ____| |       / ____| |  | |_   _|
- | |__  __  ___ __ | | ___  _ __ ___   /  \  | (___ | |      | |  __| |  | | | |  
- |  __| \ \/ / '_ \| |/ _ \| '__/ _ \ / /\ \  \___ \| |      | | |_ | |  | | | |  
- | |____ >  <| |_) | | (_) | | |  __// ____ \ ____) | |____  | |__| | |__| |_| |_ 
- |______/_/\_\ .__/|_|\___/|_|  \___/_/    \_\_____/|______|  \_____|\____/|_____|
-             | |                                                                  
-             |_|                                                                  
-  _____                            _                                              
- |_   _|                          | |                                             
-   | |  _ __ ___  _ __   ___  _ __| |_                                            
-   | | | '_ ` _ \| '_ \ / _ \| '__| __|                                           
-  _| |_| | | | | | |_) | (_) | |  | |_                                            
- |_____|_| |_| |_| .__/ \___/|_|   \__|                                           
-                 | |                                                              
-                 |_|                                                             """)
 
 
 class DraggableLabel(QLabel):

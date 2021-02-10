@@ -11,7 +11,7 @@ from tdda import rexpy
 from more_itertools import peekable
 from functools import partial
 from shutil import which
-from typing import List
+from typing import List, Union
 from platform import system
 
 
@@ -107,8 +107,12 @@ class xASL_Parms(QMainWindow):
         self.cmb_sequencetype.currentTextChanged.connect(self.update_readout_dim)
         self.cmb_labelingtype = self.make_cmb_and_items(["Pulsed ASL", "Pseudo-continuous ASL", "Continuous ASL"])
         self.cmb_labelingtype.currentTextChanged.connect(self.autocalc_slicereadouttime)
+        self.lab_spin_m0_isseparate = QLabel(text="M0 Single Value")
+        self.spinbox_m0_isseparate = QDoubleSpinBox(minimum=1, maximum=1E12, value=1E6)
         self.cmb_m0_isseparate = self.make_cmb_and_items(["Proton density scan (M0) was acquired",
-                                                          "Use mean control ASL as proton density mimic"])
+                                                          "Use mean control ASL as M0 mimic",
+                                                          "Use a single value as the M0"])
+        self.cmb_m0_isseparate.currentTextChanged.connect(self.enable_m0value_field)
         self.cmb_m0_posinasl = self.make_cmb_and_items(
             ["M0 exists as a separate scan", "M0 is the first ASL control-label pair",
              "M0 is the first ASL scan volume", "M0 is the second ASL scan volume"])
@@ -120,20 +124,23 @@ class xASL_Parms(QMainWindow):
                                  "Subjects to Assess\n(Drag and Drop Directories)", "",
                                  "Subjects to Exclude\n(Drag and Drop Directories)", "",
                                  "Vendor", "Sequence Type",
-                                 "Labelling Type", "M0 was acquired?", "M0 Position in ASL", "Quality"],
+                                 "Labelling Type", "M0 was acquired?", "Single M0 Value",
+                                 "M0 Position in ASL", "Quality"],
                                 [self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
                                  self.chk_overwrite_for_bids, self.le_subregex,
                                  self.lst_included_subjects, self.btn_included_subjects,
                                  self.lst_excluded_subjects, self.btn_excluded_subjects,
                                  self.cmb_vendor, self.cmb_sequencetype, self.cmb_labelingtype,
-                                 self.cmb_m0_isseparate, self.cmb_m0_posinasl, self.cmb_quality]):
-
+                                 self.cmb_m0_isseparate, self.spinbox_m0_isseparate,
+                                 self.cmb_m0_posinasl, self.cmb_quality]):
             self.formlay_basic.addRow(desc, widget)
             if system() == "Darwin":
                 try:
                     widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 except AttributeError:
                     continue
+
+        self.spinbox_m0_isseparate.setEnabled(False)
         # MacOS specific additional actions
         if system() == "Darwin":
             set_formlay_options(self.formlay_basic, row_wrap_policy="dont_wrap", vertical_spacing=5)
@@ -696,7 +703,8 @@ class xASL_Parms(QMainWindow):
             "M0_conventionalProcessing":
                 {"New Image Processing": 0, "Standard Processing": 1}[self.cmb_m0_algorithm.currentText()],
             "M0": {"Proton density scan (M0) was acquired": "separate_scan",
-                   "Use mean control ASL as proton density mimic": "UseControlAsM0"}
+                   "Use mean control ASL as M0 mimic": "UseControlAsM0",
+                   "Use a single value as the M0": self.spinbox_m0_isseparate.value()}
             [self.cmb_m0_isseparate.currentText()],
             "M0_GMScaleFactor": float(self.spinbox_gmscale.value()),
             "M0PositionInASL4D": {"M0 is the first ASL control-label pair": "[1 2]",
@@ -830,9 +838,7 @@ class xASL_Parms(QMainWindow):
             "M0_conventionalProcessing": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                                  widget=self.cmb_m0_algorithm,
                                                  translator={0: "New Image Processing", 1: "Standard Processing"}),
-            "M0": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_m0_isseparate,
-                          translator={"separate_scan": "Proton density scan (M0) was acquired",
-                                      "UseControlAsM0": "Use mean control ASL as proton density mimic"}),
+            "M0": self.get_m0,
             "M0_GMScaleFactor": self.spinbox_gmscale.setValue,
             "M0PositionInASL4D": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                          widget=self.cmb_m0_posinasl,
@@ -994,6 +1000,12 @@ class xASL_Parms(QMainWindow):
         elif action == "chk_setChecked_simple":  # QCheckBox; arguments is a bool
             widget.setChecked(argument)
 
+    def enable_m0value_field(self, text):
+        if text == "Use a single value as the M0":
+            self.spinbox_m0_isseparate.setEnabled(True)
+        else:
+            self.spinbox_m0_isseparate.setEnabled(False)
+
     #############################################
     # Convenience methods for translation to json
     #############################################
@@ -1035,24 +1047,19 @@ class xASL_Parms(QMainWindow):
     ###############################################
     # Convenience methods for translation from json
     ###############################################
-    def get_m0_posinasl(self, value):
-        translator = {"[1 2]": "M0 is the first ASL control-label pair", 1: "M0 is the first ASL scan volume",
-                      2: "M0 is the second ASL scan volume"}
-        text = translator[value]
-        index = self.cmb_m0_posinasl.findText(text)
-        if index == -1:
-            self.import_error_logger.append("M0 Position in ASL")
-            return
-        self.cmb_m0_posinasl.setCurrentIndex(index)
+    def get_m0(self, m0_val: Union[str, int, float]):
+        if isinstance(m0_val, str):
+            translator = {"separate_scan": "Proton density scan (M0) was acquired",
+                          "UseControlAsM0": "Use mean control ASL as proton density mimic"}
+            idx = self.cmb_m0_isseparate.findText(translator[m0_val])
+            self.cmb_m0_isseparate.setCurrentIndex(idx)
 
-    def get_imgconstrast(self, value):
-        translator = {2: "Automatic", 0: "Control --> T1w", 1: "CBF --> pseudoCBF", 3: "Force CBF --> pseudoCBF"}
-        text = translator[value]
-        index = self.cmb_imgcontrast.findText(text)
-        if index == -1:
-            self.import_error_logger.append("Image Contrast used for")
+        elif isinstance(m0_val, (int, float)):
+            idx = self.cmb_m0_isseparate.findText("Use a single value as the M0")
+            self.cmb_m0_isseparate.setCurrentIndex(idx)
+            self.spinbox_m0_isseparate.setValue(m0_val)
+        else:
             return
-        self.cmb_imgcontrast.setCurrentIndex(index)
 
     def get_quantparms(self, quant_vector: list):
         if any([len(quant_vector) != 5,

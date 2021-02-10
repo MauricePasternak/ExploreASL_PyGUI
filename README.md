@@ -3,7 +3,7 @@
 > Complementary GUI to assist Arterial Spin Labelling analysis by ExploreASL
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-![Version](https://img.shields.io/badge/Version-0.2.7-yellow)
+![Version](https://img.shields.io/badge/Version-0.2.8-yellow)
 ![PythonVersions](https://img.shields.io/badge/Python-3.8-green)
 
 ## Graphics and Examples
@@ -42,7 +42,7 @@ Steps:
 
    Alternatively, download the zip folder and extract it to your desired destination.
 
-2) Inside the ExploreASL_GUI directory, create the necessary Python 3.8 virtual environment
+2) Via command line, enter the ExploreASL_GUI directory. Inside, create the necessary Python 3.8 virtual environment
 
        python3.8 -m venv venv
 
@@ -68,7 +68,7 @@ Steps:
 
 ### For Non-developers
 
-*To be updated*
+Starting with the upcoming version 0.3.0, installers for Windows, MacOS, and Linux will be posted in the [Releases](https://github.com/MauricePasternak/ExploreASL_GUI/releases) section of this respository.
 
 ---
 ## Features
