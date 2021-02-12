@@ -556,7 +556,7 @@ class xASL_Executor(QMainWindow):
 
             # Third check: the number of cores selected cannot exceed the number of subjects
             if cmb_runopt.currentText() != "Population":
-                datapar_path = peekable(Path(le_analysisdir.text()).glob("*Par*.json"))
+                datapar_path = peekable(Path(le_analysisdir.text()).glob("DataPar*.json"))
                 if not datapar_path:
                     checks.clear()
                     self.btn_runExploreASL.setEnabled(False)
@@ -1084,8 +1084,7 @@ class ExploreASL_Watcher(QRunnable):
         self.struct_mod_started = False
         self.asl_mod_started = False
 
-        self.sessions_seen_struct = []
-        self.sessions_seen_asl = []
+        self.msgs_seen: set = set()
 
         self.observer = Observer()
         self.event_handler = ExploreASL_EventHandler()
@@ -1152,8 +1151,16 @@ class ExploreASL_Watcher(QRunnable):
         if self.config["DeveloperMode"]:
             print(f"Watcher process_message received message: {created_path}")
 
+        if created_path in self.msgs_seen:
+            return
+        else:
+            self.msgs_seen.add(created_path)
+
         detected_subject = self.subject_regex.search(created_path)
         detected_module = self.module_regex.search(created_path)
+        print(f"{detected_subject=}")
+        print(f"{detected_module=}")
+
         created_path = Path(created_path)
         msg = None
         workload_val = None
