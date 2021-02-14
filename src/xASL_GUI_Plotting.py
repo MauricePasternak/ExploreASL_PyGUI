@@ -63,7 +63,6 @@ class xASL_Plotting(QMainWindow):
                            self.cmb_pvc_selection]:
                 widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-
     def resizeEvent(self, event):
         self.dock.setMaximumHeight(self.height())
         super().resizeEvent(event)
@@ -222,7 +221,7 @@ class xASL_Plotting(QMainWindow):
         if meta_path == '':
             return
         meta_path = Path(meta_path)
-        if any([not meta_path.exists(), not meta_path.is_file(), meta_path.suffix in [".csv", ".tsv", ".xlsx"]]):
+        if any([not meta_path.exists(), not meta_path.is_file(), meta_path.suffix not in [".csv", ".tsv", ".xlsx"]]):
             QMessageBox().warning(self, self.plot_errs["BadMetaDataFile"][0],
                                   self.plot_errs["BadMetaDataFile"][1], QMessageBox.Ok)
             return

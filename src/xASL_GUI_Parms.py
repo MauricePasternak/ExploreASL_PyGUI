@@ -84,7 +84,7 @@ class xASL_Parms(QMainWindow):
             btn_connect_to=self.set_exploreasl_dir,
             default='')
         self.le_studyname = QLineEdit(text="My Study")
-        self.chk_overwrite_for_bids = QCheckBox(checked=True)
+        self.chk_overwrite_for_bids = QCheckBox(checked=False)
         self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = make_droppable_clearable_le(
             btn_connect_to=self.set_study_dir,
             default='')
@@ -570,7 +570,7 @@ class xASL_Parms(QMainWindow):
                     self.flag_impossible_m0 = True
                     bad_jsons.append(asl_sidecar)
 
-            elif self.cmb_m0_isseparate.currentText() == "Use mean control ASL as proton density mimic":
+            elif self.cmb_m0_isseparate.currentText() == "Use mean control ASL as M0 mimic":
                 asl_sidecar_data["M0"] = False
 
             else:
@@ -1050,7 +1050,7 @@ class xASL_Parms(QMainWindow):
     def get_m0(self, m0_val: Union[str, int, float]):
         if isinstance(m0_val, str):
             translator = {"separate_scan": "Proton density scan (M0) was acquired",
-                          "UseControlAsM0": "Use mean control ASL as proton density mimic"}
+                          "UseControlAsM0": "Use mean control ASL as M0 mimic"}
             idx = self.cmb_m0_isseparate.findText(translator[m0_val])
             self.cmb_m0_isseparate.setCurrentIndex(idx)
 

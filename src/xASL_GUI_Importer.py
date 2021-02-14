@@ -109,6 +109,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.threadpool = QThreadPool()
         self.import_summaries = []
         self.failed_runs = []
+        self.import_workers = []
 
         # Window Size and initial visual setup
         self.setWindowTitle("ExploreASL ASL2BIDS Importer")
@@ -877,8 +878,9 @@ class xASL_GUI_Importer(QMainWindow):
         # Set (or reset if this is another run) the essential variables
         self.n_import_workers = 0
         self.import_parms = None
-        self.import_summaries = []
-        self.import_workers = []
+        self.import_summaries.clear()
+        self.failed_runs.clear()
+        self.import_workers.clear()
 
         # Disable the run button to prevent accidental re-runs
         self.set_widgets_on_or_off(state=False)
@@ -907,6 +909,7 @@ class xASL_GUI_Importer(QMainWindow):
             print('\n')
 
         NTHREADS = min([len(subject_dirs), 4])
+        # NTHREADS = 1  # For troubleshooting
         for idx, subjects_subset in enumerate(divide(NTHREADS, subject_dirs)):
             dicom_dirs = flatten(subjects_subset)
             worker = Importer_Worker(dcm_dirs=dicom_dirs,  # The list of dicom directories

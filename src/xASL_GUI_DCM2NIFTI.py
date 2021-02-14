@@ -7,7 +7,7 @@ from pydicom.errors import InvalidDicomError
 from pydicom.multival import MultiValue
 import json
 import pandas as pd
-from more_itertools import peekable
+from more_itertools import peekable, sort_together
 import struct
 import logging
 from ast import literal_eval
@@ -598,6 +598,28 @@ class DCM2NIFTI_Converter:
             self.print_and_log(f"NIFTI Scenario: Multiple ASL NIFTIs needing to be concatenated", msg_type="info")
             initial_shape_history = []
             nii_objs = []
+
+            # GE Fix, sometimes the vendors mix up the Perfusion vs M0 ordering; best to make sure each time
+            if self.dcm_info["Manufacturer"] == "GE" and len(reorganized_niftis) == 2:
+                self.print_and_log(f"GE Perfusion & M0 scenario: Attempting to ensure the ordering is correct", "info")
+                try:
+                    is_perf = []
+                    jsons = list(self.path_tempdir.glob("*.json"))
+                    for jsonfile in jsons:
+                        with open(jsonfile, "r") as ge_reader:
+                            is_perf.append(int("PERFUSION" in list(map(str.upper, json.load(ge_reader)["ImageType"]))))
+
+                    # Sort on the truth of them being Perfusion or not
+                    if len(set(is_perf)) == 2:
+                        path: Path
+                        is_perf, reorganized_niftis = sort_together([is_perf,
+                                                                     [path.with_suffix(".nii") for path in jsons]],
+                                                                    key_list=(0,))
+
+                except KeyError:
+                    self.print_and_log(f"No ImageType key was present to allow NIFTI ordering to be corrected for")
+                    pass
+
             for idx, nifti in enumerate(reorganized_niftis):
                 nii_obj: nib.Nifti1Image = nib.load(str(nifti))
 
