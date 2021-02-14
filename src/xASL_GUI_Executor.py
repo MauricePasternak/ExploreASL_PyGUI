@@ -1158,8 +1158,6 @@ class ExploreASL_Watcher(QRunnable):
 
         detected_subject = self.subject_regex.search(created_path)
         detected_module = self.module_regex.search(created_path)
-        print(f"{detected_subject=}")
-        print(f"{detected_module=}")
 
         created_path = Path(created_path)
         msg = None

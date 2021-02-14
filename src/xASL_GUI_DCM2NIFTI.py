@@ -236,8 +236,6 @@ class DCM2NIFTI_Converter:
                                   "default": None},
             "SoftwareVersions": {"tags": [[(0x0018, 0x1020)]],
                                  "default": None},
-            "NumberOfAverages": {"tags": [[(0x0018, 0x0083)]],
-                                 "default": 1},
             "RescaleSlope": {
                 "tags": [
                     [(0x0028, 0x1053)], [(0x2005, 0x110A)], [(0x2005, 0x140A)],
@@ -526,6 +524,7 @@ class DCM2NIFTI_Converter:
         """
         Step 5: Clean up the mess that is present in the TEMP directory
         """
+        ge_fix_flag, ge_json_file = False, None
         import_summary = dict.fromkeys(["subject", "visit", "scan", "filename",
                                         "dx", "dy", "dz", "nx", "ny", "nz", "nt"])
         jsons = peekable(self.path_tempdir.glob("*.json"))
@@ -602,22 +601,33 @@ class DCM2NIFTI_Converter:
             # GE Fix, sometimes the vendors mix up the Perfusion vs M0 ordering; best to make sure each time
             if self.dcm_info["Manufacturer"] == "GE" and len(reorganized_niftis) == 2:
                 self.print_and_log(f"GE Perfusion & M0 scenario: Attempting to ensure the ordering is correct", "info")
+                is_perf, num_avrgs, json_files, nifti_files, data2write = [], [], [], [], None
+                jsons = list(self.path_tempdir.glob("*.json"))
                 try:
-                    is_perf = []
-                    jsons = list(self.path_tempdir.glob("*.json"))
                     for jsonfile in jsons:
                         with open(jsonfile, "r") as ge_reader:
-                            is_perf.append(int("PERFUSION" in list(map(str.upper, json.load(ge_reader)["ImageType"]))))
+                            tmp_data: dict = json.load(ge_reader)
+                            perf_check = int("PERFUSION" in list(map(str.upper, tmp_data["ImageType"])))
+                            is_perf.append(perf_check)
+                            if perf_check:
+                                data2write = tmp_data.copy()
+                            num_avrgs.append(tmp_data.get("NumberOfAverages", 1))
+                            json_files.append(jsonfile)
+                            nifti_files.append(jsonfile.with_suffix(".nii"))
 
-                    # Sort on the truth of them being Perfusion or not
-                    if len(set(is_perf)) == 2:
-                        path: Path
-                        is_perf, reorganized_niftis = sort_together([is_perf,
-                                                                     [path.with_suffix(".nii") for path in jsons]],
-                                                                    key_list=(0,))
-
+                    # Sort iterables on the truth of them being Perfusion or not
+                    if len(set(is_perf)) == 2 and data2write is not None:
+                        iterable = [is_perf, num_avrgs, json_files, nifti_files]
+                        is_perf, num_avrgs, json_files, reorganized_niftis = sort_together(iterable)
+                        # Since the 2nd element must be True/1 (is a Perfusion) file, write to that json file
+                        ge_json_file = json_files[1]
+                        with open(ge_json_file, "w") as ge_writer:
+                            data2write["NumberOfAverages"] = num_avrgs
+                            json.dump(data2write, ge_writer, indent=3)
+                        ge_fix_flag = True
                 except KeyError:
-                    self.print_and_log(f"No ImageType key was present to allow NIFTI ordering to be corrected for")
+                    self.print_and_log(f"GE Perfusion & M0 scenrio: could not retrieve the ImageType. Abandoning "
+                                       f"attempt", msg_type="error")
                     pass
 
             for idx, nifti in enumerate(reorganized_niftis):
@@ -691,7 +701,7 @@ class DCM2NIFTI_Converter:
                 if any([n_images is None, n_temporal is None]):
                     self.print_and_log("Could not parse GE 2D-EPI ")
                 self.print_and_log("Weird GE 2D-EPI Scenario: DCM2NIIX Concatenated Incorrectly. Fixing Issue.")
-                old_data: np.ndarray = final_nifti_obj.get_fdata(dtype=np.float32)
+                old_data = final_nifti_obj.get_fdata(dtype=np.float32)
                 new_data = np.stack(tuple(reversed(np.dsplit(old_data, n_temporal))))
                 new_data = np.transpose(new_data, (1, 2, 3, 0))
                 final_nifti_obj: nib.Nifti1Image = image.new_img_like(final_nifti_obj, data=new_data,
@@ -774,13 +784,17 @@ class DCM2NIFTI_Converter:
 
         # Perform the file move operations
         nib.save(final_nifti_obj, self.path_final_nifti)
-        jsons = peekable(self.path_tempdir.glob("*json"))
-        if not jsons:
-            self.print_and_log(f"Error in clean_niftis_in_temp while attempting to rename remaining json files",
-                               msg_type="error")
-            return False
-        json_file = next(jsons)
-        json_file.replace(self.path_final_json)
+        if ge_fix_flag and ge_json_file is not None:
+            ge_json_file.replace(self.path_final_json)
+        else:
+            jsons = peekable(self.path_tempdir.glob("*json"))
+            if not jsons:
+                self.print_and_log(f"Error in clean_niftis_in_temp while attempting to rename remaining json files",
+                                   msg_type="error")
+                return False
+            json_file = next(jsons)
+            json_file.replace(self.path_final_json)
+
         return True
 
     @staticmethod
