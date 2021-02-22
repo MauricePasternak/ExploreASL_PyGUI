@@ -3,7 +3,8 @@ from PySide2.QtGui import *
 from PySide2.QtCore import QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2ListWidget
 from src.xASL_GUI_Executor_ancillary import is_earlier_version
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area, make_droppable_clearable_le, set_formlay_options
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import (make_scrollbar_area, make_droppable_clearable_le, set_formlay_options,
+                                                  robust_getdir, robust_getfile, robust_qmsg)
 import json
 import re
 from pathlib import Path
@@ -29,7 +30,7 @@ class xASL_Parms(QMainWindow):
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
         self.setLayout(self.mainlay)
-        self.setWindowTitle("Explore ASL - Parameter File Maker")
+        self.setWindowTitle("Explore ASL - Define Study Parameters")
 
         # Buttons for executing the fundamental functions
         btn_font = QFont()
@@ -70,7 +71,6 @@ class xASL_Parms(QMainWindow):
             getattr(self, widget_name).setToolTip(tiptext)
 
         # After all UI is set up, make certain connections
-        self.le_study_dir.textChanged.connect(self.update_asl_json_sidecar_data)
         self.resize(self.minimumSizeHint())
 
         # Additional MacOS actions
@@ -80,14 +80,23 @@ class xASL_Parms(QMainWindow):
 
     def UI_Setup_Basic(self):
         self.formlay_basic = QFormLayout(self.cont_basic)
+        self.current_easl_type = "Local ExploreASL Directory"
+        self.cmb_easl_type = self.make_cmb_and_items(["Local ExploreASL Directory", "Local ExploreASL Compiled"])
+        self.cmb_easl_type.currentTextChanged.connect(self.switch_easldir_opts)
+
+        # The ExploreASL directory possibilities
+        self.hlay_mrc_dir, self.le_mrc_dir, self.btn_mrc_dir = make_droppable_clearable_le(
+            btn_connect_to=self.set_mcr_dir, default="")
+        self.hlay_easl_mcr, self.le_easl_mcr, self.btn_easl_mcr = make_droppable_clearable_le(
+            btn_connect_to=self.set_exploreasl_mcr, default="")
         self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
-            btn_connect_to=self.set_exploreasl_dir,
-            default='')
+            btn_connect_to=self.set_exploreasl_dir, default='')
+
+        # The path to the study directory
         self.le_studyname = QLineEdit(text="My Study")
         self.chk_overwrite_for_bids = QCheckBox(checked=False)
         self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = make_droppable_clearable_le(
-            btn_connect_to=self.set_study_dir,
-            default='')
+            btn_connect_to=self.set_study_dir, default='')
         self.le_study_dir.setPlaceholderText("Indicate the analysis directory filepath here")
 
         self.le_subregex = QLineEdit(text='\\d+')
@@ -101,7 +110,7 @@ class xASL_Parms(QMainWindow):
         self.btn_included_subjects = QPushButton("Clear Subjects", clicked=self.clear_included)
         self.lst_excluded_subjects = DandD_FileExplorer2ListWidget()
         self.lst_excluded_subjects.setMinimumHeight(self.config["ScreenSize"][1] // 10)
-        self.btn_excluded_subjects = QPushButton("Clear Excluded", clicked=self.clear_excluded)
+        self.btn_excluded_subjects = QPushButton("Clear Excluded", clicked=self.lst_excluded_subjects.clear)
         self.cmb_vendor = self.make_cmb_and_items(["Siemens", "Philips", "GE", "GE_WIP"])
         self.cmb_sequencetype = self.make_cmb_and_items(["3D GRaSE", "2D EPI", "3D Spiral"])
         self.cmb_sequencetype.currentTextChanged.connect(self.update_readout_dim)
@@ -113,20 +122,21 @@ class xASL_Parms(QMainWindow):
                                                           "Use mean control ASL as M0 mimic",
                                                           "Use a single value as the M0"])
         self.cmb_m0_isseparate.currentTextChanged.connect(self.enable_m0value_field)
+        self.cmb_m0_isseparate.currentTextChanged.connect(self.m0_pos_in_asl_ctrlfunc)
         self.cmb_m0_posinasl = self.make_cmb_and_items(
             ["M0 exists as a separate scan", "M0 is the first ASL control-label pair",
              "M0 is the first ASL scan volume", "M0 is the second ASL scan volume"])
         self.cmb_quality = self.make_cmb_and_items(["Low", "High"])
         self.cmb_quality.setCurrentIndex(1)
 
-        for desc, widget in zip(["ExploreASL Directory", "Name of Study", "Analysis Directory",
+        for desc, widget in zip(["ExploreASL Type", "ExploreASL Directory", "Name of Study", "Analysis Directory",
                                  "Dataset is in BIDS format?", self.chk_showregex_field,
-                                 "Subjects to Assess\n(Drag and Drop Directories)", "",
-                                 "Subjects to Exclude\n(Drag and Drop Directories)", "",
+                                 "Subjects to Assess\n(Drag && Drop Directories)", "",
+                                 "Subjects to Exclude\n(Drag && Drop Directories)", "",
                                  "Vendor", "Sequence Type",
                                  "Labelling Type", "M0 was acquired?", "Single M0 Value",
                                  "M0 Position in ASL", "Quality"],
-                                [self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
+                                [self.cmb_easl_type, self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
                                  self.chk_overwrite_for_bids, self.le_subregex,
                                  self.lst_included_subjects, self.btn_included_subjects,
                                  self.lst_excluded_subjects, self.btn_excluded_subjects,
@@ -370,144 +380,6 @@ class xASL_Parms(QMainWindow):
     ################################
     # Json Sidecar Related Functions
     ################################
-    def update_asl_json_sidecar_data(self, analysis_dir_text):
-        """
-        Receives a signal from the le_study_dir lineedit and will accordingly update several fields
-        @param analysis_dir_text: the text updated from the analysis directory
-        """
-
-        # First set of checks
-        if analysis_dir_text == "":
-            return
-
-        analysis_dir_text = Path(analysis_dir_text)
-        if any([not analysis_dir_text.exists(), not analysis_dir_text.is_dir(), analysis_dir_text.name != "analysis"]):
-            return
-
-        if self.config["DeveloperMode"]:
-            print(f"Detected an update to the specified analysis directory. Attempting to find asl json sidecars and "
-                  f"infer appropriate field values from within.\n")
-
-        # Retrieve any asl json sidecar
-        asl_sides_legacy = peekable(analysis_dir_text.rglob("ASL4D.json"))
-        asl_sides_bids = peekable(analysis_dir_text.rglob("*_asl.json"))
-
-        # Disengage if there is no luck finding any sidecar
-        if not asl_sides_legacy:
-            if not asl_sides_bids:
-                return
-            else:
-                asl_sidecar = next(asl_sides_bids)
-        else:
-            asl_sidecar = next(asl_sides_legacy)
-        try:
-            with open(asl_sidecar) as sidecar_reader:
-                self.asl_json_sidecar_data = json.load(sidecar_reader)
-        except json.decoder.JSONDecodeError as json_e:
-            QMessageBox.warning(self.parent(), self.parms_errs["JsonImproperFormat"][0],
-                                self.parms_errs["JsonImproperFormat"][1] + str(json_e), QMessageBox.Ok)
-            return
-
-        # First, check if this is bids
-        if (analysis_dir_text / "dataset_description.json").exists():
-            self.chk_overwrite_for_bids.setChecked(True)
-            print(f"Detected that {analysis_dir_text} is a BIDS directory")
-        else:
-            self.chk_overwrite_for_bids.setChecked(False)
-            print(f"Detected that {analysis_dir_text} is not in BIDS format")
-
-        # Next, the vendor
-        try:
-            idx = self.cmb_vendor.findText(self.asl_json_sidecar_data["Manufacturer"])
-            if idx != -1:
-                self.cmb_vendor.setCurrentIndex(idx)
-        except KeyError:
-            if self.config["DeveloperMode"]:
-                print(f"INFO in update_asl_json_sidecar_data. The field: Manufacturer was not present in the "
-                      f"detected asl json sidecar.\n")
-
-        # Next, the readout dimension
-        try:
-            idx = self.cmb_readout_dim.findText(self.asl_json_sidecar_data["MRAcquisitionType"])
-            if idx != -1:
-                self.cmb_readout_dim.setCurrentIndex(idx)
-        except KeyError:
-            if self.config["DeveloperMode"]:
-                print(f"INFO in update_asl_json_sidecar_data. The field: MRAcquisitionType was not present in the "
-                      f"detected asl json sidecar.\n")
-
-        # Next the inversion time (i.e Post-Label Duration)
-        try:
-            value = self.asl_json_sidecar_data["InversionTime"]
-            self.spinbox_initialpld.setValue(value * 1000)
-        except KeyError:
-            if self.config["DeveloperMode"]:
-                print(f"INFO in update_asl_json_sidecar_data. The field: InversionTime was not present in the "
-                      f"detected asl json sidecar.\n")
-
-        # Next get a few essentials for auto-calculating the SliceReadoutTime
-        try:
-            has_tr = "RepetitionTime" in self.asl_json_sidecar_data
-            has_nslices = "NumberOfSlices" in self.asl_json_sidecar_data
-            if has_tr and has_nslices:
-                self.can_update_slicereadouttime = True
-            else:
-                self.can_update_slicereadouttime = False
-        except KeyError:
-            pass
-
-        # Retrieve any M0 json sidecar
-        m0_sides_legacy = peekable(analysis_dir_text.rglob("M0.json"))
-        m0_sides_bids = peekable(analysis_dir_text.rglob("*_m0scan.json"))
-
-        # Disengage if there is no luck finding any m0 sidecar
-        if not m0_sides_legacy:
-            if not m0_sides_bids:
-                self.chk_overwrite_for_bids.setChecked(False)
-                return
-            else:
-                m0_sidecar = next(m0_sides_bids)
-                # Activate the checkbox to overwrite sidecar data
-                self.chk_overwrite_for_bids.setChecked(True)
-        else:
-            m0_sidecar = next(m0_sides_legacy)
-            # Deactivate the checkbox to overwrite sidecar data
-            self.chk_overwrite_for_bids.setChecked(False)
-
-        if m0_sidecar:
-            idx = self.cmb_m0_isseparate.findText("Proton density scan (M0) was acquired")
-            if idx != -1:
-                self.cmb_m0_isseparate.setCurrentIndex(idx)
-
-            # If there was an M0 sidecar, it stands to reason there was also background suppression and that field
-            # should be set appropriately
-            try:
-                manufac = self.asl_json_sidecar_data["Manufacturer"]
-                acq_type = self.asl_json_sidecar_data["MRAcquisitionType"]
-                if manufac == "GE":
-                    idx = self.cmb_nsup_pulses.findText('5')
-                elif manufac == "Philips" and acq_type == "2D":
-                    idx = self.cmb_nsup_pulses.findText("2")
-                elif manufac == "Philips" and acq_type == "3D":
-                    idx = self.cmb_nsup_pulses.findText("4")
-                elif manufac == "Siemens":
-                    idx = self.cmb_nsup_pulses.findText("2")
-                else:
-                    if self.config["DeveloperMode"]:
-                        print(f"Information: In update_asl_json_sidecar_data. An M0 json sidecar was detected, but its "
-                              f"Manufacturer field was not present, preventing the appropriate setting for the number "
-                              f"of background suppression pulses to be established.\n")
-                    return
-                self.cmb_nsup_pulses.setCurrentIndex(idx)
-
-                # If it is 2D, it must be 2D EPI
-                if acq_type == "2D":
-                    idx = self.cmb_sequencetype.findText("2D EPI")
-                    self.cmb_sequencetype.setCurrentIndex(idx)
-
-            except KeyError:
-                pass
-
     def update_readout_dim(self, text):
         if text == "2D EPI":
             self.cmb_readout_dim.setCurrentIndex(1)
@@ -536,15 +408,14 @@ class xASL_Parms(QMainWindow):
 
         analysis_dir = Path(self.le_study_dir.text())
         if not (analysis_dir / "dataset_description.json").exists():
-            QMessageBox().warning(self.parent(), self.parms_errs["BIDSoverwriteforNonBIDS"][0],
-                                  self.parms_errs["BIDSoverwriteforNonBIDS"][1], QMessageBox.Ok)
+            robust_qmsg(self, title=self.parms_errs["BIDSoverwriteforNonBIDS"][0],
+                        body=self.parms_errs["BIDSoverwriteforNonBIDS"][1])
             return
 
         asl_jsons = peekable(analysis_dir.rglob("*_asl.json"))
         # If json sidecars cannot be found, exit early
         if not asl_jsons:
-            QMessageBox().warning(self.parent(), self.parms_errs["NoJsonSidecars"][0],
-                                  self.parms_errs["NoJsonSidecars"][1], QMessageBox.Ok)
+            robust_qmsg(self, title=self.parms_errs["NoJsonSidecars"][0], body=self.parms_errs["NoJsonSidecars"][1])
             return
 
         for asl_sidecar in asl_jsons:
@@ -606,20 +477,66 @@ class xASL_Parms(QMainWindow):
 
         if self.flag_impossible_m0:
             bad_jsons = "; ".join([asl_json.stem for asl_json in bad_jsons])
-            QMessageBox().warning(self.parent(), self.parms_errs["ImpossibleM0"][0],
-                                  self.parms_errs["ImpossibleM0"][1] + f"{bad_jsons}", QMessageBox.Ok)
+            robust_qmsg(self, title=self.parms_errs["ImpossibleM0"][0],
+                        body=self.parms_errs["ImpossibleM0"][1] + f"{bad_jsons}")
 
     ################
     # Misc Functions
     ################
+
+    # Super inefficient...perhaps a better alternative exists?
+    def switch_easldir_opts(self, option):
+        print(f"{self.switch_easldir_opts.__name__} has received option: {option}")
+        # Avoid false errors
+        if self.current_easl_type == option:
+            return
+        # Otherwise, switch layout as needed
+        if self.current_easl_type == "Local ExploreASL Directory" and option == "Local ExploreASL Compiled":
+            row, _ = self.formlay_basic.getLayoutPosition(self.hlay_easl_dir)
+            self.formlay_basic.removeRow(row)
+            self.hlay_easl_mcr, self.le_easl_mcr, self.btn_easl_mcr = make_droppable_clearable_le(
+                btn_connect_to=self.set_exploreasl_mcr, default="")
+            self.hlay_mrc_dir, self.le_mrc_dir, self.btn_mrc_dir = make_droppable_clearable_le(
+                btn_connect_to=self.set_mcr_dir, default="")
+            self.formlay_basic.insertRow(row, "ExploreASL Runtime Directory", self.hlay_easl_mcr)
+            self.formlay_basic.insertRow(row, "MATLAB Runtime Directory", self.hlay_mrc_dir)
+            self.current_easl_type = "Local ExploreASL Compiled"
+
+            # Tooltips
+            self.le_easl_mcr.setToolTip(self.parms_tips["le_easl_mcr"])
+            self.le_mrc_dir.setToolTip(self.parms_tips["le_mrc_dir"])
+
+        elif self.current_easl_type == "Local ExploreASL Compiled" and option == "Local ExploreASL Directory":
+            row, _ = self.formlay_basic.getLayoutPosition(self.hlay_mrc_dir)
+            self.formlay_basic.removeRow(row)
+            self.formlay_basic.removeRow(row)
+            self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
+                btn_connect_to=self.set_exploreasl_dir, default='')
+            self.formlay_basic.insertRow(row, "ExploreASL Directory", self.hlay_easl_dir)
+            self.current_easl_type = "Local ExploreASL Directory"
+
+            # Tooltips
+            self.le_easl_dir.setToolTip(self.parms_tips["le_easl_dir"])
+
+    # Controls the behavior of the M0 comboboxes
+    def m0_pos_in_asl_ctrlfunc(self):
+        if self.cmb_m0_isseparate.currentText() != "Proton density scan (M0) was acquired":
+            self.cmb_m0_posinasl.setCurrentIndex(0)
+            self.cmb_m0_posinasl.setEnabled(False)
+        else:
+            self.cmb_m0_posinasl.setEnabled(True)
+
+    # Activates the spinbox for single-value M0 division if specified
+    def enable_m0value_field(self, text):
+        if text == "Use a single value as the M0":
+            self.spinbox_m0_isseparate.setEnabled(True)
+        else:
+            self.spinbox_m0_isseparate.setEnabled(False)
+
     # Clears the currently-included subjects list and resets the regex
     def clear_included(self):
         self.lst_included_subjects.clear()
         self.le_subregex.clear()
-
-    # Clears the currently-excluded subjects list
-    def clear_excluded(self):
-        self.lst_excluded_subjects.clear()
 
     # Updates the current recognized regex
     def update_regex(self):
@@ -634,67 +551,95 @@ class xASL_Parms(QMainWindow):
         if inferred_regex:
             self.le_subregex.setText(inferred_regex)
 
-    def get_directory(self, caption):
-        directory = QFileDialog.getExistingDirectory(self.parent(), caption, self.config["DefaultRootDir"],
-                                                     QFileDialog.ShowDirsOnly)
-        if directory == "":
-            return False, ""
-        return True, directory
+    #########################################
+    # LineEdit-setting and checking Functions
+    #########################################
+    def set_mcr_dir(self):
+        errs = ["Invalid Matlab Runtime Directory", "The indicated directory must be of the name v## and contain the"
+                                                    "glnxa64 library"]
+        robust_getdir(self, "Path to MATLAB Runtime Directory", self.config["DefaultRootDir"],
+                      {"basename_fits_regex": ["v\\d{2,3}", errs], "rcontains": ["glnxa64", errs]},
+                      lineedit=self.le_mrc_dir)
+
+    def set_exploreasl_mcr(self):
+        errs = ["Invalid ExploreASL Compiled Runtime Directory",
+                "The indicated directory must be the compiled directory containing the xASL_latest file"]
+        robust_getdir(self, "Path to local ExploreASL compiled runtime", self.config["DefaultRootDir"],
+                      {"child_file_exists": ["xASL_latest", errs]}, self.le_easl_mcr)
 
     def set_exploreasl_dir(self):
-        status, easl_filepath = self.get_directory("Select ExploreASL directory")
-        if not status:
-            return
-        easl_filepath = Path(easl_filepath)
-        if (easl_filepath / "ExploreASL_Master.m").exists():
-            self.le_easl_dir.setText(str(easl_filepath))
-        else:
-            QMessageBox().warning(self, self.parms_errs["InvalidExploreASLDir"][0],
-                                  self.parms_errs["InvalidExploreASLDir"][1], QMessageBox.Ok)
+        errs = [self.parms_errs["InvalidExploreASLDir"][0], self.parms_errs["InvalidExploreASLDir"][1]]
+        s, path = robust_getdir(self, "Path to local ExploreASL directory", self.config["DefaultRootDir"],
+                                {"child_file_exists": ["ExploreASL_Master.m", errs]})
+        if s:
+            self.le_easl_dir.setText(str(path))
 
     def set_study_dir(self):
-        status, analysisdir_filepath = self.get_directory("Select the study's analysis directory")
-        if not status:
-            return
-        analysisdir_filepath = Path(analysisdir_filepath)
-        if any([not analysisdir_filepath.exists(), not analysisdir_filepath.is_dir()]):
-            QMessageBox().warning(self, self.parms_errs["InvalidDirectory"][0],
-                                  self.parms_errs["InvalidDirectory"][1], QMessageBox.Ok)
-            return
-        else:
-            self.le_study_dir.setText(str(analysisdir_filepath))
+        robust_getdir(self, "Path to study directory", self.config["DefaultRootDir"],
+                      requirements=None, lineedit=self.le_study_dir)
 
     def set_fslpath(self):
-        status, fsl_filepath = self.get_directory("Select the path to the fsl bin direction")
-        if not status:
-            return
-        fsl_filepath = Path(fsl_filepath)
-        if any([not (fsl_filepath / "fsl").exists(), fsl_filepath.name != "bin"]):
-            QMessageBox().warning(self, self.parms_errs["InvalidFSLDirectory"][0],
-                                  self.parms_errs["InvalidFSLDirectory"][1], QMessageBox.Ok)
-            return
-        else:
-            self.le_fslpath.setText(str(fsl_filepath))
+        robust_getdir(self, "Path to FSL 'bin' Directory", self.config["DefaultRootDir"],
+                      {"child_dir_exists": ["fsl", self.parms_errs["InvalidFSLDirectory"]]}, lineedit=self.le_fslpath)
 
     #######################################################################
     # Main Functions for this module - saving to json and loading from json
     #######################################################################
     def saveparms2json(self):
         # Defensive programming first
-        study_dir = Path(self.le_study_dir.text())
-        if any([self.le_study_dir.text() == '', not study_dir.exists(), not study_dir.is_dir()
-                ]):
-            QMessageBox().warning(self.parent(), self.parms_errs["InvalidStudyDirectory"][0],
-                                  self.parms_errs["InvalidStudyDirectory"][1], QMessageBox.Ok)
+        forbidden = ["", ".", "/", "~"]
+        # First check, the study directory specified must be a legitimate directory filepath
+        study_dir = Path(self.le_study_dir.text()).resolve()
+        if any([self.le_study_dir.text() in forbidden, not study_dir.exists(), not study_dir.is_dir()]):
+            robust_qmsg(self, title=self.parms_errs["InvalidStudyDirectory"][0],
+                        body=self.parms_errs["InvalidStudyDirectory"][1], variables=[f"{str(study_dir)}"])
             return
-        if self.le_subregex.text() in ["", "^$"]:
-            QMessageBox().warning(self.parent(), "Invalid Regex",
-                                  f"The detected regex:\n{self.le_subregex.text()}\n"
-                                  f"is an valid regex for matching subject names", QMessageBox.Ok)
+        # Next, the regex field has to be something reasonable
+        if self.le_subregex.text() in ["", "^$", "^", "$", "/", "\\"]:
+            robust_qmsg(self, title=self.parms_errs["InvalidRegex"][0], body=self.parms_errs["InvalidRegex"][1],
+                        variables=[f"{self.le_subregex.text()}"])
             return
+        json_parms = {}
+        # Finally, the nature of the current ExploreASL types must be valid
+        if self.current_easl_type == "Local ExploreASL Directory":
+            easl_dir = Path(self.le_easl_dir.text()).resolve()
+            pathforchecking = easl_dir
+            if any([self.le_easl_dir.text() in forbidden, not easl_dir.is_dir(), not easl_dir.exists()]):
+                robust_qmsg(self, title=self.parms_errs["InvalidExploreASLDir"][0],
+                            body=self.parms_errs["InvalidExploreASLDir"][1])
+                return
+            json_parms["MyPath"] = self.le_easl_dir.text()
+            json_parms["EXPLOREASL_TYPE"] = "LOCAL_UNCOMPILED"
+        elif self.current_easl_type == "Local ExploreASL Compiled":
+            path_path = ""
+            for str_path, err_str in zip([self.le_mrc_dir.text(), self.le_easl_mcr.text()],
+                                         ["InvalidMCRDir", "InvalidCompiledExploreASLDir"]):
+                path_path = Path(str_path).resolve()
+                if any([str_path in forbidden, not path_path.is_dir(), not path_path.exists()]):
+                    robust_qmsg(self, title=self.parms_errs[err_str][0],
+                                body=self.parms_errs[err_str][1])
+                    return
+            pathforchecking = path_path
 
-        json_parms = {
-            "MyPath": self.le_easl_dir.text(),
+            json_parms["MyPath"] = self.le_easl_mcr.text()
+            json_parms["MCRPath"] = self.le_mrc_dir.text()
+            json_parms["EXPLOREASL_TYPE"] = "LOCAL_COMPILED"
+        else:
+            raise ValueError(f"Unexpected value for current_easl_type: {self.current_easl_type}")
+
+        # Compatibility
+        str_bsup = "BackgroundSuppressionNumberPulses" if not is_earlier_version(pathforchecking, 140, False) \
+            else "BackGrSupprPulses"
+        if is_earlier_version(pathforchecking, threshold_higher=150, higher_eq=False):
+            str_pvcker = "PVCorrectionNativeSpaceKernel"
+            str_dopvc = "bPVCorrectionNativeSpace"
+            str_pvcgaus = "bPVCorrectionGaussianMM"
+        else:
+            str_pvcker = "PVCNativeSpaceKernel"
+            str_dopvc = "bPVCNativeSpace"
+            str_pvcgaus = "bPVCGaussianMM"
+
+        json_parms.update({
             "name": self.le_studyname.text(),
             "D": {"ROOT": self.le_study_dir.text()},
             "subject_regexp": self.le_subregex.text(),
@@ -746,9 +691,9 @@ class xASL_Parms(QMainWindow):
             [self.cmb_dctreg.currentText()],
             "bRegisterM02ASL": int(self.chk_removespikes.isChecked()),
             "bUseMNIasDummyStructural": int(self.chk_usemniasdummy.isChecked()),
-            "bPVCorrectionNativeSpace": int(self.chk_nativepvc.isChecked()),
-            "bPVCorrectionGaussianMM": int(self.chk_gaussianpvc.isChecked()),
-            "PVCorrectionNativeSpaceKernel": self.prep_pvc_kernel_vec(),
+            str_dopvc: int(self.chk_nativepvc.isChecked()),
+            str_pvcgaus: int(self.chk_gaussianpvc.isChecked()),
+            str_pvcker: self.prep_pvc_kernel_vec(),
 
             # Environment Parameters
             "FSLdirectory": self.le_fslpath.text(),
@@ -757,8 +702,7 @@ class xASL_Parms(QMainWindow):
             # Quantification Parameters
             "ApplyQuantification": self.prep_quantparms(),
             "Q": {
-                "BackGrSupprPulses": int(self.cmb_nsup_pulses.currentText()),
-                "BackgroundSuppressionNumberPulses": int(self.cmb_nsup_pulses.currentText()),
+                str_bsup: int(self.cmb_nsup_pulses.currentText()),
                 "BackgroundSuppressionPulseTime": self.prep_suppression_vec(),
                 "LabelingType": {"Pulsed ASL": "PASL",
                                  "Pseudo-continuous ASL": "CASL",
@@ -776,12 +720,13 @@ class xASL_Parms(QMainWindow):
             "S": {
                 "bMasking": self.prep_masking_vec()
             }
-        }
+        })
 
         # Compatibility issue with "M0PositionInASL4D"
-        if all([is_earlier_version(easl_dir=Path(self.le_easl_dir.text()), threshold_higher=150),
-                json_parms.get("M0PositionInASL4D") is None]):
-            del json_parms["M0PositionInASL4D"]
+        if json_parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED":
+            if all([is_earlier_version(easl_dir=Path(self.le_easl_dir.text()), threshold_higher=150),
+                    json_parms.get("M0PositionInASL4D") is None]):
+                del json_parms["M0PositionInASL4D"]
 
         try:
             with open(study_dir / "DataPar.json", 'w') as w:
@@ -796,67 +741,84 @@ class xASL_Parms(QMainWindow):
                 with open(study_dir / "asl.json", 'w') as asl_json_writer:
                     json.dump(asl_parms, asl_json_writer, indent=3)
         except FileNotFoundError:
-            QMessageBox().warning(self, self.parms_errs["FileNotFound"][0],
-                                  self.parms_errs["FileNotFound"][1] + f"{self.le_study_dir.text()}", QMessageBox.Ok)
+            robust_qmsg(self, title=self.parms_errs["FileNotFound"][0], body=self.parms_errs["FileNotFound"][1],
+                        variables=f"{self.le_study_dir.text()}")
             return
 
         # Also, overwrite asl_json sidecars if the dataset has been imported as BIDS format
         if self.chk_overwrite_for_bids.isChecked():
             self.overwrite_bids_fields()
 
-        QMessageBox().information(self,
-                                  "DataPar.json successfully saved",
-                                  f"The parameter file was successfully saved to:\n"
-                                  f"{self.le_study_dir.text()}",
-                                  QMessageBox.Ok)
+        robust_qmsg(self, msg_type="information", title="DataPar.json successfully saved",
+                    body=f"The parameter file was successfully saved to:\n{self.le_study_dir.text()}")
 
     def loadjson2parms(self):
         self.import_error_logger.clear()
-        json_filepath, _ = QFileDialog.getOpenFileName(QFileDialog(), "Select the JSON parameters file",
-                                                       self.config["DefaultRootDir"], "Json files (*.json)")
-        if json_filepath == '':
-            return
-        json_filepath = Path(json_filepath)
-        if any([not json_filepath.exists(), not json_filepath.is_file(), json_filepath.suffix != ".json"]):
-            QMessageBox().warning(self, self.parms_errs["IncorrectFile"][0],
-                                  self.parms_errs["IncorrectFile"][1], QMessageBox.Ok)
+
+        # Defensive Programming
+        # The loaded JSON must be a valid json file with the correct syntax
+        status, json_filepath = robust_getfile("Select the JSON parameters file", self.config["DefaultRootDir"],
+                                               "Json files (*.json)", permitted_suffixes=[".json"])
+        if not status:
             return
         try:
             with open(json_filepath, 'r') as reader:
                 parms: dict = json.load(reader)
         except json.decoder.JSONDecodeError as datapar_json_e:
-            QMessageBox().warning(self.parent(), self.parms_errs["BadParFile"][0],
-                                  self.parms_errs["BadParFile"][1] + f"{datapar_json_e}", QMessageBox.Ok)
+            robust_qmsg(self, title=self.parms_errs["BadParFile"][0],
+                        body=self.parms_errs["BadParFile"][1] + f"{datapar_json_e}")
             return
 
+        # Compatibility with name changes over ExploreASL Versions; this will be deprecated after a few version
+        # advancements
+        try:
+            bsup_str = "BackgroundSuppressionNumberPulses" if not is_earlier_version(parms["D"]["ROOT"], 140, False) \
+                else "BackGrSupprPulses"
+            if is_earlier_version(parms["MyPath"], threshold_higher=150, higher_eq=False):
+                str_pvcker = "PVCorrectionNativeSpaceKernel"
+                str_dopvc = "bPVCorrectionNativeSpace"
+                str_pvcgaus = "bPVCorrectionGaussianMM"
+            else:
+                str_pvcker = "PVCNativeSpaceKernel"
+                str_dopvc = "bPVCNativeSpace"
+                str_pvcgaus = "bPVCGaussianMM"
+        except KeyError:
+            bsup_str = "BackgroundSuppressionNumberPulses"
+            str_pvcker = "PVCNativeSpaceKernel"
+            str_dopvc = "bPVCNativeSpace"
+            str_pvcgaus = "bPVCGaussianMM"
+
+        # Preliminary Functions to run
+        self.get_easl_paths(loaded_parms=parms)  # Ensure the correct easl setup is in play first!
+
+        # Main Setting
         json_setter = {
-            "MyPath": self.le_easl_dir.setText,
             "name": self.le_studyname.setText,
             "D": {"ROOT": self.le_study_dir.setText},
             "subject_regexp": self.le_subregex.setText,
             "exclusion": self.lst_excluded_subjects.addItems,
             "M0_conventionalProcessing": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                                  widget=self.cmb_m0_algorithm,
-                                                 translator={0: "New Image Processing", 1: "Standard Processing"}),
+                                                 args={0: "New Image Processing", 1: "Standard Processing"}),
             "M0": self.get_m0,
             "M0_GMScaleFactor": self.spinbox_gmscale.setValue,
             "M0PositionInASL4D": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                          widget=self.cmb_m0_posinasl,
-                                         translator={"[1 2]": "M0 is the first ASL control-label pair",
-                                                     1: "M0 is the first ASL scan volume",
-                                                     2: "M0 is the second ASL scan volume",
-                                                     None: "M0 exists as a separate scan"
-                                                     }),
+                                         args={"[1 2]": "M0 is the first ASL control-label pair",
+                                               1: "M0 is the first ASL scan volume",
+                                               2: "M0 is the second ASL scan volume",
+                                               None: "M0 exists as a separate scan"
+                                               }),
 
             # Sequence Parameters
             "readout_dim": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_readout_dim),
             "Vendor": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_vendor),
             "Sequence": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_sequencetype,
-                                translator={"3D_spiral": "3D Spiral", "3D_GRASE": "3D GRaSE", "2D_EPI": "2D EPI"}),
+                                args={"3D_spiral": "3D Spiral", "3D_GRASE": "3D GRaSE", "2D_EPI": "2D EPI"}),
 
             # General Processing Parameters
             "Quality": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_quality,
-                               translator={0: "Low", 1: "High"}),
+                               args={0: "Low", 1: "High"}),
             "DELETETEMP": self.chk_deltempfiles.setChecked,
             "SkipIfNoFlair": self.chk_skipnoflair.setChecked,
             "SkipIfNoM0": self.chk_skipnom0.setChecked,
@@ -864,7 +826,7 @@ class xASL_Parms(QMainWindow):
 
             # Structural Processing Parameters
             "SegmentSPM12": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_segmethod,
-                                    translator={1: "SPM12", 0: "CAT12"}),
+                                    args={1: "SPM12", 0: "CAT12"}),
             "bRunModule_LongReg": self.chk_runlongreg.setChecked,
             "bRunModule_DARTEL": self.chk_run_dartel.setChecked,
             "bHammersCAT12": self.chk_hammersroi.setChecked,
@@ -877,19 +839,19 @@ class xASL_Parms(QMainWindow):
 
             "bRegistrationContrast": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                              widget=self.cmb_imgcontrast,
-                                             translator={2: "Automatic", 0: "Control --> T1w", 1: "CBF --> pseudoCBF",
-                                                         3: "Force CBF --> pseudoCBF"}),
+                                             args={2: "Automatic", 0: "Control --> T1w", 1: "CBF --> pseudoCBF",
+                                                   3: "Force CBF --> pseudoCBF"}),
             "bAffineRegistration": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                            widget=self.cmb_affineregbase,
-                                           translator={0: "Disabled", 1: "Enabled", 2: "Based on PWI CoV"}),
+                                           args={0: "Disabled", 1: "Enabled", 2: "Based on PWI CoV"}),
             "bDCTRegistration": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                         widget=self.cmb_dctreg,
-                                        translator={0: "Disabled", 1: "Enabled + no PVC", 2: "Enabled + PVC"}),
+                                        args={0: "Disabled", 1: "Enabled + no PVC", 2: "Enabled + PVC"}),
             "bRegisterM02ASL": self.chk_regm0toasl.setChecked,
             "bUseMNIasDummyStructural": self.chk_usemniasdummy.setChecked,
-            "bPVCorrectionNativeSpace": self.chk_nativepvc.setChecked,
-            "bPVCorrectionGaussianMM": self.chk_gaussianpvc.setChecked,
-            "PVCorrectionNativeSpaceKernel": self.get_pvc_kernel_vec,
+            str_dopvc: self.chk_nativepvc.setChecked,
+            str_pvcgaus: self.chk_gaussianpvc.setChecked,
+            str_pvcker: self.get_pvc_kernel_vec,
 
             # Environment Parameters
             "MakeNIfTI4DICOM": self.chk_outputcbfmaps.setChecked,
@@ -898,15 +860,13 @@ class xASL_Parms(QMainWindow):
             # Quantification Parameters
             "ApplyQuantification": self.get_quantparms,
             "Q": {
-                "BackGrSupprPulses": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
-                                             widget=self.cmb_nsup_pulses),
-                "BackgroundSuppressionNumberPulses": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
-                                                             widget=self.cmb_nsup_pulses),
+                bsup_str: partial(self.main_setter, action="cmb_setCurrentIndex_simple",
+                                  widget=self.cmb_nsup_pulses),
                 "BackgroundSuppressionPulseTime": self.get_suppression_vec,
                 "LabelingType": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                         widget=self.cmb_labelingtype,
-                                        translator={"PASL": "Pulsed ASL", "CASL": "Pseudo-continuous ASL",
-                                                    "PCASL": "Pseudo-continuous ASL"}),
+                                        args={"PASL": "Pulsed ASL", "CASL": "Pseudo-continuous ASL",
+                                              "PCASL": "Pseudo-continuous ASL"}),
                 "Initial_PLD": self.spinbox_initialpld.setValue,
                 "LabelingDuration": self.spinbox_labdur.setValue,
                 "SliceReadoutTime": self.spinbox_slice_readout.setValue,
@@ -933,8 +893,11 @@ class xASL_Parms(QMainWindow):
             # Quantification Parms
             "SaveCBF4D"
         }
+        to_ignore = {"MyPath", "EXPLOREASL_TYPE", "MCRPath"}
 
         for key, call in parms.items():
+            if key in to_ignore:
+                continue
             try:
                 if isinstance(call, dict):
                     for subkey, subcall in call.items():
@@ -953,62 +916,59 @@ class xASL_Parms(QMainWindow):
                         try:
                             json_setter[key](call)
                         except KeyError as ke:
-                            print(f"TypeError encountered with key {key}")
+                            print(f"KeyError encountered with key {key}")
                             print(ke)
 
             except TypeError as te:
                 print(f"TypeError encountered with key: {key}")
-                print(te)
+                print(f"Content of TypeError: {te}")
 
         # Followup functions to perform
-        self.fill_subject_list(parms)  # Fill the list and exclusion widgets
+        self.fill_subject_list(loaded_parms=parms)  # Fill the list and exclusion widgets
 
         if len(self.import_error_logger) > 0:
             errors = "\n -".join(self.import_error_logger)
-            QMessageBox().warning(self,
-                                  "Errors were encountered importing certain values",
-                                  f"The following fields could not be properly imported:\n -{errors}",
-                                  QMessageBox.Ok)
+            robust_qmsg(self, title=self.parms_errs["ImportErrors"][0], body=self.parms_errs[1] + errors)
 
     @staticmethod
-    def main_setter(argument, widget, action, translator=None):
+    def main_setter(value, widget, action, args=None):
         """
         Convenience setter function for setting widgets to the approprivate values during json loading
 
-        :param argument: The input coming from the json value being read in
+        :param value: The input coming from the json value being read in
         :param widget: The widget that will be influenced
         :param action: A string denoting what kind of argument this is so as to facilitate an appropriate response
-        :param translator: For comboboxes, a mapping of the json key to a string item within the combobox
+        :param args: For comboboxes, a mapping of the json key to a string item within the combobox
         """
         if action == "le_setText_commajoin":  # Lineedit; arguments is a list
-            if isinstance(argument, list) and len(argument) > 1:
-                widget.setText(", ".join(argument))
+            if isinstance(value, list) and len(value) > 1:
+                widget.setText(", ".join(value))
             else:
-                widget.setText(argument[0])
+                widget.setText(value[0])
         elif action == "le_setText_simple":  # Lineedit; arguments is a string
-            widget.setText(argument)
+            widget.setText(value)
         elif action == "cmb_setCurrentIndex_translate":  # Combobox; arguments is a string requiring a translator
-            index = widget.findText(str(translator[argument]))
+            index = widget.findText(str(args[value]))
             if index == -1:
                 return False
             widget.setCurrentIndex(index)
         elif action == "cmb_setCurrentIndex_simple":  # Combobox; arguments is a string present as combobox option
-            index = widget.findText(str(argument))
+            index = widget.findText(str(value))
             if index == -1:
                 return False
             widget.setCurrentIndex(index)
         elif action == "chk_setChecked_simple":  # QCheckBox; arguments is a bool
-            widget.setChecked(argument)
-
-    def enable_m0value_field(self, text):
-        if text == "Use a single value as the M0":
-            self.spinbox_m0_isseparate.setEnabled(True)
-        else:
-            self.spinbox_m0_isseparate.setEnabled(False)
+            widget.setChecked(value)
 
     #############################################
     # Convenience methods for translation to json
     #############################################
+    def prep_mypath(self):
+        if self.current_easl_type == "Local ExploreASL Directory":
+            return self.le_easl_dir.text()
+        elif self.current_easl_type == "Local ExploreASL Compiled":
+            return self.le_easl_mcr.text()
+
     def prep_quantparms(self):
         quant_wids = [self.chk_quant_applyss_asl, self.chk_quant_applyss_m0, self.chk_quant_pwi2label,
                       self.chk_quant_quantifym0, self.chk_quant_divbym0]
@@ -1113,7 +1073,8 @@ class xASL_Parms(QMainWindow):
     def fill_subject_list(self, loaded_parms: dict):
         try:
             analysis_dir = Path(loaded_parms["D"]["ROOT"]).resolve()
-            if any([not analysis_dir.exists(), not analysis_dir.is_dir()]):
+            if any([not analysis_dir.exists(), not analysis_dir.is_dir(),
+                    loaded_parms["D"]["ROOT"] in [".", "", "/"]]):
                 return
             if loaded_parms["subject_regexp"] == "":
                 return
@@ -1137,6 +1098,23 @@ class xASL_Parms(QMainWindow):
 
         except KeyError as subload_kerr:
             print(f"{self.fill_subject_list.__name__} received a KeyError: {subload_kerr}")
+            return
+
+    def get_easl_paths(self, loaded_parms: dict):
+        try:
+            easl_type = loaded_parms["EXPLOREASL_TYPE"]
+            if easl_type == "LOCAL_UNCOMPILED":
+                self.cmb_easl_type.setCurrentIndex(self.cmb_easl_type.findText("Local ExploreASL Directory"))
+                self.le_easl_dir.setText(str(loaded_parms["MyPath"]))
+            elif easl_type == "LOCAL_COMPILED":
+                self.cmb_easl_type.setCurrentIndex(self.cmb_easl_type.findText("Local ExploreASL Compiled"))
+                self.le_easl_mcr.setText(str(loaded_parms["MyPath"]))
+                self.le_mrc_dir.setText(str(loaded_parms["MCRPath"]))
+            else:
+                pass
+
+        except KeyError as easlpaths_kerr:
+            print(f"{self.get_easl_paths.__name__} received a KeyError: {easlpaths_kerr}")
             return
 
     ############################################

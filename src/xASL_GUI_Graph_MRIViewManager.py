@@ -33,7 +33,7 @@ class xASL_GUI_MRIViewManager(QWidget):
         analysis_dir = Path(self.parent_cw.le_analysis_dir.text())
         self.analysis_dir = self.parent_cw.le_analysis_dir.text()
         try:
-            with open(next(analysis_dir.glob("*Par.json"))) as parms_reader:
+            with open(next(analysis_dir.glob("DataPar*.json"))) as parms_reader:
                 self.subject_regex = load(parms_reader)["subject_regexp"].strip("$^")
 
             self.axes_arg_x = ''  # Set to '' instead of None because the latter is not supported by lineedits

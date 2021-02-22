@@ -2,7 +2,7 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, xASL_PushButton
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options, robust_qmsg
 from src.xASL_GUI_Dehybridizer import xASL_GUI_Dehybridizer
 from src.xASL_GUI_DCM2NIFTI import *
 from tdda import rexpy
@@ -112,7 +112,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.import_workers = []
 
         # Window Size and initial visual setup
-        self.setWindowTitle("ExploreASL ASL2BIDS Importer")
+        self.setWindowTitle("ExploreASL - DICOM to NIFTI Import")
         self.cw = QWidget(self)
         self.setCentralWidget(self.cw)
         self.mainlay = QVBoxLayout(self.cw)
@@ -127,7 +127,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.vlay_dehybridizer = QVBoxLayout(self.cont_dehybridizer)
         self.vlay_dehybridizer.setContentsMargins(0, 0, 0, 0)
         self.central_tab_widget.addTab(self.cont_import, "Importer")
-        self.central_tab_widget.addTab(self.cont_dehybridizer, "Folder Unpack")
+        self.central_tab_widget.addTab(self.cont_dehybridizer, "Expand Directories")
         self.mainlay.addWidget(self.central_tab_widget)
 
         # The importer UI setup
@@ -183,7 +183,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.formlay_rootdir = QFormLayout()
         self.hlay_rootdir = QHBoxLayout()
         self.le_rootdir = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
-        self.le_rootdir.setPlaceholderText("Drag and drop your study's raw directory here")
+        self.le_rootdir.setPlaceholderText("Drag & drop the root directory of your DICOM folder structure")
         self.le_rootdir.setToolTip(self.import_tips["le_rootdir"])
         self.le_rootdir.setReadOnly(True)
         self.le_rootdir.textChanged.connect(self.set_rootdir_variable)
@@ -217,8 +217,8 @@ class xASL_GUI_Importer(QMainWindow):
         self.lab_rootlabel = QLabel(text="root")
         self.lab_rootlabel.setFont(self.labfont)
         self.levels = {}
-        for idx, (level, func) in enumerate(zip(["Level1", "Level2", "Level3", "Level4", "Level5", "Level6"],
-                                                [self.get_nth_level_dirs] * 6)):
+        for idx, (level, func) in enumerate(zip(["Level1", "Level2", "Level3", "Level4", "Level5", "Level6", "Level7"],
+                                                [self.get_nth_level_dirs] * 7)):
             le = DandD_Label2LineEdit(self, self.grp_dirstruct, idx)
             le.modified_text.connect(self.get_nth_level_dirs)
             le.textChanged.connect(self.update_sibling_awareness)
@@ -234,7 +234,7 @@ class xASL_GUI_Importer(QMainWindow):
         for ii, level in enumerate(self.levels.values()):
             level.setFont(self.lefont)
             self.hlay_receivers.addWidget(level)
-            if ii < 5:
+            if ii < 6:
                 lab_sep = QLabel(text=self.delim)
                 lab_sep.setFont(self.labfont)
                 self.hlay_receivers.addWidget(lab_sep)
@@ -334,8 +334,8 @@ class xASL_GUI_Importer(QMainWindow):
             directories, basenames = zip(*paths)
 
         except ValueError:
-            QMessageBox().warning(self, self.import_errs["ImpossibleDirDepth"][0],
-                                  self.import_errs["ImpossibleDirDepth"][1], QMessageBox.Ok)
+            robust_qmsg(self, title=self.import_errs["ImpossibleDirDepth"][0],
+                        body=self.import_errs["ImpossibleDirDepth"][1])
             # Clear the appropriate lineedit that called this function after the error message
             list(self.levels.values())[level].clear()
             return
@@ -597,9 +597,10 @@ class xASL_GUI_Importer(QMainWindow):
     ##################################
     # SECTION - RETRIEVAL OF VARIABLES
     ##################################
-
-    # Returns the directory structure in preparation of running the import
     def get_directory_structure(self):
+        """
+        Returns the directory structure in preparation of running the import
+        """
         dirnames = [le.text() for le in self.levels.values()]
         valid_dirs = []
         encountered_nonblank = False
@@ -607,11 +608,8 @@ class xASL_GUI_Importer(QMainWindow):
         for name in reversed(dirnames):
             # Cannot have blank lines existing between the important directories
             if name == '' and encountered_nonblank:
-                QMessageBox().warning(self,
-                                      "Invalid directory structure entered",
-                                      "You must indicate filler directories occuring between"
-                                      "\nSubject/Visit/Run/Scan directories using the Dummy label provided",
-                                      QMessageBox.Ok)
+                robust_qmsg(self, title=self.import_errs["InvalidStructure_Blanks"][0],
+                            body=self.progbar_import["InvalidStructure_Blanks"][1])
                 return False, []
             elif name == '' and not encountered_nonblank:
                 continue
@@ -620,12 +618,9 @@ class xASL_GUI_Importer(QMainWindow):
                 valid_dirs.append(name)
 
         # Sanity check for false user input
-        if any(["Subject" not in valid_dirs,
-                "Scan" not in valid_dirs]):
-            QMessageBox().warning(self,
-                                  "Invalid directory structure entered",
-                                  "A minimum of Subject and Scan directories must be present in your study for"
-                                  "ExploreASL to import data correctly.")
+        if any(["Subject" not in valid_dirs, "Scan" not in valid_dirs]):
+            robust_qmsg(self, title=self.import_errs["InvalidStructure_MinSubScan"][0],
+                        body=self.import_errs["InvalidStructure_MinSubScan"][1])
             return False, []
 
         valid_dirs = list(reversed(valid_dirs))
@@ -658,10 +653,8 @@ class xASL_GUI_Importer(QMainWindow):
         # First, make sure that every number is unique:
         current_orderset = [cmb.currentText() for cmb in self.cmb_runaliases_dict.values()]
         if len(current_orderset) != len(set(current_orderset)):
-            QMessageBox().warning(self,
-                                  "Invalid runs alias ordering entered",
-                                  "Please check for accidental doublings",
-                                  QMessageBox.Ok)
+            robust_qmsg(self, title=self.import_errs["InvalidRunAliases"][0],
+                        body=self.import_errs["InvalidRunAliases"][1])
             return False, run_aliases
 
         basename_keys = list(self.le_runaliases_dict.keys())
@@ -739,11 +732,8 @@ class xASL_GUI_Importer(QMainWindow):
 
         analysis_dir = Path(self.import_parms["RawDir"]).parent / "analysis"
         if analysis_dir.exists():
-            QMessageBox.warning(self, "Cleanup Post-Termination",
-                                f"An import job was terminated by the user.\nThe following directory was made in the "
-                                f"process:\n{str(analysis_dir)}\nBe warned that this directory likely has subjects "
-                                f"with missing scans due to this.", QMessageBox.Ok)
-
+            robust_qmsg(self, title=self.import_errs["CleanupImportPostTerm"][0],
+                        body=self.import_errs["CleanupImportPostTerm"][1], variables=[str(analysis_dir)])
         QApplication.restoreOverrideCursor()
 
     @Slot(list)
@@ -788,8 +778,8 @@ class xASL_GUI_Importer(QMainWindow):
         chdir(self.config["ScriptsDir"])
         analysis_dir = Path(self.import_parms["RawDir"]).parent / "analysis"
         if not analysis_dir.exists():
-            QMessageBox().warning(self, self.import_errs["ImportCritError"][0],
-                                  self.import_errs["ImportCritError"][1], QMessageBox.Ok)
+            robust_qmsg(self, title=self.import_errs["StudyDirNeverMade"][0],
+                        body=self.import_errs["StudyDirNeverMade"][1], variables=[str(analysis_dir)])
             return
 
         # Concatenate the tmpImport_Converter_###.log files into a single log placed in the study directory
@@ -831,16 +821,13 @@ class xASL_GUI_Importer(QMainWindow):
         # If there were any failures, write them to disk now
         if len(self.failed_runs) > 0:
             try:
-                # with open(analysis_dir / "import_summary_failed.json", 'w') as failed_writer:
-                #     json.dump(dict(self.failed_runs), failed_writer, indent=3)
                 with open(analysis_dir / "Import_Failed_Imports.txt", "w") as failed_writer:
                     failed_writer.writelines([line + "\n" for line in self.failed_runs])
-                QMessageBox().warning(self, "Errors Occurred during Import",
-                                      f"Please see the Import_Failed_Imports.txt and {log_path.name} files to "
-                                      f"determine what went wrong.", QMessageBox.Ok)
+                robust_qmsg(self, title=self.import_errs["ImportErrors"][0], body=self.import_errs["ImportErrors"][1],
+                            variables=[log_path.name, str(analysis_dir)])
             except FileNotFoundError:
-                QMessageBox().warning(self, self.import_errs["ImportCritError"][0],
-                                      self.import_errs["ImportCritError"][1], QMessageBox.Ok)
+                robust_qmsg(self, title=self.import_errs["StudyDirNeverMade"][0],
+                            body=self.import_errs["StudyDirNeverMade"][1], variables=[str(analysis_dir)])
         else:
             # Finally, a Message confirming a successful import
             QMessageBox.information(self, "Import was a Success",

@@ -1,17 +1,18 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from src.xASL_GUI_Graph_Subsetter import xASL_GUI_Subsetter, xASL_GUI_Datatype_Indicator
 from src.xASL_GUI_Graph_Loader import xASL_GUI_Data_Loader
 from src.xASL_GUI_Graph_FacetManager import xASL_GUI_FacetManager
 from src.xASL_GUI_Graph_FacetArtist import xASL_GUI_FacetArtist
 from src.xASL_GUI_Graph_MRIViewManager import xASL_GUI_MRIViewManager
 from src.xASL_GUI_Graph_MRIViewArtist import xASL_GUI_MRIViewArtist
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import make_scrollbar_area, set_formlay_options
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import (make_scrollbar_area, set_formlay_options, robust_getfile,
+                                                  make_droppable_clearable_le, robust_getdir)
 from json import load
 from pathlib import Path
 from platform import system
+from functools import partial
 
 
 # noinspection PyCallingNonCallable
@@ -27,7 +28,6 @@ class xASL_Plotting(QMainWindow):
 
         with open(Path(self.config["ProjectDir"]) / "JSON_LOGIC" / "ToolTips.json") as plot_tips_reader:
             self.plot_tips = load(plot_tips_reader)["Plotting"]
-
         with open(Path(self.config["ProjectDir"]) / "JSON_LOGIC" / "ErrorsListing.json") as plot_errs_reader:
             self.plot_errs = load(plot_errs_reader)
 
@@ -51,6 +51,12 @@ class xASL_Plotting(QMainWindow):
 
         # Main Widgets setup
         self.UI_Setup_Docker()
+
+        # QMenu
+        self.menubar_main = QMenuBar(self)
+        self.setMenuBar(self.menubar_main)
+        self.menu_dock = self.menubar_main.addMenu("Dock")
+        self.menu_dock.addAction("Show Dock", partial(self.dock.setVisible, True))
 
         # MacOS addtional actions
         if system() == "Darwin":
@@ -83,15 +89,13 @@ class xASL_Plotting(QMainWindow):
          self.cont_directories) = make_scrollbar_area(self.grp_directories)
         self.formlay_directories = QFormLayout(self.cont_directories)
         self.formlay_directories.setContentsMargins(2, 2, 2, 2)
-        self.hlay_analysis_dir, self.le_analysis_dir, self.btn_analysis_dir = self.make_droppable_clearable_le(
+        self.hlay_analysis_dir, self.le_analysis_dir, self.btn_analysis_dir = make_droppable_clearable_le(
             btn_connect_to=self.set_analysis_dir,
-            default="",
             acceptable_path_type="Directory")
         self.le_analysis_dir.setPlaceholderText("Drag & Drop an analysis directory here")
         self.le_analysis_dir.setToolTip(self.plot_tips["le_analysis_dir"])
-        self.hlay_metadata, self.le_metadata, self.btn_metadata = self.make_droppable_clearable_le(
+        self.hlay_metadata, self.le_metadata, self.btn_metadata = make_droppable_clearable_le(
             btn_connect_to=self.set_metadata_file,
-            default="",
             acceptable_path_type="File",
             supported_extensions=[".tsv", ".csv", ".xlsx"])
         self.le_metadata.setPlaceholderText("Drag & Drop a covariates .tsv/.csv/.xlsx file")
@@ -199,49 +203,12 @@ class xASL_Plotting(QMainWindow):
             self.fig_manager = None
 
     def set_analysis_dir(self):
-        # noinspection PyCallByClass
-        analysisdir_filepath = QFileDialog.getExistingDirectory(self, "Select the study's analysis directory",
-                                                                self.config["DefaultRootDir"], QFileDialog.ShowDirsOnly)
-        # Return if the user has cancelled the operation
-        if analysisdir_filepath == '':
-            return
-
-        analysisdir_filepath = Path(analysisdir_filepath)
-        if any([not analysisdir_filepath.exists(), not analysisdir_filepath.is_dir(),
-                not (analysisdir_filepath / "Population" / "Stats").exists()]):
-            QMessageBox().warning(self, self.plot_errs["BadStudyDir"][0],
-                                  self.plot_errs["BadStudyDir"][1], QMessageBox.Ok)
-            return
-        self.le_analysis_dir.setText(str(analysisdir_filepath))
+        robust_getdir(self, "Select the study's analysis directory", self.config["DefaultRootDir"],
+                      requirements={"rcontains": [["Population", "Stats"], self.plot_errs["BadStudyDir"]]},
+                      lineedit=self.le_analysis_dir)
 
     def set_metadata_file(self):
-        # noinspection PyCallByClass
-        meta_path, _ = QFileDialog.getOpenFileName(self, "Select the filepath to your study's metadata",
-                                                   self.config["DefaultRootDir"])
-        if meta_path == '':
-            return
-        meta_path = Path(meta_path)
-        if any([not meta_path.exists(), not meta_path.is_file(), meta_path.suffix not in [".csv", ".tsv", ".xlsx"]]):
-            QMessageBox().warning(self, self.plot_errs["BadMetaDataFile"][0],
-                                  self.plot_errs["BadMetaDataFile"][1], QMessageBox.Ok)
-            return
-        self.le_metadata.setText(str(meta_path))
-
-    ############################################
-    # Convenience methods for generating widgets
-    ############################################
-
-    @staticmethod
-    def make_droppable_clearable_le(le_connect_to=None, btn_connect_to=None, default='', **kwargs):
-        hlay = QHBoxLayout()
-        le = DandD_FileExplorer2LineEdit(**kwargs)
-        le.setText(default)
-        le.setClearButtonEnabled(True)
-        if le_connect_to is not None:
-            le.textChanged.connect(le_connect_to)
-        btn = QPushButton("...", )
-        if btn_connect_to is not None:
-            btn.clicked.connect(btn_connect_to)
-        hlay.addWidget(le)
-        hlay.addWidget(btn)
-        return hlay, le, btn
+        s, f = robust_getfile("Select the filepath to your study's metadata", self.config["DefaultRootDir"],
+                              "Spreadsheet Files (*.csv *.tsv *.xlsx)", permitted_suffixes=[".csv", ".tsv", ".xlsx"])
+        if s:
+            self.le_metadata.setText(str(f))

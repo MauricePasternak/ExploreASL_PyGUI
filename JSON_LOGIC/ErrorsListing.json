@@ -1,4 +1,18 @@
 {
+  "PLACEHOLDER COMMENT - GENERAL ERRORS GO HERE": [],
+  "FileNoteFound": [
+    "File Not Found",
+    "The indicated filepath could not be found:\n"
+  ],
+  "IncorrectFile": [
+    "Incorrect File Selected",
+    "The file selected was either of the wrong filetype than what is required or it did not exist"
+  ],
+  "InvalidDirectory": [
+    "Invalid Directory Selected",
+    "The path you have selected is not a valid directory."
+  ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO STARTUP GO HERE": [],
   "NoMATLABver": [
     "No MATLAB Version could be determined",
     "MATLAB was detected on this system, but its location is unconventional\nand the version number could not be detected"
@@ -7,9 +21,56 @@
     "No MATLAB directory found",
     "No path to the MATLAB root directory could be located on this device.\nIf MATLAB is installed on this device and this message is displaying,\nplease contact your system administration and check whether MATLAB is\nlisted in your system's PATH variable."
   ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO THE MAIN WINDOW GO HERE": [],
+  "InvalidMATLABDir": [
+    "Invalid MATLAB directory",
+    "The matlab command could not be located downstream from the indicated filepath, suggesting that this is not a valid MATLAB directory."
+  ],
+  "MissingMATLABVER": [
+    "MATLAB Version could not be determined",
+    [
+      "The matlab command was found at:\n",
+      "\nbut the corresponding version could not be determined."
+    ]
+  ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO THE FILEEXPLORER GO HERE": [],
+  "CannotEnterFile": [
+    "Cannot Enter into the indicated file",
+    [
+      "The File Explorer detected that the path you entered:\n",
+      "\nis a file. However, this program is not able to open files from this location at the current time"
+    ]
+  ],
+  "PathDoesNotExist": [
+    "Path Does not Exist",
+    "The File Explorer could not find the path:\n"
+  ],
+  "DirectoryAlreadyExists": [
+    "Directory Already Exists",
+    [
+      "The specified name: ",
+      "\nalready exists within:\n",
+      "\nPlease specify a different name."
+    ]
+  ],
+  "InvalidCharacterInPath": [
+    "Invalid Character in Filepath",
+    [
+      "The specified name:\n",
+      "\nis not a valid name and/or ending for this operating system"
+    ]
+  ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO DEFINING PARAMETERS GO HERE": [],
+  "InvalidRegex": [
+    "Invalid Regex Supplied",
+    [
+      "The detected regex:\n",
+      "\nis an valid regex for matching subject names"
+    ]
+  ],
   "JsonImproperFormat": [
     "Json sidecars not in proper json format",
-    "ExploreASL GUI has detected that the json sidecars present for this dataset\nare not in appropriate format. The following inconsistency was found:"
+    "ExploreASL GUI has detected that the json sidecars present for this dataset are not in appropriate format. The following inconsistency was found:\n"
   ],
   "NoJsonSidecars": [
     "No Json sidecards could be detected",
@@ -27,87 +88,180 @@
     "Invalid Directory Selected",
     "The path you specified is not an ExploreASL directory."
   ],
-  "InvalidDirectory": [
-    "Invalid Directory Selected",
-    "The path you have selected is not a valid directory."
+  "InvalidCompiledExploreASLDir": [
+    "Invalid Compiled ExploreASL Directory",
+    "The path you specified is not a valid Compiled ExploreASL Directory"
+  ],
+  "InvalidMCRDir": [
+    "Invalid MATLAB Runtime Directory Selected",
+    "The path you specified is not a valid MATLAB Runtime directory"
+  ],
+  "InvalidStudyDirectory": [
+    "Invalid Study Directory Selected",
+    [
+      "The path you have selected as your study directory:\n",
+      "\nis not a valid study path"
+    ]
   ],
   "InvalidFSLDirectory": [
     "Invalid Directory Selected",
     "The path you have selected is not a valid FSL bin directory"
   ],
-  "InvalidStudyDirectory": [
-    "Invalid Study Directory Selected",
-    "The path you have selected for your study directory is not a valid study path"
-  ],
-  "FileNoteFound": [
-    "File Not Found",
-    "The indicated filepath could not be found:\n"
-  ],
-  "IncorrectFile": [
-    "Incorrect File Selected",
-    "The file selected was either of the wrong filetype than what is required\nor it did not exist"
-  ],
   "BadParFile": [
     "Bad DataPar File",
-    "ExploreASL GUI has detected that the json you have loaded from is not a\nproperly-formatted json. The following inconsistency was found:\n"
+    "ExploreASL GUI has detected that the json you have loaded from is not a properly-formatted json. The following inconsistency was found:\n"
   ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO RUNNING THE IMPORTER FOUND HERE": [],
   "ImpossibleDirDepth": [
     "Impossible directory depth",
     "The directory depth you have indicated does not have directories present at that level"
   ],
-  "ImportCritError": [
-    "Critical Import Error",
-    "The import module could not generate the analysis directory.\nThis usually occurs if the user has specified an incorrect directory structure.\nPerhaps a DUMMY directory was forgotten?"
+  "InvalidStructure_Blanks": [
+    "Invalid directory structure entered",
+    "You must indicate filler directories occuring between Subject/Visit/Run/Scan directories using the Dummy label provided"
+  ],
+  "InvalidStructure_MinSubScan": [
+    "Invalid directory structure entered",
+    "A minimum of Subject and Scan directories must be present in your study for ExploreASL to import data correctly."
+  ],
+  "InvalidRunAliases": [
+    "Invalid runs alias ordering entered",
+    "Please check for accidental doublings"
+  ],
+  "ImportErrors": [
+    "Errors Occurred during Import",
+    [
+      "One or more errors occurred during import. Please see the Import_Failed_Imports.txt and ",
+      "files to determine what went wrong. They are located in:\n"
+    ]
+  ],
+  "CleanupImportPostTerm": [
+    "Cleanup Post-Termination",
+    [
+      "An import job was terminated by the user. The following directory was made in the process:\n",
+      "\nBe warned that this directory likely has subjects with missing scans due to this. It is recommended that the user delete this directory are re-attempt the import process."
+    ]
+  ],
+  "StudyDirNeverMade": [
+    "Study Directory Missing",
+    [
+      "The following study directory was expected to be created during the run:\n",
+      "\nbut was not found. Did the user delete this midway through import?"
+    ]
+  ],
+  "BackDirNotMade": [
+    "Failed to create Backup Directory",
+    [
+      "A critical error occurred while attempting to create a copy of:\n",
+      "\nThe following error was caught:\n"
+    ]
+  ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO RUNNING THE EXECUTOR FOUND HERE": [],
+  "NoStartExploreASL": [
+    "Problem prior to starting ExploreASL",
+    [
+      "An error was encountered while preparing study:\n",
+      "\nPlease check for each of the following:\n\t1) The filepath to the study exists\n\t2) The filepath to the study matches the one provided to the Task Scheduler\n\t3) That the ExploreASL filepath specified within the parms file exists\n\t4) That the subjects within the study are the same as when the DataPar.json file was defined"
+    ]
+  ],
+  "Unsupported ExploreASL Scenario": [
+    "Unsupported ExploreASL Scenario",
+    [
+      "An error was encountered while preparing study:\n",
+      "Ensure that the DataPar file indicates that ExploreASL is either a local uncompiled directory or a compiled one. Docker images are not supported at this time."
+    ]
+  ],
+  "Forbidden Study Character": [
+    "Forbidden Character used to Define a Study",
+    [
+      "The following is a forbidden character to use on its own when defining a path to a study:\n",
+      "\nYou may use such a character when defining a relative path, however."
+    ]
+  ],
+  "DataPar File Not Found": [
+    "No DataPar file Found",
+    [
+      "The required DataPar.json file could not be located for this study:\n",
+      "\nPlease use the 'Define Study Parameters' Module from the main Window to create this DataPar.json file."
+    ]
+  ],
+  "DataPar File Not Found_Alt": [
+    "No DataPar.json file Found",
+    "The required DataPar.json file could not be located for the indicated study directory. Either you have selected the wrong directory or you have not yet generated an appropriate DataPar.json file for this study directory."
   ],
   "IncompatibleMATLAB": [
     "Incompatible MATLAB version on your machine",
     "Running ExploreASL requires a MATLAB version of 2019a or later"
   ],
-  "NoDataPar": [
-    "No Data Parameters file located",
-    "The required DataPar.json file could not be located for this directory. Exiting."
+  "Unknown MATLAB VERSION": [
+    "One or more of your studies has indicated that it will be run on a local ExploreASL Directory, which in turn uses a local MATLAB installation. The version of this MATLAB installation must be known. This can be determined by specifying the path to the matlab command, which is done using the main menu under File --> Specify path to MATLAB executable"
   ],
-  "BadDataParFile": [
+  "Unknown MATLAB CMD_PATH": [
+    "One or more of your studies has indicated that it will be run on a local ExploreASL Directory, which in turn uses a local MATLAB installation. The filepath to the MATLAB installation's 'bin' directory must be known. This can be done using the main menu under File --> Specify path to MATLAB executable"
+  ],
+  "Incompatible MATLAB Version": [
+    [
+      "The MATALB version on this machine was determine to be:\n",
+      "\nThis is incompatible with ExploreASL. Please contact your system's administrator for upgrading your MATLAB installation to at least 2016A for MacOS/Linux or at least to 2019A for Windows."
+    ]
+  ],
+  "BadDataParFileKeys": [
     "Data Par File has bad formatting",
-    "One or more keys could not be read from the DataPar.json file.\nPlease ensure the DataPar.json was not altered incorrectly by the user.\nThe specific error detected was:\n\n"
+    [
+      "The DataPar.json file was compromised for the following study:\n",
+      "\nPlease ensure the DataPar.json was not altered incorrectly by the user. The specific error detected was:\n\n"
+    ]
   ],
   "BadDataParFileJson": [
     "Data Par File has incorrect JSON syntax",
-    "The DataPar.json file has an incorrect json syntax.\nPlease fix before attempting a re-run.\nThe specific error detected is as follows:\n\n"
+    [
+      "The DataPar.json file was compromised for the following study:\n",
+      "\nThe JSON syntax of this file was not valid. The specific error detected was:\n\n",
+      "\nPlease re-define a valid DataPar file using the 'Define Data Parameters' Module accessible from the main window."
+    ]
+  ],
+  "Unknown MATLAB Runtime": [
+    "One or more of your studies has indicated that will be run on a compiled ExploreASL version, which in turn uses the MATLAB Runtime. The path to this Runtime was not define in the DataPar.json file or no longer exists."
   ],
   "NoWorkloadDetected": [
     "No Workload Detected",
-    "The number of anticipated .status files was zero.\nIf you are wanting to perform a re-run, use the Process Modifier subsection of this window to indicate which operations you'd like to re-run."
+    [
+      "An error was encountered while preparing study:\n",
+      "\nThe number of anticipated .status files was zero.\nIf you are wanting to perform a re-run, use the Process Modifier subsection of this window to indicate which operations you'd like to re-run."
+    ]
   ],
+  "UnsuccessfulExploreASLrun": [
+    "Errors were encountered during ExploreASL run",
+    [
+      "The following study directories encountered at least 1 error during their run:\n",
+      "\nPlease review the generated [Date of run] ExploreASL run - errors.txt within each of the listed studies to see which subjects could not be processed"
+    ]
+  ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO PREPARING MODJOBS GO HERE": [],
   "ParticipantsTSVNotFound": [
     "participants.tsv was not located in this directory",
-    "The participants.tsv file could not be located in the directory you provided.\nThis file is usually made during the Population module.\nPlease ensure you have run the Population module for the study you wish to assess"
+    "The participants.tsv file could not be located in the directory you provided. This file is usually made during the Population module. Please ensure you have run the Population module for the study you wish to assess"
   ],
   "LockDirSystemNotFound": [
     "lock directory system not found",
-    "The study you provided does not have a lock directory system in play.\nThis would be automatically created if a study was run. Please run your\nstudy first before trying to modify it for a re-run."
+    "The study you provided does not have a lock directory system in play. This would be automatically created if a study was run. Please run your study first before trying to modify it for a re-run."
   ],
   "SubjectsNotFound": [
     "The subjects listed were not found",
     "The list of subjects whose json files you which to manipulate were not found in the current study\n"
   ],
-  "UnsuccessfulExploreASLrun": [
-    "Errors were encountered during ExploreASL run",
-    "The following study directories encountered at least 1 error during their run:\n",
-    "Please review the generated [Date of run] ExploreASL run - errors.txt\nwithin each of the listed studies to see which subjects could not be processed"
+  "ImminentBadMerge": [
+    "Imminent Bad Merge",
+    "No subjects from the indicated metadata column could be found in the participants.tsv subject column. Cancelling update.\n\nPlease ensure you have listed the correct subject columns or that the subject labelling is consistent between your metadata and participants.tsv"
   ],
-  "NoStartExploreASL": [
-    "Problem prior to starting ExploreASL",
-    "An error was encountered while preparing study:\n",
-    "Please check for each of the following:\n\t1) The filepath to the study exists\n\t2) The filepath to the study matches the one provided to the Task Scheduler\n\t3) That the ExploreASL filepath specified within the parms file exists\n\t4) That the subjects within the study are the same as when the DataPar.json file was defined"
-  ],
+  "PLACEHOLDER COMMENT - ERRORS RELATED TO PLOTTING ERRORS GO HERE": [],
   "BadStudyDir": [
     "Invalid Study Directory Selected",
-    "The filepath you have specfied either does not exist, is not a directory,\nor is a study that did not have its Population Module run"
+    "The filepath you have specfied either does not exist, is not a directory, or is a study that did not have its Population Module run"
   ],
   "BadMetaDataFile": [
     "Invalid Metadata File Selected",
-    "The filepath you have specified either does not exist, is not a file,\nor has an incorrect extension. Supported file types include:\n- Comma-separated values (.csv)\n- Tab-separated values (.tsv)\n- Excel spreadsheets (.xlsx)"
+    "The filepath you have specified either does not exist, is not a file, or has an incorrect extension. Supported file types include:\n- Comma-separated values (.csv)\n- Tab-separated values (.tsv)\n- Excel spreadsheets (.xlsx)"
   ],
   "ImpossibleDtype": [
     "Impossible data type change attempted",
@@ -115,7 +269,7 @@
   ],
   "MRIPlotNoDataPar": [
     "Unable to load Plot & MRI Viewer",
-    "No DataPar.json parameters file was located in the analysis directory.\nThis is required by MRI Viewer to be able to select subjects"
+    "No DataPar.json parameters file was located in the analysis directory. This is required by MRI Viewer to be able to select subjects"
   ],
   "MRIPlotBadDataPar": [
     "Unable to load Plot & MRI Viewer",

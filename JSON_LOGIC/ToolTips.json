@@ -1,7 +1,7 @@
 {
   "MainWindow": {},
   "Importer": {
-    "le_rootdir": "Specify the filepath to the root folder of your study.\nFor example: /home/jsmith/MyStudy/source",
+    "le_rootdir": "Specify the filepath to the root folder from where your DICOM files are based off of.\nFor example:\n/home/jsmith/MyStudy/source\nwould be the root for a study with a filepath to DICOMs as:\n/home/jsmith/MyStudy/source/sub001/ASL/DICOM/1921923123-12312-123.dcm",
     "chk_uselegacy": "Specify whether the legacy import should be used (CHECKED)\nOR whether the newer BIDS import should be used (UNCHECKED)",
     "lab_holdersub": "This label tells the importer that a directory level contains subject information\nA subject is a person or animal participating in the study",
     "lab_holdervisit": "This label tells the importer that a directory level contains visit information.\nA visit is a logical grouping of neuroimaging data acquired during the presence of\na subject at the site of the study (i.e baseline, 1-year followup, etc.)",
@@ -22,16 +22,20 @@
     "name2le": "Specify the name of the parent folder that the indicated\nchild folder should be placed under"
   },
   "ParmsMaker": {
-    "le_easl_dir": "Specify the filepath to the ExploreASL folder located on your machine.\nExample: /home/jsmith/MATLAB/ExploreASL",
+    "cmb_easl_type": "Specify the type of ExploreASL program that will be processing the indicated study.\nAt the current time, two types are supported:\n\t- A local ExploreASL directory from the GitHub repository\n\t(requires a MATLAB installation on this system)\n\t- A local Compiled ExploreASL program\n\t(requires a MATLAB Runtime installation on this system)",
+    "le_easl_dir": "Specify the filepath to the ExploreASL folder.\nExample: /home/jsmith/MATLAB/ExploreASL",
+    "le_easl_mcr": "Specify the filepath to the Compiled ExploreASL folder.\nExample: /home/jsmith/xASL_latest",
+    "le_mrc_dir": "Specify the filepath to the MATLAB Runtime version folder. Typically it ends with v## (i.e. v96)\nExample: /home/jsmith/MATLAB/MATLAB_Runtime/v96",
     "le_studyname": "Specify the name of the study you would like it to have",
     "chk_overwrite_for_bids": "Specify whether the study dataset is in BIDS format (CHECKED)\nOR whether the study dataset is in the older legacy format (UNCHECKED)",
-    "le_study_dir": "Specify the filepath to the raw folder of your study.\nFor example: /home/jsmith/MyStudy/derivatives",
+    "le_study_dir": "Specify the filepath to the folder of your study.\nFor example: /home/jsmith/MyStudy/analysis",
     "lst_included_subjects": "Drag and Drop the subjects that should be analyzed",
     "lst_excluded_subjects": "Drag and Drop the subjects that should be excluded from the analysis",
     "cmb_vendor": "Specify the Vendor of the scans in the analysis folder",
     "cmb_sequencetype": "Specify the imaging sequence utilized during scan acquisition",
     "cmb_labelingtype": "Specify the labelling strategy used during ASL scan acquisition",
     "cmb_m0_isseparate": "Specify whether a proton density scan (M0) was acquired\nIf a scan was not acquired, the mean control ASL image set\nwill be used as a substitute.",
+    "spinbox_m0_isseparate": "This is the value that your PWI image will be divided by when using a single-value M0 mask.",
     "cmb_m0_posinasl": "If a proton density (M0) scan was acquired, specify its location.\nThis argument is ignored if the user has indicated that an M0 scan\nwas not acquired",
     "cmb_quality": "Indicate the precision with which certain processing steps should be taken, such\nas segmentation. Higher quality results in longer processing times.",
     "cmb_nsup_pulses": "Specify the number of background suppression pulses that were utilized\nfor ASL scans in your study",

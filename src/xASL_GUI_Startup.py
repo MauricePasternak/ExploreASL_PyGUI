@@ -1,5 +1,5 @@
 from src.xASL_GUI_MainWin import xASL_MainWin
-from PySide2.QtWidgets import QApplication, QMessageBox, QWidget, QDialog, QDialogButtonBox
+from PySide2.QtWidgets import QApplication, QMessageBox, QWidget
 from PySide2.QtGui import QIcon
 from platform import system
 from shutil import which
@@ -87,9 +87,9 @@ def startup():
     for essential_dir in ["JSON_LOGIC", "media", "External"]:
         if not (project_dir / essential_dir).exists():
             QMessageBox().warning(QWidget(),
-                                  "No JSON_LOGIC directory found",
-                                  f"The program directory structure is compromised. No JSON_LOGIC directory was located"
-                                  f"in {project_dir}",
+                                  f"No {essential_dir} directory found",
+                                  f"The program directory structure is compromised. "
+                                  f"No {essential_dir} directory was located in {project_dir}",
                                   QMessageBox.Ok)
             sys.exit(1)
 
@@ -136,7 +136,7 @@ def startup():
                                     f"not be determined. The GUI requires knowledge of the MATLAB version being run "
                                     f"in order to process data", QMessageBox.Ok)
             else:
-                QMessageBox.information(QWidget(), "Local MATLAB Located && Version discerned",
+                QMessageBox.information(QWidget(), "Local MATLAB Located & Version discerned",
                                         f"Detected the matlab path to be: {cmd_path}\n"
                                         f"Detected the matlab version to be: {version}", QMessageBox.Ok)
         else:

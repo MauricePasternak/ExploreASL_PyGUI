@@ -2,21 +2,35 @@ from pathlib import Path
 import re
 from platform import system
 from typing import List, Tuple, Union
+import json
 
-
-def is_earlier_version(easl_dir: Union[Path, str], threshold_higher: int = 140, threshold_lower: int = 0):
+def is_earlier_version(easl_dir: Union[Path, str], threshold_higher: int = 140, higher_eq: bool = True,
+                       threshold_lower: int = 0, lower_eq: bool = True):
     """
     Helper function to determine whether a given ExploreASL directory is between some set of integer thresholds
-    representing the versions
+    representing the versions.
+
+    Returns True if no Version file can be ascertained
     """
+    flags = []
     ver_regex = re.compile(r"VERSION_(.*)")
     easl_dir = Path(easl_dir).resolve()
+    if not easl_dir.exists():
+        return True
     try:
         ver_file = next(easl_dir.rglob("VERSION_*"))
     except StopIteration:
         return True
-    ver_str = ver_regex.search(str(ver_file)).group(1).replace(".", "")
-    if threshold_lower < int(ver_str) < threshold_higher:
+    ver = int(ver_regex.search(str(ver_file)).group(1).replace(".", ""))
+    if higher_eq:
+        flags.append(True if ver <= threshold_higher else False)
+    else:
+        flags.append(True if ver < threshold_higher else False)
+    if lower_eq:
+        flags.append(True if ver >= threshold_lower else False)
+    else:
+        flags.append(True if ver > threshold_lower else False)
+    if all(flags):
         return True
     else:
         return False
@@ -102,7 +116,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
         status_files = []
         glob_dictionary = {"ASL": "*ASL*.nii*", "FLAIR": "*FLAIR.nii*", "M0": "*M0.nii*"}
         # OLD EXPECTATION
-        if is_earlier_version(parms["MyPath"], 140):
+        if is_earlier_version(parms["MyPath"], threshold_higher=140, higher_eq=False):
             workload = {"020_RealignASL.status", "030_RegisterASL.status", "040_ResampleASL.status",
                         "050_PreparePV.status", "060_ProcessM0.status", "070_Quantification.status",
                         "080_CreateAnalysisMask.status", "090_VisualQC_ASL.status", "999_ready.status"}
@@ -237,15 +251,20 @@ def calculate_missing_STATUS(analysis_dir: Path, expected_status_files: List[Pat
         return False, incomplete
 
 
-def interpret_statusfile_errors(incomplete_files: List[Path], translators: dict):
+def interpret_statusfile_errors(study_dir: Path, incomplete_files: List[Path], translators: dict):
     """
     Interprets the step in the ExploreASL pipeline for which particular subjects/sessions/etc. must have failed and
     returns these interpretations as messages for each of the modules
+    :param study_dir: the Path object to the study directory; required to get its Parms File
     :param incomplete_files: the list of Path objects pointing to status files that were not generated in the pipeline
     :param translators: the translators (from JSON_LOGIC directory) used to convert filenames to their descriptions for
     generating the correct error message
     :return: 3 lists of interpreted error messages, one for each ExploreASL module
     """
+
+    with open(next(study_dir.glob("DataPar*.json")), "r") as parms_reader:
+        parms = parms_reader.read(parms_reader)
+        easl_dir = Path(parms["MyPath"])
 
     # Prepare containers and translators
     struct_dict = {}  # dict whose keys are subject names and whose values are Path objects to .status files
@@ -255,7 +274,10 @@ def interpret_statusfile_errors(incomplete_files: List[Path], translators: dict)
     struct_msgs = []  # list whose elements are string messages pertaining to the Structural module
     pop_msgs = []  # list whose elements are string messages pertaining to the Population
     stuct_status_file_translator = translators["Structural_Module_Filename2Description"]
-    asl_status_file_translator = translators["ASL_Module_Filename2Description"]
+    if is_earlier_version(easl_dir=easl_dir, threshold_higher=140, higher_eq=False):
+        asl_status_file_translator = translators["ASL_Module_Filename2Description"]
+    else:
+        asl_status_file_translator = translators["ASL_Module_Filename2Description_PRE140"]
     population_file_translator = translators["Population_Module_Filename2Description"]
 
     # Prepare regex detectors

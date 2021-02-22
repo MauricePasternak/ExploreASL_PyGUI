@@ -3,12 +3,11 @@ from PySide2.QtGui import Qt, QFont, QIcon
 from PySide2.QtCore import Signal, QSize, Slot
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit, DandD_FileExplorer2ListWidget
 from src.xASL_GUI_HelperFuncs_DirOps import *
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options, robust_qmsg, robust_getdir, robust_getfile
 import pandas as pd
 from functools import partial
 from pathlib import Path
 from pprint import pprint
-import json
 from platform import system
 
 
@@ -126,12 +125,7 @@ class xASL_GUI_MergeDirs(QWidget):
         return horizontal_layout, lineedit, button
 
     def select_dir(self, calling_le):
-        directory = QFileDialog.getExistingDirectory(self, "Select Study Root",
-                                                     self.parent.config["DefaultRootDir"],
-                                                     QFileDialog.ShowDirsOnly)
-        if directory == "":
-            return
-        calling_le.setText(str(Path(directory)))
+        robust_getdir(self, "Select Study Root", self.parent.config["DefaultRootDir"], lineedit=calling_le)
 
     def can_merge(self):
         if self.le_mergedst.text() in {"", "/", "."}:
@@ -260,11 +254,12 @@ class xASL_GUI_ModSidecars(QWidget):
             self.grp_fromlist.setChecked(False)
 
     def select_file(self):
-        file, _ = QFileDialog.getOpenFileName(self, "Select the CSV Config File", self.parent.config["DefaultRootDir"],
-                                              "Comma/Tab-Separated Values (*.csv | *.tsv)")
-        if file == "":
+        s, d = robust_getfile("Select the CSV or TSV Config File", self.parent.config["DefaultRootDir"],
+                              dialogue_filter="Comma/Tab-Separated Values (*.csv | *.tsv)",
+                              permitted_suffixes=[".csv", ".tsv"])
+        if not s:
             return
-        self.le_fromfile.setText(str(Path(file)))
+        self.le_fromfile.setText(str(d))
 
     def is_ready(self):
         if any([all([not self.chk_asl.isChecked(), not self.chk_t1.isChecked(), not self.chk_m0.isChecked()]),
@@ -301,8 +296,8 @@ class xASL_GUI_ModSidecars(QWidget):
                     subs.append(sub_name)
             if len(subs) == 0:
                 QApplication.restoreOverrideCursor()
-                QMessageBox.warning(self, self.parent.exec_errs["SubjectsNotFound"][0],
-                                    self.parent.exec_errs["SubjectsNotFound"][1], QMessageBox.Ok)
+                robust_qmsg(self, title=self.parent.exec_errs["SubjectsNotFound"][0],
+                            body=self.parent.exec_errs["SubjectsNotFound"][1])
                 return
 
             for scan_type in which_scans:
@@ -310,9 +305,8 @@ class xASL_GUI_ModSidecars(QWidget):
                                action="remove" if self.cmb_actiontype.currentText() == "Remove a field" else "alter",
                                key=self.le_key.text(), value=interpret_value(self.le_value.text()))
         # Afterwards...
-        QMessageBox.information(self, "Finished json sidecar operation",
-                                "Completed the requested json sidecar operation on the indicated subjects",
-                                QMessageBox.Ok)
+        robust_qmsg(self, title="Finished json sidecar operation",
+                    body="Completed the requested json sidecar operation on the indicated subjects")
         QApplication.restoreOverrideCursor()
         return
 
@@ -417,11 +411,8 @@ class xASL_GUI_RerunPrep(QWidget):
         self.lock_tree.expandToDepth(2)
         self.lock_tree.itemChanged.connect(self.change_check_state)
 
-        QMessageBox.information(self.parent,
-                                f"Re-run setup complete",
-                                f"Successfully deleted the indicated .status files for the study:\n"
-                                f"{self.root_dir}",
-                                QMessageBox.Ok)
+        robust_qmsg(self.parent, msg_type="information", title="Re-run setup complete",
+                    body=f"Successfully deleted the indicated .status files for the study:\n{str(self.root_dir)}")
 
 
 class xASL_GUI_TSValter(QWidget):
@@ -539,12 +530,10 @@ class xASL_GUI_TSValter(QWidget):
         self.is_ready_merge()
 
     def get_metadatafile(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select the Metadata File",
-                                              self.target_dir, "Data Files (*.tsv *.csv *.xlsx)")
-        if path == "":
-            return
-        path = Path(path).resolve()
-        self.le_metadatafile.setText(str(path))
+        s, f = robust_getfile("Select the Metadata File", self.target_dir, "Data Files (*.tsv *.csv *.xlsx)",
+                              permitted_suffixes=[".tsv", ".csv", ".xlsx"])
+        if s:
+            self.le_metadatafile.setText(str(f))
 
     def load_metadatafile(self, from_reset: bool = False):
         if from_reset:
@@ -552,9 +541,9 @@ class xASL_GUI_TSValter(QWidget):
         else:
             meta_path = Path(self.le_metadatafile.text()).resolve()
         if any([not meta_path.exists(), meta_path.is_dir()]):
-            QMessageBox.warning(self, "Could not load metadata",
-                                "You have indicated either a non-existent path or a directory", QMessageBox.Ok)
+            robust_qmsg(self, "Could not load metadata", "You have indicated either a non-existent path or a directory")
             return
+
         self.df_metadata: pd.DataFrame = robust_read_csv(meta_path)
         self.lst_metadata.clear()
         self.lst_metadata.addItems(self.df_metadata.columns)
@@ -598,11 +587,8 @@ class xASL_GUI_TSValter(QWidget):
         subs_from_meta = set(self.df_metadata[self.le_metadata_subjectcol.text()].unique())
         subs_from_parttsv = set(self.df_parttsv[self.le_parttsv_subjectcol.text()].unique())
         if len(subs_from_meta.intersection(subs_from_parttsv)) == 0:
-            QMessageBox.warning(self, "Imminent Bad Merge",
-                                "No subjects from the indicated metadata column could be found in the participants.tsv "
-                                "subject column. Cancelling update.\n\nPlease ensure you have listed the correct "
-                                "subject columns or that the subject labelling is consistent between your metadata "
-                                "and participants.tsv.", QMessageBox.Ok)
+            robust_qmsg(self, title=self.parent.exec_errs["ImminentBadMerge"][0],
+                        body=self.parent.exec_errs["ImminentBadMerge"][1])
             return
 
         # Prepare certain variables in the event of a revert
@@ -622,19 +608,16 @@ class xASL_GUI_TSValter(QWidget):
         # Save backup and new merge to their respective files
         self.df_backupparttsv.to_csv(Path(self.target_dir) / "participants_orig.tsv", sep="\t", index=False)
         merge_df.to_csv(Path(self.target_dir) / "participants.tsv", sep="\t", index=False)
-
-        QMessageBox.information(self, "Successfully updated participants.tsv",
-                                "participants.tsv has been updated with the indicated metadata columns. "
-                                "A backup of the previous content has been saved as participants_orig.tsv",
-                                QMessageBox.Ok)
-
+        robust_qmsg(self, "information", "Successfully updated participants.tsv",
+                    "participants.tsv has been updated with the indicated metadata columns. "
+                    "A backup of the previous content has been saved as participants_orig.tsv")
         self.btn_altertsv.setEnabled(False)
         self.btn_revert.setEnabled(True)
 
     def revert(self):
         if not (Path(self.target_dir) / "participants_orig.tsv").exists():
-            QMessageBox.warning(self, "No participants_orig.tsv file found",
-                                "Could not perform a revert without the expected backup file", QMessageBox.Ok)
+            robust_qmsg(self, title="No participants_orig.tsv file found",
+                        body="Could not perform a revert without the expected backup file")
             return
         # Restore the old file
         (Path(self.target_dir) / "participants.tsv").unlink()
@@ -652,9 +635,8 @@ class xASL_GUI_TSValter(QWidget):
         self.btn_reset.setEnabled(False)
         self.is_ready_merge()
 
-        QMessageBox.information(self, "participants.tsv has been reset",
-                                "participants_orig.tsv was used to restore the previous iteration of participants.tsv",
-                                QMessageBox.Ok)
+        robust_qmsg(self, "information", title="participants.tsv has been reset",
+                    body="participants_orig.tsv was used to restore the previous iteration of participants.tsv")
 
 
 class ColnamesDragDrop_ListWidget(QListWidget):

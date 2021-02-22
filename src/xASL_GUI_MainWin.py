@@ -7,8 +7,7 @@ from src.xASL_GUI_Plotting import xASL_Plotting
 from src.xASL_GUI_Importer import xASL_GUI_Importer
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from src.xASL_GUI_FileExplorer import xASL_FileExplorer
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options
-import os
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options, robust_getdir, robust_qmsg
 from pathlib import Path
 from platform import system
 import json
@@ -17,14 +16,14 @@ import subprocess
 
 
 # Explore ASL Main Window
-# by Maurice Pasternak @ 2020, 2021
+# by Maurice Pasternak @ 2021
 class xASL_MainWin(QMainWindow):
     def __init__(self, config):
         super().__init__()
         # Load in the master config file if it exists; otherwise, make it
         self.config = config
         with open(Path(self.config["ProjectDir"]) / "JSON_LOGIC" / "ErrorsListing.json") as mainwin_err_reader:
-            self.mainwin_errs = json.load(mainwin_err_reader)        # Window Size and initial visual setup
+            self.mwin_errs = json.load(mainwin_err_reader)  # Window Size and initial visual setup
         # self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.resize(self.config["ScreenSize"][0] // 2.5, self.config["ScreenSize"][1] // 2.25)
         self.cw = QWidget(self)
@@ -147,55 +146,40 @@ class xASL_MainWin(QMainWindow):
 
     # Sets the analysis directory the user is interested in from the push button
     def set_analysis_dir_frombtn(self):
-        directory: str = QFileDialog.getExistingDirectory(QFileDialog(),
-                                                          "Select analysis directory to view",  # Window title
-                                                          self.config["DefaultRootDir"],  # Default dir
-                                                          QFileDialog.ShowDirsOnly)  # Display options
-        if directory == "":
+        s, d = robust_getdir(self, "Select analysis directory to view", self.config["DefaultRootDir"],
+                             lineedit=self.le_defaultdir)
+        if not s:
             return
-        directory = Path(directory)
-        self.le_defaultdir.setText(str(directory))
-        # Update user config to have a new default analysis dir to refer to in on future startups
-        self.config["DefaultRootDir"] = str(directory)
-        self.save_config()
+        else:
+            self.set_analysis_dir(directory=str(d))
 
     # The actual function that sets the analysis directory
     def set_analysis_dir(self, directory: str):
         if any([directory == "", not Path(directory).exists(), not Path(directory).is_dir()]):
             return
         else:
-            print(f"Updating self.le_deafultdir to {directory}")
             # Update user config to have a new default analysis dir to refer to in on future startups
             self.config["DefaultRootDir"] = str(directory)
             self.save_config()
 
     def set_local_matlabroot(self):
-        directory: str = QFileDialog.getExistingDirectory(QFileDialog(),
-                                                          "Select the path to the MATLAB bin directory",
-                                                          self.config["DefaultRootDir"],  # Default dir
-                                                          QFileDialog.ShowDirsOnly)  # Display options
-        if directory == "":
+        glob_pat = "matlab.exe" if system() == "Windows" else "matlab"
+        s, d = robust_getdir(self, "Select the path to the MATLAB bin directory", self.config["DefaultRootDir"],
+                             requirements={"rcontains": [glob_pat, self.mwin_errs["InvalidMATLABDir"]]})
+        if not s:
             return
-        directory: Path = Path(directory)
 
         # First, get the overall path to the matlab command
         try:
             QApplication.setOverrideCursor(Qt.WaitCursor)
-            if system() != "Windows":
-                matlab_cmd_path = next(directory.rglob("matlab"))
-            else:
-                matlab_cmd_path = next(directory.rglob("matlab.exe"))
+            matlab_cmd_path = next(d.rglob(glob_pat))
         except StopIteration:
             QApplication.restoreOverrideCursor()
-            QMessageBox.warning(self, "Invalid MATLAB directory",
-                                "The matlab command could not be located downstream from the indicated filepath, "
-                                "suggesting that this is not a valid MATLAB directory", QMessageBox.Ok)
+            robust_qmsg(self, title=self.mwin_errs["InvalidMATLABDir"][0], body=self.mwin_errs["InvalidMATLABDir"][1])
             return
         if matlab_cmd_path.name not in ["matlab", "matlab.exe"]:
             QApplication.restoreOverrideCursor()
-            QMessageBox.warning(self, "Invalid MATLAB directory",
-                                "The matlab command could not be located downstream from the indicated filepath, "
-                                "suggesting that this is not a valid MATLAB directory", QMessageBox.Ok)
+            robust_qmsg(self, title=self.mwin_errs["InvalidMATLABDir"][0], body=self.mwin_errs["InvalidMATLABDir"][1])
             return
 
         # Then derive the version from it
@@ -212,14 +196,13 @@ class xASL_MainWin(QMainWindow):
             if result.returncode == 0 and match:
                 self.config["MATLAB_VER"] = match.group()
             else:
-                QMessageBox.warning(self, "MATLAB Version could not be determined",
-                                    f"The matlab command was found at {str(matlab_cmd_path)} but the corresponding "
-                                    f"version could not be determined.")
+                robust_qmsg(self, title=self.mwin_errs["MissingMATLABVER"][0],
+                            body=self.mwin_errs["MissingMATLABVER"][1], variables=[str(matlab_cmd_path)])
                 self.save_config()
                 return
         QMessageBox.information(self, "MATLAB Version and command path successfully located",
-                                f"The path to launching MATLAB was registered as: {str(matlab_cmd_path)}\n"
-                                f"The version of MATLAB on this operating system is {self.config['MATLAB_VER']}")
+                                f"The path to launching MATLAB was registered as:\n{str(matlab_cmd_path)}\n"
+                                f"The version of MATLAB on this operating system is: {self.config['MATLAB_VER']}")
         self.save_config()
         return
 

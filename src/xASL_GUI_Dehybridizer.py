@@ -3,7 +3,7 @@ from PySide2.QtCore import *
 from PySide2.QtGui import *
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_formlay_options, robust_qmsg
 from json import load
 from pathlib import Path
 import shutil
@@ -299,8 +299,8 @@ class xASL_GUI_Dehybridizer(QWidget):
                     self.basenames[basename]["left"] = basename
                     left_bases.append(basename)
         except ValueError:
-            QMessageBox().warning(self, self.dehyb_errs["ImpossibleDirDepth"][0],
-                                  self.dehyb_errs["ImpossibleDirDepth"][1], QMessageBox.Ok)
+            robust_qmsg(self, title=self.dehyb_errs["ImpossibleDirDepth"][0],
+                        body=self.dehyb_errs["ImpossibleDirDepth"][1])
             del delimiter, path, nlevels
             return
 
@@ -423,7 +423,10 @@ class xASL_GUI_Dehybridizer(QWidget):
         # a final chance to back out
         in_basename_but_not_dehybrid = set(self.basenames.keys()).difference(set(basename2dehybridized.keys()))
         if len(in_basename_but_not_dehybrid) > 0:
-            names = '\n'.join(in_basename_but_not_dehybrid)
+            if len(in_basename_but_not_dehybrid) > 5:
+                names = "\n".join(list(in_basename_but_not_dehybrid)[:5] + ["..."])
+            else:
+                names = '\n'.join(in_basename_but_not_dehybrid)
             choice = QMessageBox().warning(self,
                                            "Certain directories will be removed",
                                            f"The following folders will be removed in the process of "
@@ -456,7 +459,8 @@ class xASL_GUI_Dehybridizer(QWidget):
                 self.signal_startexpanding.emit()
             else:
                 copy_worker = Dehybridizer_CopyWorker(source_directory=rootpath,
-                                                      backup_directory=backup_path)
+                                                      backup_directory=backup_path,
+                                                      errs=self.dehyb_errs)
                 copy_worker.signals.signal_done_copying.connect(self.expand_directories)
                 self.threadpool.start(copy_worker)
                 return
@@ -518,10 +522,11 @@ class Dehybridizer_CopyWorkerSignals(QObject):
 
 class Dehybridizer_CopyWorker(QRunnable):
 
-    def __init__(self, source_directory, backup_directory):
+    def __init__(self, source_directory, backup_directory, errs):
         super().__init__()
         self.source_directory = source_directory
         self.backup_directory = backup_directory
+        self.errs = errs
         self.signals = Dehybridizer_CopyWorkerSignals()
 
     def run(self):
@@ -531,12 +536,8 @@ class Dehybridizer_CopyWorker(QRunnable):
                             dirs_exist_ok=True)
             self.signals.signal_done_copying.emit()
         except (OSError, RuntimeError) as copytree_error:
-            QMessageBox().critical(self.parent(),
-                                   "Failure to create backup directory",
-                                   f"A critical error occurred while attempting to create a copy of:\n"
-                                   f"{self.source_directory}\n\n"
-                                   f"The following error was caught:\n{copytree_error}",
-                                   QMessageBox.Ok)
+            robust_qmsg(title=self.errs["BackDirNotMade"][0], body=self.errs["BackDirNotMade"][1],
+                        variables=[str(self.source_directory), str(copytree_error)])
 
 
 class Dehybridizer_ExpandWorkerSignals(QObject):

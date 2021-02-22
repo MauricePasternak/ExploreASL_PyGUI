@@ -1,5 +1,5 @@
 import json
-from os import cpu_count
+from os import cpu_count, environ
 from itertools import chain
 from time import sleep
 from datetime import datetime
@@ -14,16 +14,19 @@ from src.xASL_GUI_Executor_ancillary import *
 from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer
 from src.xASL_GUI_Executor_Modjobs import (xASL_GUI_RerunPrep, xASL_GUI_TSValter,
                                            xASL_GUI_ModSidecars, xASL_GUI_MergeDirs)
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le, set_formlay_options)
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le, set_formlay_options,
+                                                  robust_qmsg, robust_getdir)
 from pprint import pprint
 from collections import defaultdict
 import subprocess
 from shutil import rmtree, which
 from pathlib import Path
+from functools import partial
 from platform import system
 import signal
-from psutil import Process, NoSuchProcess
+from psutil import Process, NoSuchProcess, wait_procs, Popen
 import re
+import logging
 
 
 class ExploreASL_WorkerSignals(QObject):
@@ -36,78 +39,207 @@ class ExploreASL_WorkerSignals(QObject):
     stderr_processing_error = Signal(dict)  # Signal sent by a worker to update the main stderr errors dict
     encountered_fatal_error = Signal()  # Signal sent by worker to raise a dialogue informing the user of an error
 
+    received_pause = Signal(str)  # Signal sent by a worker to inform the textoutput that it has been paused
+    received_resume = Signal(str)  # Signal sent by a worker to inform the textoutput that it has resumed
+
 
 class ExploreASL_Worker(QRunnable):
     """
     Worker thread for running lauching an ExploreASL MATLAB session with the given arguments
     """
 
-    def __init__(self, *args):
-        self.args = args
+    def __init__(self, worker_parms, iworker, nworkers, imodules, worker_env):
         super().__init__()
+        # Main Attributes
+        self.worker_parms: dict = worker_parms
+        self.easl_scenario = self.worker_parms["EXPLOREASL_TYPE"]
+        self.analysis_dir: str = self.worker_parms["D"]["ROOT"].rstrip("/\\")
+        self.par_path = str(next(Path(self.analysis_dir).glob("DataPar*.json")))
+        self.iworker = iworker
+        self.nworkers = nworkers
+        self.imodules = imodules
+        self.worker_env = worker_env
+
+        # Control Attributes
+        self.terminate_attempted = False
+        self.is_paused = False
+        self.proc_gone, self.proc_alive = [], []
+
+        # Parsing Attributes
+        self.regex_errstart = re.compile(r"ERROR: Job iteration terminated!")
+        self.regex_errend = re.compile(r"CONT: but continue with next iteration!")
+        self.regex_findtarget = re.compile(r"ASL_module_(ASL|Structural|Population)"
+                                           r"(?:%%%([^#%&{}\\<>*?/$!'\":@+`|=]+))?"
+                                           r"(?:%%%([^#%&{}\\<>*?/$!'\":@+`|=]+))?\b")
+        self.is_collecting_stdout_err = False
+        self.detected_errs = []
+
+        # Set up the Logging-related Attributes
+        try:
+            study_name: str = self.worker_parms["name"]
+        except KeyError:
+            study_name: str = f"Unspecified Study Name"
+        self.logger = logging.Logger(name=study_name, level=logging.DEBUG)
+        basename = f"tmp_RunWorker_{str(self.iworker).zfill(3)}.log"
+        self.handler = logging.FileHandler(filename=Path(self.par_path).parent / basename, mode='w')
+        self.handler.setFormatter(logging.Formatter(fmt="%(asctime)s - %(name)s - %(levelname)s\n%(message)s"))
+        self.handler.setLevel(logging.DEBUG)
+        self.logger.addHandler(self.handler)
+
+        # Other Worker Attributes
         self.signals = ExploreASL_WorkerSignals()
         self.is_running = False
-        print(f"Initialized Worker with args {self.args}")
+        self.print_and_log(f"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n"
+                           f"Initialized Worker with the following givens:\n"
+                           f"\tExploreASL Type: {self.easl_scenario}\n"
+                           f"\tDataPar Path: {self.par_path}\n"
+                           f"\tIWorker: {self.iworker}\n"
+                           f"\tNWorkers: {self.nworkers}\n"
+                           f"\tIModules: {self.imodules}", msg_type="info")
 
-    # This is called by the threadpool during threadpool.start(worker)
     # noinspection RegExpRedundantEscape
     def run(self):
         ##################################################
         # PREPARE ARGUMENTS AND RUN THE UNDERLYING PROGRAM
         ##################################################
+        self.print_and_log(f"Worker {self.iworker}: Beginning Run", msg_type="info")
+        self.print_and_log(f"Worker {self.iworker}: ExploreASL Type = {self.easl_scenario}", msg_type="info")
+        if self.easl_scenario == "LOCAL_UNCOMPILED":
+            mpath = self.worker_parms["WORKER_MATLAB_CMD_PATH"]
+            exploreasl_path = self.worker_parms["MyPath"]
+            process_data = 1
+            skip_pause = 1
 
-        mpath, mver, exploreasl_path, par_path, process_data, skip_pause, iworker, nworkers, imodules = self.args[0:-1]
-        subject_regex_str = self.args[-1]
+            # Generate the string that the command line will feed into the complied MATLAB session
+            func_line = f"('{self.par_path}', {process_data}, {skip_pause}, {self.iworker}, {self.nworkers}, " \
+                        f"[{' '.join([str(item) for item in self.imodules])}])"
+            matlab_cmd = "matlab" if which("matlab") is not None else mpath
+            if self.worker_parms["WORKER_MATLAB_VER"] >= 2019:
+                cmd_path = [f"{matlab_cmd}",
+                            "-nodesktop",
+                            "-nosplash",
+                            "-batch",
+                            f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
+            else:
+                cmd_path = [f"{matlab_cmd}",
+                            "-nosplash",
+                            "-nodisplay",
+                            "-r",
+                            f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
 
-        # Generate the string that the command line will feed into the complied MATLAB session
-        func_line = f"('{par_path}', " \
-                    f"{process_data}, " \
-                    f"{skip_pause}, " \
-                    f"{iworker}, " \
-                    f"{nworkers}, " \
-                    f"[{' '.join([str(item) for item in imodules])}])"
-        matlab_cmd = "matlab" if which("matlab") is not None else mpath
-        if mver >= 2019:
-            cmds = [f"{matlab_cmd}",
-                    "-nodesktop",
-                    "-nosplash",
-                    "-batch",
-                    f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
+            # Prepare the Subprocess
+            self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
+                               f"{cmd_path}", msg_type="info")
+            self.proc = Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        elif self.easl_scenario == "LOCAL_COMPILED":
+            process_data = 1
+            skip_pause = 1
+            compiled_easl_path = self.worker_parms["MyPath"]
+
+            # Generate the string that the command line will feed into the complied MATLAB session
+            func_line = f"{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} " \
+                        f"[{' '.join([str(item) for item in self.imodules])}])"
+
+            # Command Line format and launch script extension differs between operating systems
+            glob_pat = "*.sh" if system() in ["Linux", "Darwin"] else "*.exe"
+            matlab_runtime_path = f" {self.worker_parms['MCRPath']}" if system() in ["Linux", "Darwin"] else ""
+
+            # Ensure the easl launch script actually has executable permissions
+            compiled_easl_script = next(Path(compiled_easl_path).glob(glob_pat))
+            compiled_easl_script.chmod(0o775)
+            compiled_easl_script = str(compiled_easl_script)
+
+            # Off it goes
+            cmd_line = f"{compiled_easl_script} {matlab_runtime_path} {func_line}"
+            self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
+                               f"{cmd_line}", msg_type="info")
+            self.proc = Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              env=self.worker_env)
         else:
-            cmds = [f"{matlab_cmd}",
-                    "-nosplash",
-                    "-nodisplay",
-                    "-r",
-                    f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
+            pass
 
-        print(f"{cmds=}")
-        self.proc = subprocess.Popen(cmds, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # TODO When ExploreASL given a good latch-on point, the worker can switch to listening in on errors from the
+        #  STDOUT stream of ExploreASL
+        err_container, module, subject, run, n_collected = [], None, None, None, 0
+        while True:
+            output = self.proc.stdout.readline()
+
+            # Break out once the process has finished or been killed
+            if output == '' and self.proc.poll() is not None:
+                break
+
+            # If there is no relevant output but the process is still alive, try to minimize workload intensivity
+            if not output:
+                sleep(0.5)
+                continue
+
+            # Otherwise, different regexes are applied to understand what is happening
+            # If the line defines a new target
+            output = output.strip()
+            if self.regex_findtarget.search(output):
+                module, subject, run = self.regex_findtarget.search(output).groups()
+
+            # If the line is the start of an error message, activate collecting mode
+            elif self.regex_errstart.search(output):
+                self.is_collecting_stdout_err = True
+
+            # If the line is the end of an error message or too many lines have been collected, log the error and
+            # reset things
+
+            elif self.regex_errend.search(output) or n_collected > 50:
+                msg = '\n'.join(err_container)
+                if module == "Population":
+                    self.print_and_log(f"Worker {self.iworker} detected an error "
+                                       f"in the Population Module:\n{msg}")
+                elif module == "Structural":
+                    self.print_and_log(f"Worker {self.iworker} detected an error for Subject {subject} "
+                                       f"in the Structural Module:\n{msg}")
+                elif module == "ASL":
+                    self.print_and_log(f"Worker {self.iworker} detected an error for Subject {subject}, Run {run} "
+                                       f"in the ASL Module:\n{msg}")
+                else:
+                    pass
+                err_container.clear()
+                self.is_collecting_stdout_err = False
+                n_collected = 0
+
+            if self.is_collecting_stdout_err:
+                err_container.append(output)
+                n_collected += 1
+
         self.is_running = True
-
         stdout, stderr = self.proc.communicate()
-        print(f"RESULTs for IWorker {iworker} of {nworkers}:"
-              f"\n\tReturn code = {self.proc.returncode}")
-        # print(f"{stdout=}")
-        print(f"{stderr=}")
+        self.print_and_log(f"Worker {self.iworker}: has received return code {self.proc.returncode}", msg_type="info")
         self.is_running = False
+        if self.terminate_attempted:
+            self.print_and_log(f"Following Attempt to Terminate, the following givens were determined:\n"
+                               f"{self.proc_gone=}\n{self.proc_alive=}", msg_type="warning")
 
-        worker_analysis_dir = re.search(r'.*analysis', par_path).group()
+        worker_analysis_dir = re.search(r'.*analysis', self.par_path).group()
         stdout_error_dict = {}
         stderr_error_dict = {}
 
         ####################################################
         # ATTEMPT TO CATCH STDOUT ERRORS FOR TROUBLESHOOTING
         ####################################################
-        if imodules == [3]:  # Population module
+        self.print_and_log(f"Worker {self.iworker}: Preparing to parse for any ExploreASL Errors", msg_type="info")
+        if self.imodules == [3]:  # Population module
             stdout_error_regex = re.compile(r"ERROR: Job iteration terminated![\n\s]+ans ="
                                             r"([\n\s\w'\/()|;,><=%^&*$#!@~`:.\[\]]+)"
                                             r"CONT: but continue with next iteration")
             captured_stdout_errors = stdout_error_regex.findall(stdout)
             if len(captured_stdout_errors) == 1:
+                self.print_and_log(f"Worker {self.iworker}: Found STDOUT errors from ExploreASL output",
+                                   msg_type="info")
                 stdout_error_dict[worker_analysis_dir] = {"Population": captured_stdout_errors[0]}
                 self.signals.stdout_processing_error.emit(stdout_error_dict)
+            else:
+                self.print_and_log(f"Worker {self.iworker}: Did not find any STDOUT errors from ExploreASL output",
+                                   msg_type="info")
 
         else:  # Anything other than the Population module
+            subject_regex_str = self.worker_parms["subject_regexp"].strip("^$")
             stdout_error_regex = re.compile(
                 r"\(" + subject_regex_str + r"\)" +
                 r"(?:.*)"
@@ -117,49 +249,107 @@ class ExploreASL_Worker(QRunnable):
 
             captured_stdout_errors = stdout_error_regex.findall(stdout)
             if len(captured_stdout_errors) > 0:
+                self.print_and_log(f"Worker {self.iworker}: Found STDOUT errors from ExploreASL output",
+                                   msg_type="info")
                 captured_stdout_errors = dict(captured_stdout_errors)
                 stdout_error_dict[worker_analysis_dir] = captured_stdout_errors
                 self.signals.stdout_processing_error.emit(stdout_error_dict)
+            else:
+                self.print_and_log(f"Worker {self.iworker}: Did not find any STDOUT errors from ExploreASL output",
+                                   msg_type="info")
 
         #################################
         # SEND THE APPROPRIATE END SIGNAL
         #################################
-        # if result.returncode == 0:
         if self.proc.returncode == 0:
-            print(f"WORKER {iworker} IS EMITTING FINISHED PROCESSING SIGNAL")
+            self.print_and_log(f"Worker {self.iworker}: Has finished and is emitting a DONE signal", "info")
             self.signals.finished_processing.emit()
         else:
-            print(f"WORKER {iworker} IS EMMITING ENCOUNTERED ERROR SIGNAL")
-            stderr_error_dict[re.search(r'.*analysis', par_path).group()] = stderr
+            self.print_and_log(f"Worker {self.iworker}: Has finished and is emitting an ERROR signal", "error")
+            stderr_error_dict[str(Path(self.par_path).parent)] = stderr
             self.signals.stderr_processing_error.emit(stderr_error_dict)
             self.signals.encountered_fatal_error.emit()
 
+        ###############
+        # FINAL CLEANUP
+        ###############
+        self.logger.removeHandler(self.handler)
+        del self.handler
+        del self.logger
+
+    def print_and_log(self, msg: str, msg_type: str = "error"):
+        try:
+            if msg_type in {"info", "warning", "error"}:
+                getattr(self.logger, msg_type)(msg)
+            print(msg)
+        except AttributeError as attr_err:
+            print(f"Worker{self.iworker} received an attribute error in {self.print_and_log.__name__}\n:{attr_err}")
+
     @Slot()
     def terminate_run(self):
-        print("RECEIVED TERMINATE CLICK. CHECKING FOR WHETHER THE WORKER IS STILL RUNNING!")
-        if self.is_running:
-            if self.proc.poll() is None:
-                print("THE WORKER WAS FOUND TO STILL BE RUNNING. ATTEMPTING TO TERMINATE THE PROCESS NOW!")
-                # self.proc.terminate()
+        # First attempt to wake all processes back up
+        if self.is_paused:
+            self.pause_resume_proc_tree(pid=self.proc.pid, pause=False, include_parent=True)
 
-                if system() == "Windows":
-                    self.kill_child_processes(self.proc.pid)
-                else:
-                    self.proc.kill()
+        self.terminate_attempted = True
+        self.print_and_log(f"Worker {self.iworker}: Received a TERMINATE signal. Stopping all child processes now",
+                           msg_type="warning")
+        if self.is_running and self.proc.poll() is None:
+            self.proc_gone, self.proc_alive = self.kill_proc_tree(pid=self.proc.pid, include_parent=True)
 
-    # Developer Rant: Why the f*** can't the subprocess module properly send a SIGKILL signal to child processes
-    # on Windows like it does on POSIX?
-    # Credit to Neil from Stackoverflow (https://stackoverflow.com/users/14193/neil) for this fix
+    @Slot()
+    def pause_run(self):
+        self.print_and_log(f"Worker {self.iworker}: Received a Request to Pause all Work. Attempting to pause all "
+                           f"child processes now", msg_type="info")
+        self.pause_resume_proc_tree(pid=self.proc.pid, pause=True, include_parent=True)
+        print(f"{self.proc.is_running()=}")
+        self.is_paused = True
+        self.signals.received_pause.emit(f"Worker {self.iworker} of {self.nworkers} for study {str(self.analysis_dir)} "
+                                         f"is now pausing")
+
+    @Slot()
+    def resume_run(self):
+        self.print_and_log(f"Worker {self.iworker}: Received a Request to Resume all Work. Attempting to wake up all "
+                           f"child processes now", msg_type="info")
+        self.pause_resume_proc_tree(pid=self.proc.pid, pause=False, include_parent=True)
+        self.is_paused = False
+        self.signals.received_resume.emit(f"Worker {self.iworker} of {self.nworkers} for study {str(self.analysis_dir)}"
+                                          f" is now resuming")
+
     @staticmethod
-    def kill_child_processes(parent_pid, sig=signal.SIGTERM):
-        try:
-            parent = Process(parent_pid)
-        except NoSuchProcess as proc_execp:
-            print(f"{proc_execp}")
-            return
+    def kill_proc_tree(pid, sig=signal.SIGTERM, include_parent=True, timeout=None, on_terminate=None):
+        """Kill a process tree (including grandchildren) with signal "sig" and return a (gone, still_alive) tuple.
+        "on_terminate", if specified, is a callback function which is called as soon as a child terminates.
+        """
+        parent = Process(pid)
         children = parent.children(recursive=True)
-        for process in children:
-            process.send_signal(sig)
+        if include_parent:
+            children.append(parent)
+        for p in children:
+            try:
+                p.send_signal(sig)
+            except NoSuchProcess:
+                pass
+        gone, alive = wait_procs(children, timeout=timeout, callback=on_terminate)
+        return gone, alive
+
+    @staticmethod
+    def pause_resume_proc_tree(pid, pause: bool, include_parent=True):
+        """Pause a process tree (including grandchildren)
+        """
+        parent = Process(pid)
+        children = parent.children(recursive=True)
+        if include_parent:
+            children.append(parent)
+        p: Process
+        for p in children:
+            try:
+                if pause:
+                    p.suspend()
+                else:
+                    p.resume()
+            except NoSuchProcess:
+                pass
 
 
 # noinspection PyCallingNonCallable,PyAttributeOutsideInit,PyCallByClass
@@ -178,7 +368,7 @@ class xASL_Executor(QMainWindow):
         self.setCentralWidget(self.cw)
         self.mainlay = QHBoxLayout(self.cw)
         self.setLayout(self.mainlay)
-        self.setWindowTitle("Explore ASL - Executor")
+        self.setWindowTitle("Explore ASL - Run Analysis")
         self.setWindowIcon(QIcon(str(Path(self.config["ProjectDir"]) / "media" / "ExploreASL_logo.png")))
 
         # Other instance variables
@@ -290,6 +480,8 @@ class xASL_Executor(QMainWindow):
         self.formlay_nrows = 0
         self.formlay_progbars_list = []
         self.formlay_stopbtns_list = []
+        self.formlay_pausebtns_list = []
+        self.formlay_resumebtns_list = []
 
         for widget in [self.lab_coresinfo, self.lab_coresleft, self.cont_nstudies, self.cont_tasks, self.cont_progbars]:
             self.vlay_taskschedule.addWidget(widget)
@@ -349,12 +541,38 @@ class xASL_Executor(QMainWindow):
                 inner_btn_stop = QPushButton(QIcon(str(stop_icon_path)), "", enabled=False)
                 inner_btn_stop.setToolTip("Stop this study being run")
 
+                # Pause Button
+                pause_icon_path = Path(self.config["ProjectDir"]) / "media" / "pause_processing.png"
+                inner_btn_pause = QPushButton(QIcon(str(pause_icon_path)), "", enabled=False)
+                inner_btn_pause.setToolTip("Pause this study being run")
+
+                # Resume Button
+                resume_icon_path = Path(self.config["ProjectDir"]) / "media" / "resume_processing.png"
+                inner_btn_resume = QPushButton(QIcon(str(resume_icon_path)), "", enabled=False)
+                inner_btn_resume.setToolTip("Resume this paused study")
+
+                # HBoxLayout for the control btns
+                inner_hbox_ctrls = QHBoxLayout()
+                inner_hbox_ctrls.addWidget(inner_btn_resume)
+                inner_hbox_ctrls.addWidget(inner_btn_pause)
+                inner_hbox_ctrls.addWidget(inner_btn_stop)
+
+                # Signals and Slots for the ctrl btns
+                inner_btn_resume.clicked.connect(partial(self.one_btn_blocks_other, calling_btn=inner_btn_resume,
+                                                         receiver_btn=inner_btn_pause))
+                inner_btn_resume.clicked.connect(self.processing_movieplayer.movie.start)
+                inner_btn_pause.clicked.connect(partial(self.one_btn_blocks_other, calling_btn=inner_btn_pause,
+                                                        receiver_btn=inner_btn_resume))
+                inner_btn_pause.clicked.connect(self.processing_movieplayer.movie.stop)
+
                 # Package it all in another FormLayout
                 inner_grp = QGroupBox(title=f"Study {inner_btn_browsedirs.row_idx}")
                 inner_formlay = QFormLayout(inner_grp)
                 if system() == "Darwin":
                     set_formlay_options(inner_formlay, vertical_spacing=0)
-                    for widget in [inner_cmb_ncores, inner_le, inner_cmb_procopts, inner_btn_stop]:
+                    for widget in [inner_cmb_ncores, inner_le, inner_cmb_procopts, inner_btn_stop,
+                                   inner_btn_pause, inner_btn_resume
+                                   ]:
                         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 inner_formlay.addRow("Assigned Number of Cores", inner_cmb_ncores)
                 inner_hbox = QHBoxLayout()
@@ -362,7 +580,7 @@ class xASL_Executor(QMainWindow):
                 inner_hbox.addWidget(inner_btn_browsedirs)
                 inner_formlay.addRow("Path to Analysis Folder", inner_hbox)
                 inner_formlay.addRow("Which Modules to Run", inner_cmb_procopts)
-                inner_formlay.addRow("Terminate Processing", inner_btn_stop)
+                inner_formlay.addRow("Control Processing", inner_hbox_ctrls)
 
                 # Add progressbars
                 inner_progbar = QProgressBar(orientation=Qt.Horizontal, value=0, maximum=100, minimum=0)
@@ -380,6 +598,8 @@ class xASL_Executor(QMainWindow):
                 self.formlay_cmbs_runopts_list.append(inner_cmb_procopts)
                 self.formlay_progbars_list.append(inner_progbar)
                 self.formlay_stopbtns_list.append(inner_btn_stop)
+                self.formlay_pausebtns_list.append(inner_btn_pause)
+                self.formlay_resumebtns_list.append(inner_btn_resume)
 
         # Removal of rows
         elif diff < 0:
@@ -397,6 +617,10 @@ class xASL_Executor(QMainWindow):
                 self.formlay_cmbs_runopts_list.pop()
                 self.formlay_progbars_list.pop()
                 self.formlay_stopbtns_list.pop()
+
+                self.formlay_pausebtns_list.pop()
+                self.formlay_resumebtns_list.pop()
+
                 self.formlay_nrows -= 1
 
         # Adjust the number of cores selectable in each of the comboboxes
@@ -447,28 +671,28 @@ class xASL_Executor(QMainWindow):
     # noinspection PyCallByClass
     def run_modjob(self):
         selected_job = self.cmb_modjob.currentText()
-        root_path = Path(self.le_modjob.text())
+        root_path = Path(self.le_modjob.text()).resolve()
         modjob_widget = None
         if selected_job == "Alter participants.tsv":
             if any([self.le_modjob.text() == '', not (root_path / "participants.tsv").exists()]):
-                QMessageBox().warning(self, self.exec_errs["ParticipantsTSVNotFound"][0],
-                                      self.exec_errs["ParticipantsTSVNotFound"][1], QMessageBox.Ok)
+                robust_qmsg(self, title=self.exec_errs["ParticipantsTSVNotFound"][0],
+                            body=self.exec_errs["ParticipantsTSVNotFound"][1])
                 return
             modjob_widget = xASL_GUI_TSValter(self)
         elif selected_job == "Re-run a study":
             if any([self.le_modjob.text() == '', not (root_path / "lock").exists()]):
-                QMessageBox().warning(self, self.exec_errs["LockDirSystemNotFound"][0],
-                                      self.exec_errs["LockDirSystemNotFound"][1], QMessageBox.Ok)
+                robust_qmsg(self, title=self.exec_errs["LockDirSystemNotFound"][0],
+                            body=self.exec_errs["LockDirSystemNotFound"][1])
                 return
             modjob_widget = xASL_GUI_RerunPrep(self)
         elif selected_job == "Change Json Sidecars":
             if any([self.le_modjob.text() == "", not root_path.is_dir(), not root_path.exists()]):
-                QMessageBox().warning(self, self.exec_errs["InvalidStudyDirectory"][0],
-                                      self.exec_errs["InvalidStudyDirectory"][1], QMessageBox.Ok)
+                robust_qmsg(self, title=self.exec_errs["InvalidStudyDirectory"][0],
+                            body=self.exec_errs["InvalidStudyDirectory"][1], variables=[str(root_path)])
                 return
             modjob_widget = xASL_GUI_ModSidecars(self)
         elif selected_job == "Merge Study Directories":
-            modjob_widget = xASL_GUI_MergeDirs(self, self.le_modjob.text())
+            modjob_widget = xASL_GUI_MergeDirs(self, str(Path.home()))
 
         if modjob_widget is not None:
             modjob_widget.show()
@@ -523,72 +747,60 @@ class xASL_Executor(QMainWindow):
         :param row_idx: The index of the row from the pushbutton calling this slot. It is a non-pythonic index, so it
         must be reduced by 1 to index properly
         """
-        dir_path = QFileDialog.getExistingDirectory(self.cw, "Select the analysis directory of your study",
-                                                    self.config["DefaultRootDir"], QFileDialog.ShowDirsOnly)
-        if dir_path == "":
-            return
-        self.formlay_lineedits_list[row_idx - 1].setText(str(Path(dir_path)))
+        s, d = robust_getdir(self, "Select the Analysis Directory", self.config["DefaultRootDir"],
+                             requirements={"contains": ["DataPar*.json", self.exec_errs["DataPar File Not Found_Alt"]]})
+        if s:
+            self.formlay_lineedits_list[row_idx - 1].setText(str(d))
 
     def set_modjob_analysis_dir(self):
-        dir_path = QFileDialog.getExistingDirectory(self.cw, "Select the analysis directory of your study",
-                                                    self.config["DefaultRootDir"], QFileDialog.ShowDirsOnly)
-        if dir_path == "":
-            return
-        self.le_modjob.setText(str(Path(dir_path)))
+        robust_getdir(self, "Select the Analysis Directory", self.config["DefaultRootDir"], lineedit=self.le_modjob)
 
     # Define whether the run Explore ASL button should be enabled
     def is_ready_to_run(self):
         # First check: all lineedits must have an appropriate analysis directory with a par file
-        checks = []
         for le in self.formlay_lineedits_list:
-            filepath = Path(le.text())
-            if all([filepath.exists(), filepath.is_dir(), peekable(filepath.glob("*Par*.json"))]):
-                checks.append(True)
-            else:
-                checks.append(False)
+            if le.text() in {"", ".", "\\", "/", "~"}:
+                self.btn_runExploreASL.setEnabled(False)
+                return
+            filepath = Path(le.text().replace("~", str(Path.home()))).resolve()
+            if not all([filepath.exists(), filepath.is_dir(), peekable(filepath.glob("DataPar*.json"))]):
+                self.btn_runExploreASL.setEnabled(False)
+                return
 
-        # Second check: for any study that has its module set as Population, the number of cores must be 1
         for cmb_cores, le_analysisdir, cmb_runopt in zip(self.formlay_cmbs_ncores_list,
                                                          self.formlay_lineedits_list,
                                                          self.formlay_cmbs_runopts_list):
+            # Second check: for any study that has its module set as Population, the number of cores must be 1
             if cmb_runopt.currentText() == "Population" and cmb_cores.currentText() != "1":
-                checks.append(False)
+                self.btn_runExploreASL.setEnabled(False)
+                return
 
             # Third check: the number of cores selected cannot exceed the number of subjects
             if cmb_runopt.currentText() != "Population":
-                datapar_path = peekable(Path(le_analysisdir.text()).glob("DataPar*.json"))
+                filepath = Path(le_analysisdir.text().replace("~", str(Path.home()))).resolve()
+                datapar_path = peekable(filepath.glob("DataPar*.json"))
                 if not datapar_path:
-                    checks.clear()
                     self.btn_runExploreASL.setEnabled(False)
                     return
                 with open(next(datapar_path)) as datapar_reader:
                     try:
                         regex = json.load(datapar_reader)["subject_regexp"]
                     except KeyError:
-                        checks.clear()
                         self.btn_runExploreASL.setEnabled(False)
                         return
                     except json.decoder.JSONDecodeError as json_err:
-                        QMessageBox.warning(self, self.exec_errs["BadDataParFileJson"][0],
-                                            f"{self.exec_errs['BadDataParFileJson'][1]}{json_err}", QMessageBox.Ok)
+                        robust_qmsg(self, title=self.exec_errs["BadDataParFileJson"][0],
+                                    body=self.exec_errs['BadDataParFileJson'][1] + str(json_err))
                         le_analysisdir.clear()
-                        checks.clear()
                         self.btn_runExploreASL.setEnabled(False)
                         return
 
-                n_subjects = sum([True if re.search(regex, path.name) else False
-                                  for path in Path(le_analysisdir.text()).iterdir()])
-                if n_subjects >= int(cmb_cores.currentText()):
-                    checks.append(True)
-                else:
-                    checks.clear()
+                n_subjects = sum([True if re.search(regex, path.name) else False for path in filepath.iterdir()])
+                if n_subjects < int(cmb_cores.currentText()):
                     self.btn_runExploreASL.setEnabled(False)
                     return
 
-            if all(checks):
-                self.btn_runExploreASL.setEnabled(True)
-            else:
-                self.btn_runExploreASL.setEnabled(False)
+        self.btn_runExploreASL.setEnabled(True)
 
     ###################################
     # CONCURRENT AND POST-RUN FUNCTIONS
@@ -603,10 +815,28 @@ class xASL_Executor(QMainWindow):
         self.end_movie()
         # Check if all expected operations took place
         self.post_run_statusfile_and_error_assessment()
+        # Take care of temporary log files
+        self.post_run_handle_log_files()
         # Check the progressbars
         for progbar in self.formlay_progbars_list:
             if progbar.value() != progbar.maximum():
                 progbar.setPalette(self.red_palette)
+
+    def post_run_handle_log_files(self):
+        study_dir: Path
+        for study_dir in self.expected_status_files.keys():
+            tmp_worker_files = sorted(study_dir.glob("tmp_RunWorker_*.log"))
+            if len(tmp_worker_files) == 0:
+                continue
+            content = []
+            for tmp_file in tmp_worker_files:
+                with open(tmp_file) as tmp_reader:
+                    content.append(tmp_reader.read())
+                tmp_file.unlink(missing_ok=True)
+            to_write = "\n\n".join(content)
+            err_write_date_str = datetime.now().strftime("%a-%b-%d-%Y_%H-%M-%S")
+            with open(study_dir / f"Run_Log_{err_write_date_str}.log", "w") as log_writer:
+                log_writer.write(to_write)
 
     def post_run_statusfile_and_error_assessment(self):
         """
@@ -659,7 +889,8 @@ class xASL_Executor(QMainWindow):
             study_dir: Path
             incomplete_files: List[Path]
             for study_dir, incomplete_files in postrun_diagnosis.items():
-                all_module_msgs: List[List[str]] = interpret_statusfile_errors(incomplete_files, self.exec_translators)
+                all_module_msgs: List[List[str]] = interpret_statusfile_errors(study_dir, incomplete_files,
+                                                                               self.exec_translators)
                 structmod_msgs, aslmod_msgs, popmod_msgs = all_module_msgs
 
                 specific_stdout_msg = []
@@ -694,16 +925,17 @@ class xASL_Executor(QMainWindow):
                 except OSError:
                     pass
             dirs_string = "\n".join([str(analysis_dir) for analysis_dir in postrun_diagnosis.keys()])
-            QMessageBox().warning(self, self.exec_errs["UnsuccessfulExploreASLrun"][0],
-                                  self.exec_errs["UnsuccessfulExploreASLrun"][1] + f"{dirs_string}\n" +
-                                  self.exec_errs["UnsuccessfulExploreASLrun"][2], QMessageBox.Ok)
+            robust_qmsg(self, title=self.exec_errs["UnsuccessfulExploreASLrun"][0],
+                        body=self.exec_errs["UnsuccessfulExploreASLrun"][1], variables=[dirs_string])
         else:
-            QMessageBox().information(self,
-                                      f"Successful ExploreASL run",
-                                      f"All expected operations successfully took place.\n"
-                                      f"Many thanks for using ExploreASL. If this has been helpful in your study "
-                                      f"please don't forget to cite this program in your manuscript.",
-                                      QMessageBox.Ok)
+            robust_qmsg(self, msg_type="information", title="Successful ExploreASL",
+                        body="All expected operations took place\nMany thanks for using ExploreASL. If this has been "
+                             "helpful in your study please don't forget to cite this program in your manuscript.")
+
+    @staticmethod
+    def one_btn_blocks_other(calling_btn: QPushButton, receiver_btn: QPushButton):
+        calling_btn.setEnabled(False)
+        receiver_btn.setEnabled(True)
 
     # Based on signal outout, this receives messages from watchers and outputs text feedback to the user
     @Slot(str)
@@ -761,16 +993,26 @@ class xASL_Executor(QMainWindow):
     def set_widgets_activation_states(self, state: bool):
         self.btn_runExploreASL.setEnabled(state)
         self.cmb_nstudies.setEnabled(state)
-        for core_cmb, le, browse_btn, runopt_cmb, stop_btn in zip(self.formlay_cmbs_ncores_list,
-                                                                  self.formlay_lineedits_list,
-                                                                  self.formlay_buttons_list,
-                                                                  self.formlay_cmbs_runopts_list,
-                                                                  self.formlay_stopbtns_list):
+
+        zipper = zip(self.formlay_cmbs_ncores_list, self.formlay_lineedits_list, self.formlay_buttons_list,
+                     self.formlay_cmbs_runopts_list, self.formlay_stopbtns_list, self.formlay_pausebtns_list,
+                     self.formlay_resumebtns_list)
+        for core_cmb, le, browse_btn, runopt_cmb, stop_btn, pause_btn, resume_btn in zipper:
             core_cmb.setEnabled(state)
             le.setEnabled(state)
             browse_btn.setEnabled(state)
             runopt_cmb.setEnabled(state)
             stop_btn.setEnabled(not state)
+
+            # Slightly different behaviors for the other btns
+            if not state:  # A run has started
+                if not pause_btn.isEnabled():
+                    pause_btn.setEnabled(not state)
+                resume_btn.setEnabled(False)
+
+            else:  # A run has ended
+                pause_btn.setEnabled(not state)
+                resume_btn.setEnabled(not state)
 
     # Convenience function; adds a gif indicating processing below the textoutput and starts the gif
     def begin_movie(self):
@@ -790,59 +1032,51 @@ class xASL_Executor(QMainWindow):
         self.processing_movieplayer.setVisible(False)
         self.vlay_textoutput.removeWidget(self.processing_movieplayer)
 
+    ###################
+    # PRE-RUN QC CHECKS
+    ###################
+    def runcheck_matlab_ver(self):
+        # Immediately abandon this if the MATLAB version is not compatible with batch commands
+        mlab_ver = self.config.get("MATLAB_VER", None)
+        mlab_path = self.config.get("MATLAB_CMD_PATH", None)
+        if mlab_ver is None or not isinstance(mlab_ver, str):
+            robust_qmsg(self, title=self.exec_errs["Unknown MATLAB VERSION"][0],
+                        body=self.exec_errs["Unknown MATLAB VERSION"][1])
+            return False, None
+
+        # Immediately abandone this if the MATLAB command path is not known
+        if mlab_path is None or not Path(mlab_path).resolve().exists():
+            robust_qmsg(self, title=self.exec_errs["Unknown MATLAB CMD_PATH"][0],
+                        body=self.exec_errs["Unknown MATLAB CMD_PATH"][1])
+            return False, None
+
+        try:
+            mlab_ver = int(re.search(r"R(\d{4})[ab]", mlab_ver).group(1))
+            # Immediately abandon this if the MATLAB version is too old
+            if mlab_ver < 2016:
+                robust_qmsg(self, title=self.exec_errs["Incompatible MATLAB Version"][0],
+                            body=self.exec_errs["Incompatible MATLAB Version"][1], variables=[str(mlab_ver)])
+                return False, None
+            # Or if too old for Windows due to the lack of the -nodisplay option
+            if system() == "Windows" and not mlab_ver >= 2019:
+                robust_qmsg(self, title=self.exec_errs["Incompatible MATLAB Version"][0],
+                            body=self.exec_errs["Incompatible MATLAB Version"][1], variables=[str(mlab_ver)])
+                return False, None
+        # Or if something went wrong getting the version
+        except AttributeError:
+            robust_qmsg(self, title=self.exec_errs["Unknown MATLAB VERSION"][0],
+                        body=self.exec_errs["Unknown MATLAB VERSION"][1])
+            return False, None
+        return True, mlab_ver
+
     ###################################################################################################################
     #                                              THE MAIN RUN FUNCTION
     ###################################################################################################################
     def run_Explore_ASL(self):
-
-        # Immediately abandon this if the MATLAB version is not compatible with batch commands
-        if self.config["MATLAB_VER"] is None or not isinstance(self.config["MATLAB_VER"], str):
-            QMessageBox().warning(self, "Unknown MATLAB version",
-                                  "The MATLAB version must be known for this to run. "
-                                  "See the main menu for specifying a MATLAB command path "
-                                  "which will also determine the appropriate version", QMessageBox.Ok)
-            return
-
-        # Immediately abandone this if the MATLAB command path is not known
-        if self.config["MATLAB_CMD_PATH"] is None or not Path(self.config["MATLAB_CMD_PATH"]).resolve().exists():
-            QMessageBox().warning(self, "Unknown MATLAB command path",
-                                  "The path to the matlab command (MacOS/Linux) or matlab.exe must be known for this "
-                                  "to run. You may specify this using the main menu under "
-                                  "File --> Specify path to MATLAB executable, ",
-                                  QMessageBox.Ok)
-            return
-
-        try:
-            mlab_ver = int(re.search(r"R(\d{4})[ab]", self.config["MATLAB_VER"]).group(1))
-            # Immediately abandon this if the MATLAB version is too old
-            if mlab_ver < 2016:
-                QMessageBox().warning(self, "MATLAB is too old",
-                                      f"The MATLAB version on this machine: {mlab_ver}\nis not compatible with "
-                                      f"ExploreASL. Please contact your system administrator for upgrading your "
-                                      f"MATLAB installation to at least 2016a for MacOS or Linux, or to at least 2019a "
-                                      f"for Windows.", QMessageBox.Ok)
-                return
-            # Or if too old for Windows due to the lack of the -nodisplay option
-            if system() == "Windows" and not mlab_ver >= 2019:
-                QMessageBox().warning(self, "Incompatible MATLAB version with Windows",
-                                      f"Due to the issues with MATLAB's Windows implementation, this program cannot "
-                                      f"launch ExploreASL on MATLAB versions prior to 2019a on Windows systems. Please "
-                                      f"contact your system administrator for upgrading your MATLAB installation to at "
-                                      f"least 2019a for Windows or 2016a for MacOS or Linux.",
-                                      QMessageBox.Ok)
-                return
-        # Or if something went wrong getting the version
-        except AttributeError:
-            QMessageBox().warning(self, "Unknown MATLAB version",
-                                  "The MATLAB version must be known for this to run. "
-                                  "See the main menu under File --> Specify path to MATLAB executable for specifying "
-                                  "a MATLAB command path which will also determine the appropriate version",
-                                  QMessageBox.Ok)
-            return
-
         if self.config["DeveloperMode"]:
             print("%" * 60)
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
+        self.loggers = []
         self.workers = []
         self.watchers = []
         self.total_process_dbt = 0
@@ -851,18 +1085,23 @@ class xASL_Executor(QMainWindow):
         self.stderr_errordicts_list = []
 
         # Disable widgets
-        self.set_widgets_activation_states(False)
+        # self.set_widgets_activation_states(False)
 
         # Clear the textoutput each time
         self.textedit_textoutput.clear()
 
         # Outer for loop; loops over the studies
-        for study_idx, (box, path, run_opts, progressbar, stop_btn) in enumerate(
+        for study_idx, (box, path, run_opts, progressbar, stop_btn, pause_btn, resume_btn) in enumerate(
                 zip(self.formlay_cmbs_ncores_list,  # Comboboxes for number of cores
                     self.formlay_lineedits_list,  # Lineedits for analysis directory path
                     self.formlay_cmbs_runopts_list,  # Comboboxes for the modules to run
                     self.formlay_progbars_list,  # Progressbars for the study
-                    self.formlay_stopbtns_list)):  # Stop Buttons for that study
+                    self.formlay_stopbtns_list,  # Stop Buttons for that study
+
+                    self.formlay_pausebtns_list,
+                    self.formlay_resumebtns_list,
+
+                    )):
 
             #########################################
             # INNER FOR LOOP - For a particular study
@@ -873,67 +1112,130 @@ class xASL_Executor(QMainWindow):
             debt = 0
             # %%%%%%%%%%%%%%%%%%%%%%
             # Step 1 - For the study, load in the parameters
+
+            forbidden = {"", ".", "/", "\\", "~"}
+            if path.text() in forbidden:
+                robust_qmsg(self, title=self.exec_errs["Forbidden Study Character"][0],
+                            body=self.exec_errs["Forbidden Study Character"][1], variables=[path.text()])
+                # self.set_widgets_activation_states(True)
+                return
+
+            ana_path = Path(path.text().replace("~", str(Path.home()))).resolve()
             try:
-                ana_path = Path(path.text())
-                parms_file = next(Path(ana_path).rglob("*Par*.json"))
+                parms_file = next(ana_path.glob("DataPar*.json"))
             except StopIteration:
-                QMessageBox().warning(self, self.exec_errs["NoDataPar"][0],
-                                      self.exec_errs["NoDataPar"][1], QMessageBox.Ok)
-                self.set_widgets_activation_states(True)
+                robust_qmsg(self, title=self.exec_errs["DataPar File Not Found"][0],
+                            body=self.exec_errs["DataPar File Not Found"][1], variables=[str(ana_path)])
+                # self.set_widgets_activation_states(True)
                 return
 
-            # Get a few essentials that will be needed for the workers and the watcher for this study
+            # Load in the DataPar.json file and Extract essential parameters
             try:
+                # First load in the file
                 with open(parms_file) as f:
-                    parms = json.load(f)
-                    try:
-                        str_regex: str = parms["subject_regexp"]
-                        if str_regex.startswith("^") or str_regex.endswith('$'):
-                            str_regex = str_regex.strip('^$')
-                        regex: re.Pattern = re.compile(str_regex)
-                        explore_asl_path: str = parms["MyPath"]
-                    except KeyError as parms_keyerror:
-                        QMessageBox().warning(self, self.exec_errs["BadDataParFile"][0],
-                                              self.exec_errs["BadDataParFile"][1] + f"{parms_keyerror}", QMessageBox.Ok)
-                        self.set_widgets_activation_states(True)
-                        return
+                    parms: dict = json.load(f)
+
+                str_regex: str = parms["subject_regexp"].strip("^$")
+                regex: re.Pattern = re.compile(str_regex)
+                easl_scenario: str = parms["EXPLOREASL_TYPE"]
+                excluded_subjects: list = parms["exclusion"]
+                root_in_parms: str = parms["D"]["ROOT"]
+
             except json.decoder.JSONDecodeError as json_read_error:
-                QMessageBox().warning(self, self.exec_errs["BadDataParFileJson"][0],
-                                      self.exec_errs["BadDataParFileJson"][1] + f"{json_read_error}", QMessageBox.Ok)
-                self.set_widgets_activation_states(True)
+                robust_qmsg(self, title=self.exec_errs["BadDataParFileJson"][0],
+                            body=self.exec_errs["BadDataParFileJson"][1],
+                            variables=[str(ana_path), f"{json_read_error}"])
+                # self.set_widgets_activation_states(True)
+                return
+            except KeyError as parms_keyerror:
+                robust_qmsg(self, title=self.exec_errs["BadDataParFileKeys"][0],
+                            body=self.exec_errs["BadDataParFileKeys"][1],
+                            variables=[str(ana_path), f"{parms_keyerror}"])
+                # self.set_widgets_activation_states(True)
                 return
 
-            # With the parms now loaded, additional checks can be made to prevent false runs
-            if any([not Path(parms["MyPath"]).exists(),  # ExploreASL dir must exist
-                    sum([bool(regex.search(str(path.name))) for path in ana_path.iterdir()
-                         if path.name not in ["lock", "Population"]]) == 0,  # The regex must match at least 1 subject
-                    str_regex == '',  # The string used to make the regex cannot be blank
-                    parms["D"]["ROOT"] != str(ana_path)  # The study provided must match the one in the parms file
-                    ]):
-                QMessageBox().warning(self, self.exec_errs["NoStartExploreASL"][0],
-                                      self.exec_errs["NoStartExploreASL"][1] + path.text() +
-                                      self.exec_errs["NoStartExploreASL"][2], QMessageBox.Ok)
+            # Check that the parms file's D.ROOT matches the lineedit's resolved filepath
+            if root_in_parms != str(ana_path):
+                robust_qmsg(self, title=self.exec_errs["NoStartExploreASL"][0],
+                            body=self.exec_errs["NoStartExploreASL"][1], variables=[str(ana_path)])
+                # self.set_widgets_activation_states(True)
+                return
 
-                # Remember to re-activate widgets
-                self.set_widgets_activation_states(True)
+            # Regex check for subject hits
+            hits = []
+            for subject_path in ana_path.iterdir():
+                if any([subject_path.name in {"lock", "Population"}, subject_path.is_file(),
+                        subject_path.name in excluded_subjects]):
+                    continue
+                hits.append(bool(regex.search(subject_path.name)))
+            if not any(hits):
+                robust_qmsg(self, title=self.exec_errs["NoStartExploreASL"][0],
+                            body=self.exec_errs["NoStartExploreASL"][1], variables=[str(ana_path)])
+                # self.set_widgets_activation_states(True)
+                return
+
+            # Perform the appropriate checks depending on the ExploreASL Scenario (local, compiled, docker, etc.)
+            if easl_scenario == "LOCAL_UNCOMPILED":
+                # If it is a local version, then the MATLAB version and the path to the MATLAB command must be legit
+                can_proceed, int_mlab_ver = self.runcheck_matlab_ver()
+                if not can_proceed:
+                    # self.set_widgets_activation_states(True)
+                    return
+                else:
+                    parms["WORKER_MATLAB_VER"] = int_mlab_ver
+                    parms["WORKER_MATLAB_CMD_PATH"] = self.config["MATLAB_CMD_PATH"]
+            elif easl_scenario == "LOCAL_COMPILED":
+                pass
+            else:
+                robust_qmsg(self, title=self.exec_errs["Unsupported ExploreASL Scenario"][0],
+                            body=self.exec_errs["Unsupported ExploreASL Scenario"][1], variables=[str(ana_path)])
+                # self.set_widgets_activation_states(True)
                 return
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 2 - Prepare the workers for that study
+            # Step 2 - Prepare the environment for that study
+            worker_env = environ.copy()
+            if easl_scenario == "LOCAL_UNCOMPILED":
+                pass
+            elif easl_scenario == "LOCAL_COMPILED":
+                # First, get the Runtime path
+                runtime_path = parms.get("MCRPath", None)
+                if runtime_path is None:
+                    robust_qmsg(self, title=self.exec_errs["Unknown MATLAB Runtime"][0],
+                                body=self.exec_errs["Unknown MATLAB Runtime"][1])
+                    # self.set_widgets_activation_states(True)
+                    return
+                runtime_path = Path(runtime_path).resolve()
+
+                system_dict = {"Windows": ["PATH", ";", "win64"],
+                               "Linux": ["LD_LIBRARY_PATH", ":", "glnax64"],
+                               "Darwin": ["DYLD_LIBRARY_PATH", ":", "maci64"]}
+                x = system()
+                try:
+                    current_paths = worker_env.get(system_dict[x][0], "")
+                    if isinstance(current_paths, list, tuple):
+                        current_paths = "".join(current_paths)
+                    located_paths = [path for path in runtime_path.rglob(system_dict[x][2]) if
+                                     all([path.is_dir(), str(path not in current_paths)])]
+                    paths2add = system_dict[x][1].join(located_paths)
+                    current_paths += paths2add
+                    worker_env[system_dict[x][0]] = current_paths
+                except KeyError:
+                    # self.set_widgets_activation_states(True)
+                    return
+
+            # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            # Step 3 - Prepare the workers for that study
             # Inner for loop: loops over the range of the num of cores within a study. Each core will be an iWorker
             for ii in range(box.count()):
                 if ii < int(box.currentText()):
                     worker = ExploreASL_Worker(
-                        self.config["MATLAB_CMD_PATH"],  # Backup matlab command path
-                        mlab_ver,
-                        explore_asl_path,  # The exploreasl filepath
-                        str(parms_file),  # The filepath to parms
-                        1,  # Process the data
-                        1,  # Skip the pause
-                        ii + 1,  # iWorker
-                        int(box.currentText()),  # nWorkers
-                        translator[run_opts.currentText()],  # Which modules Structural, ASL, Both, Population
-                        str_regex)  # For catching errors for particular subjects
+                        worker_parms=parms,
+                        iworker=ii + 1,  # iWorker
+                        nworkers=int(box.currentText()),  # nWorkers
+                        imodules=translator[run_opts.currentText()],  # Which modules Structural, ASL, Both, Population
+                        worker_env=worker_env
+                    )
 
                     inner_worker_block.append(worker)
                     debt -= 1
@@ -943,9 +1245,10 @@ class xASL_Executor(QMainWindow):
             self.workers.append(inner_worker_block)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 3 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
+            # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
             # maxvalue from that
             # This now ALSO makes the lock dirs that do not exist
+            # TODO Check how this calculating anticipated workload works with the new compiled system
             workload, expected_status_files = calculate_anticipated_workload(parmsdict=parms,
                                                                              run_options=run_opts.currentText(),
                                                                              translators=self.exec_translators)
@@ -962,12 +1265,13 @@ class xASL_Executor(QMainWindow):
                         print(f"{lock_err}...but proceeding to recursive delete")
                         rmtree(path=lock_dir, ignore_errors=True)
 
+            # Abort if no viable workload was detected
             if not workload or len(expected_status_files) == 0:
-                QMessageBox.information(self, self.exec_errs["NoWorkloadDetected"][0],
-                                        self.exec_errs["NoWorkloadDetected"][1], QMessageBox.Ok)
-                # Remember to re-activate widgets
-                self.set_widgets_activation_states(True)
+                robust_qmsg(self, title=self.exec_errs["NoWorkloadDetected"][0],
+                            body=self.exec_errs["NoWorkloadDetected"][1], variables=[str(ana_path)])
+                # self.set_widgets_activation_states(True)
                 return
+
             # progressbar.reset_colnames()
             progressbar.setMaximum(workload)
             progressbar.setMaximum(workload)
@@ -975,14 +1279,15 @@ class xASL_Executor(QMainWindow):
             progressbar.setValue(0)
             progressbar.setPalette(self.green_palette)
             del workload
+
             # Save the expected status files to the dict container; these will be iterated over after workers are done
             self.expected_status_files[ana_path] = expected_status_files
             if self.config["DeveloperMode"]:
-                print(f"EXPECTED STATUS FILES TO BE GENERATED FOR STUDY: {ana_path}")
+                print(f"EXPECTED STATUS FILES TO BE GENERATED FOR STUDY: {str(ana_path)}")
                 pprint(expected_status_files)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 4 - Create a Watcher for that study
+            # Step 5 - Create a Watcher for that study
             watcher = ExploreASL_Watcher(target=path.text(),  # the analysis directory
                                          regex=str_regex,  # the regex used to recognize subjects
                                          watch_debt=debt,  # the debt used to determine when to stop watching
@@ -993,10 +1298,10 @@ class xASL_Executor(QMainWindow):
                                          anticipated_paths=set(expected_status_files),
                                          datapar_dict=parms
                                          )
-            self.textedit_textoutput.append(f"Setting a Watcher thread on {ana_path}")
+            self.textedit_textoutput.append(f"Setting a Watcher thread on {str(ana_path)}")
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 5 - Set up watcher connections
+            # Step 6 - Set up watcher connections
             # Connect the watcher to signal to the text output
             watcher.signals.update_text_output_signal.connect(self.update_text)
             # Connect the watcher to signal to the progressbar
@@ -1006,7 +1311,7 @@ class xASL_Executor(QMainWindow):
             self.watchers.append(watcher)
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            # Step 6 - Set up worker connections
+            # Step 7 - Set up worker connections
             # Worker connections setup within a study
             for idx, worker in enumerate(inner_worker_block):
                 # Connect the finished signal to the watcher debt to help it understand when it should stop watching
@@ -1023,6 +1328,13 @@ class xASL_Executor(QMainWindow):
                 # Connect the stop button for that study to its terminator function
                 stop_btn.clicked.connect(worker.terminate_run)
 
+                # Pause and Resume Signals
+                pause_btn.clicked.connect(worker.pause_run)
+                worker.signals.received_pause.connect(self.textedit_textoutput.append)
+
+                resume_btn.clicked.connect(worker.resume_run)
+                worker.signals.received_resume.connect(self.textedit_textoutput.append)
+
                 self.textedit_textoutput.append(
                     f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study:\n{ana_path}")
 
@@ -1035,6 +1347,8 @@ class xASL_Executor(QMainWindow):
         # Launch all threads in one go
         for runnable in self.workers + self.watchers:
             self.threadpool.start(runnable)
+
+        self.set_widgets_activation_states(False)
 
         self.begin_movie()
 
@@ -1093,13 +1407,13 @@ class ExploreASL_Watcher(QRunnable):
                                path=str(self.dir_to_watch),
                                recursive=True)
 
-        if all([is_earlier_version(easl_dir=self.datapar_dict["MyPath"], threshold_higher=120),
+        if all([is_earlier_version(easl_dir=self.datapar_dict["MyPath"], threshold_higher=120, higher_eq=False),
                 len(list(self.dir_to_watch.parent.glob("*/*FLAIR*"))) == 0
                 ]):
             self.struct_status_file_translator = translators["Structural_Module_Filename2Description_PRE120_NOFLAIR"]
         else:
             self.struct_status_file_translator: dict = translators["Structural_Module_Filename2Description"]
-        if is_earlier_version(easl_dir=self.datapar_dict["MyPath"], threshold_higher=140):
+        if is_earlier_version(easl_dir=self.datapar_dict["MyPath"], threshold_higher=140, higher_eq=False):
             self.asl_status_file_translator: dict = translators["ASL_Module_Filename2Description_PRE140"]
         else:
             self.asl_status_file_translator: dict = translators["ASL_Module_Filename2Description"]

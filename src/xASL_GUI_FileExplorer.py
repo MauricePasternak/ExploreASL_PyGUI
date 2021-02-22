@@ -1,17 +1,17 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
-from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_widget_icon
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import set_widget_icon, robust_qmsg
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 import shutil
 from pathlib import Path
-from typing import List, Union
 
 
 class xASL_FileExplorer(QWidget):
     def __init__(self, parent):
         super().__init__(parent=parent)
-        self.config = parent.config
+        self.config: dict = parent.config
+        self.errs: dict = parent.mwin_errs
         self.path_history = []  # List of Path objects
         self.path_index = 0
 
@@ -37,7 +37,7 @@ class xASL_FileExplorer(QWidget):
             self.hlay_btns.addWidget(btn)
 
         # Define the file system model and its display container
-        self.treev_file = xASL_FileView()
+        self.treev_file = xASL_FileView(errs=self.errs)
         self.treev_file.setContextMenuPolicy(Qt.CustomContextMenu)
         self.treev_file.customContextMenuRequested.connect(self.menuContextTree)
         self.model_file = QFileSystemModel()
@@ -150,16 +150,15 @@ class xASL_FileExplorer(QWidget):
 
                 self.dev_path_print("Pressed Enter into a new directory")
             else:
-                QMessageBox().warning(self, "Cannot Enter into a file",
-                                      f"The File Explorer detected that the path you entered:\n{newpath}\nis a file. "
-                                      f"This program is not able to open files from this location at the current time",
-                                      QMessageBox.Ok)
+                robust_qmsg(self, title=self.errs["CannotEnterFile"][0], body=self.errs["CannotEnterFile"][1],
+                            variables=[str(newpath)])
+
                 # Reset the lineedit back to the text prior to the Enter event
                 self.le_current_dir.setText(str(self.path_history[self.path_index]))
                 return
         else:
-            QMessageBox().warning(self, "Path does not exist",
-                                  f"The File Explorer could not find the path:\n{newpath}", QMessageBox.Ok)
+            robust_qmsg(self, title=self.errs["PathDoesNotExist"][0], body=self.errs["PathDoesNotExist"][1],
+                        variables=str(newpath))
             # Reset the lineedit back to the text prior to the Enter event
             self.le_current_dir.setText(str(self.path_history[self.path_index]))
             return
@@ -202,10 +201,8 @@ class xASL_FileExplorer(QWidget):
             result = QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath)))
             self.dev_path_print("Attempted to open a file")
             if not result:
-                QMessageBox().warning(self.parent(), "Could not open file",
-                                      "Please ensure you have defined a default program to open this type of file in "
-                                      "your machine's settings.",
-                                      QMessageBox.Ok)
+                robust_qmsg(self.parent(), title=self.errs["CannotEnterFile"][0],
+                            body=self.errs["CannotEnterFile"][1], variables=[str(filepath)])
         # Something went wrong
         else:
             print(f"The filepath: {filepath} is not a directory that can be entered into")
@@ -252,7 +249,7 @@ class xASL_FileView(QTreeView):
     Slightly altered QTreeview to allow for more user-friendly functionality relative to the default implementation.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, errs, parent=None):
         super().__init__(parent=parent)
         self.pressed_keys = []
         self.copy_buffer = []
@@ -261,6 +258,7 @@ class xASL_FileView(QTreeView):
         self.idx_of_editor = None
         self.orig_filepath = None
         self.editor = None
+        self.errs = errs
 
     def mouseDoubleClickEvent(self, event):
         """
@@ -331,10 +329,8 @@ class xASL_FileView(QTreeView):
             return
 
         if proposed_filepath.exists():
-            QMessageBox.information(self, "Directory already exists",
-                                    f"The specified name {proposed_basename} already exists within:\n"
-                                    f"{self.orig_filepath}\n"
-                                    f"Please specify a different name")
+            robust_qmsg(self, title=self.errs["DirectoryAlreadyExists"][0], body=self.errs["DirectoryAlreadyExists"][1],
+                        variables=[str(proposed_basename), str(self.orig_filepath)])
             self.full_close_editor()
             return
 
@@ -342,9 +338,8 @@ class xASL_FileView(QTreeView):
             try:
                 self.orig_filepath.replace(proposed_filepath)
             except FileNotFoundError:
-                QMessageBox.information(self, "Illegal file or directory name specified",
-                                        f"The specified name {proposed_basename} is not a valid path ending for "
-                                        f"this operating system")
+                robust_qmsg(self, title=self.errs["InvalidCharacterInPath"][0],
+                            body=self.errs["InvalidCharacterInPath"][1], variables=[str(proposed_basename)])
             self.full_close_editor()
             return
 
@@ -355,9 +350,8 @@ class xASL_FileView(QTreeView):
             try:
                 self.orig_filepath.replace(proposed_filepath)
             except FileNotFoundError:
-                QMessageBox.information(self, "Illegal file or directory name specified",
-                                        f"The specified name {proposed_basename} is not a valid path ending for "
-                                        f"this operating system")
+                robust_qmsg(self, title=self.errs["InvalidCharacterInPath"][0],
+                            body=self.errs["InvalidCharacterInPath"][1], variables=[str(proposed_basename)])
             self.full_close_editor()
             return
 

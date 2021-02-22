@@ -1,4 +1,5 @@
-from PySide2.QtWidgets import QLineEdit, QAbstractItemView, QListWidget, QPushButton
+from PySide2.QtWidgets import (QLineEdit, QAbstractItemView, QListWidget, QPushButton, QHBoxLayout, QComboBox,
+                               QDoubleSpinBox)
 from PySide2.QtCore import Qt, Signal, QModelIndex, QSize
 from PySide2.QtGui import QFont, QIcon
 import os
@@ -214,6 +215,7 @@ class xASL_PushButton(QPushButton):
     """
     Convenience Class in making a QPushButton
     """
+
     def __init__(self, parent=None, text: str = None, func: callable = None, fixed_height: int = None,
                  fixed_width: int = None, font: QFont = None, icon: QIcon = None, icon_size: QSize = None,
                  enabled: bool = None):
@@ -235,3 +237,57 @@ class xASL_PushButton(QPushButton):
             self.setIconSize(icon_size)
         if enabled is not None:
             self.setEnabled(enabled)
+
+
+class xASL_HBoxTwoWidgets(QHBoxLayout):
+    def __init__(self, parent=None, left_wid=DandD_FileExplorer2LineEdit, right_wid=QPushButton,
+                 left_kwargs: dict = None, right_kwargs=None,
+                 left_method: str = None, right_method=None,
+                 connect_left_to: callable = None, connect_right_to: callable = None):
+        t = {"cmb": QComboBox, "le": DandD_FileExplorer2LineEdit, "spin": QDoubleSpinBox, "btn": QPushButton}
+        super(xASL_HBoxTwoWidgets, self).__init__(parent=parent)
+
+        if left_kwargs is None:
+            left_kwargs = dict()
+        if right_kwargs is None:
+            right_kwargs = dict()
+        self.l_widget = left_wid(**left_kwargs) if not isinstance(left_wid, str) else t[left_wid](**left_kwargs)
+        self.r_widget = right_wid(**right_kwargs) if not isinstance(right_wid, str) else t[right_wid](**right_kwargs)
+        if connect_left_to is not None and left_method is not None:
+            getattr(self.l_widget, left_method).connect(connect_left_to)
+        if connect_right_to is not None and right_method is not None:
+            getattr(self.r_widget, right_method).connect(connect_right_to)
+
+        self.addWidget(self.l_widget)
+        self.addWidget(self.r_widget)
+
+    def return_widgets(self):
+        return self.l_widget, self.r_widget
+
+    def setVisible(self, visible: bool):
+        self.l_widget.setVisible(visible)
+        self.r_widget.setVisible(visible)
+
+    def setEnabled(self, enabled: bool):
+        self.l_widget.setEnabled(enabled)
+        self.r_widget.setEnabled(enabled)
+
+    def fully_disappear(self):
+        self.setVisible(False)
+        self.setEnabled(False)
+
+    def fully_reappear(self):
+        self.setVisible(True)
+        self.setEnabled(True)
+
+    def connect_left(self, left_method: str, left_target: callable):
+        getattr(self.l_widget, left_method).connect(left_target)
+
+    def connect_right(self, right_method: str, right_target: callable):
+        getattr(self.r_widget, right_method).connect(right_target)
+
+    def disconnect_left(self, left_method: str):
+        getattr(self.l_widget, left_method).disconnect()
+
+    def disconnect_right(self, right_method: str):
+        getattr(self.r_widget, right_method).disconnect()
