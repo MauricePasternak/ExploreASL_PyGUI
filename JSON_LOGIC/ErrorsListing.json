@@ -221,7 +221,29 @@
     ]
   ],
   "Unknown MATLAB Runtime": [
-    "One or more of your studies has indicated that will be run on a compiled ExploreASL version, which in turn uses the MATLAB Runtime. The path to this Runtime was not define in the DataPar.json file or no longer exists."
+    "Unknown MATLAB Runtime",
+    "One or more of your studies has indicated that it will be run on a compiled ExploreASL version, which in turn uses the MATLAB Runtime. The path to this Runtime was not define in the DataPar.json file or no longer exists."
+  ],
+  "Unknown CompiledEASL Directory": [
+    "Unknown Compiled ExploreASL Directory",
+    [
+      "The following study has specified that it will run with a compiled ExploreASL version:\n",
+      "The path to this compiled version could not be located in the DataPar.json file"
+    ]
+  ],
+  "Bad MATLAB Runtime": [
+    "Invalid MATALB Runtime Path Specified",
+    [
+      "The MATLAB Runtime path specified in the DataPar.json for this study:\n",
+      "Is not a valid directory. It must end with the version number v##. An example of a valid path would be:\nC:\\Program Files\\MATLAB\\MATLAB Runtime\\v96"
+    ]
+  ],
+  "Bad CompiledEASL Directory": [
+    "Invalid ExploreASL Compiled Directory Specified",
+    [
+      "The Compiled ExploreASL path specified in the DataPar.json for this study:\n",
+      "Is not a valid directory. It must contain the xASL_latest.ctf file. An example of a valid path would be:\nC:\\Users\\JohnSmith\\Documents\\MATLAB\\xASL_latest"
+    ]
   ],
   "NoWorkloadDetected": [
     "No Workload Detected",

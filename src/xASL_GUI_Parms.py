@@ -35,8 +35,8 @@ class xASL_Parms(QMainWindow):
         # Buttons for executing the fundamental functions
         btn_font = QFont()
         btn_font.setPointSize(16)
-        self.btn_make_parms = QPushButton("Create DataPar file", self.cw, clicked=self.saveparms2json)
-        self.btn_load_parms = QPushButton("Load existing DataPar file", self.cw, clicked=self.loadjson2parms)
+        self.btn_make_parms = QPushButton("Create DataPar file", self.cw, clicked=self.save_widgets2json)
+        self.btn_load_parms = QPushButton("Load existing DataPar file", self.cw, clicked=self.load_json2widgets)
         for btn, pic_file in zip([self.btn_make_parms, self.btn_load_parms],
                                  ["export_clipart_80x80.png", "import_clipart_80x80.png"]):
             btn.setFont(btn_font)
@@ -555,24 +555,23 @@ class xASL_Parms(QMainWindow):
     # LineEdit-setting and checking Functions
     #########################################
     def set_mcr_dir(self):
-        errs = ["Invalid Matlab Runtime Directory", "The indicated directory must be of the name v## and contain the"
-                                                    "glnxa64 library"]
+        errs = ["Invalid Matlab Runtime Directory",
+                "The indicated directory must be of the name v##\nAn example of a valid directory would be:\n"
+                "C:\\Program Files\\MATLAB\\MATLAB Runtime\\v96"]
         robust_getdir(self, "Path to MATLAB Runtime Directory", self.config["DefaultRootDir"],
-                      {"basename_fits_regex": ["v\\d{2,3}", errs], "rcontains": ["glnxa64", errs]},
+                      {"basename_fits_regex": ["v\\d{2,3}", errs]},
                       lineedit=self.le_mrc_dir)
 
     def set_exploreasl_mcr(self):
         errs = ["Invalid ExploreASL Compiled Runtime Directory",
-                "The indicated directory must be the compiled directory containing the xASL_latest file"]
+                "The indicated directory must be the compiled directory containing the xASL_latest.ctf file"]
         robust_getdir(self, "Path to local ExploreASL compiled runtime", self.config["DefaultRootDir"],
-                      {"child_file_exists": ["xASL_latest", errs]}, self.le_easl_mcr)
+                      {"rcontains": ["xASL_latest*", errs]}, lineedit=self.le_easl_mcr)
 
     def set_exploreasl_dir(self):
         errs = [self.parms_errs["InvalidExploreASLDir"][0], self.parms_errs["InvalidExploreASLDir"][1]]
-        s, path = robust_getdir(self, "Path to local ExploreASL directory", self.config["DefaultRootDir"],
-                                {"child_file_exists": ["ExploreASL_Master.m", errs]})
-        if s:
-            self.le_easl_dir.setText(str(path))
+        robust_getdir(self, "Path to local ExploreASL directory", self.config["DefaultRootDir"],
+                      {"child_file_exists": ["ExploreASL_Master.m", errs]}, lineedit=self.le_easl_dir)
 
     def set_study_dir(self):
         robust_getdir(self, "Path to study directory", self.config["DefaultRootDir"],
@@ -585,7 +584,7 @@ class xASL_Parms(QMainWindow):
     #######################################################################
     # Main Functions for this module - saving to json and loading from json
     #######################################################################
-    def saveparms2json(self):
+    def save_widgets2json(self):
         # Defensive programming first
         forbidden = ["", ".", "/", "~"]
         # First check, the study directory specified must be a legitimate directory filepath
@@ -621,13 +620,17 @@ class xASL_Parms(QMainWindow):
                     return
             pathforchecking = path_path
 
-            json_parms["MyPath"] = self.le_easl_mcr.text()
+            json_parms["MyCompiledPath"] = self.le_easl_mcr.text()
             json_parms["MCRPath"] = self.le_mrc_dir.text()
             json_parms["EXPLOREASL_TYPE"] = "LOCAL_COMPILED"
+            if "MyPath" in json_parms:
+                del json_parms["MyPath"]
+
         else:
             raise ValueError(f"Unexpected value for current_easl_type: {self.current_easl_type}")
 
         # Compatibility
+
         str_bsup = "BackgroundSuppressionNumberPulses" if not is_earlier_version(pathforchecking, 140, False) \
             else "BackGrSupprPulses"
         if is_earlier_version(pathforchecking, threshold_higher=150, higher_eq=False):
@@ -752,7 +755,7 @@ class xASL_Parms(QMainWindow):
         robust_qmsg(self, msg_type="information", title="DataPar.json successfully saved",
                     body=f"The parameter file was successfully saved to:\n{self.le_study_dir.text()}")
 
-    def loadjson2parms(self):
+    def load_json2widgets(self):
         self.import_error_logger.clear()
 
         # Defensive Programming
@@ -772,9 +775,10 @@ class xASL_Parms(QMainWindow):
         # Compatibility with name changes over ExploreASL Versions; this will be deprecated after a few version
         # advancements
         try:
-            bsup_str = "BackgroundSuppressionNumberPulses" if not is_earlier_version(parms["D"]["ROOT"], 140, False) \
+            path_key = "MyPath" if parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
+            bsup_str = "BackgroundSuppressionNumberPulses" if not is_earlier_version(parms[path_key], 140, False) \
                 else "BackGrSupprPulses"
-            if is_earlier_version(parms["MyPath"], threshold_higher=150, higher_eq=False):
+            if is_earlier_version(parms[path_key], threshold_higher=150, higher_eq=False):
                 str_pvcker = "PVCorrectionNativeSpaceKernel"
                 str_dopvc = "bPVCorrectionNativeSpace"
                 str_pvcgaus = "bPVCorrectionGaussianMM"
@@ -893,7 +897,7 @@ class xASL_Parms(QMainWindow):
             # Quantification Parms
             "SaveCBF4D"
         }
-        to_ignore = {"MyPath", "EXPLOREASL_TYPE", "MCRPath"}
+        to_ignore = {"MyPath", "EXPLOREASL_TYPE", "MyCompiledPath", "MCRPath"}
 
         for key, call in parms.items():
             if key in to_ignore:
@@ -1108,7 +1112,7 @@ class xASL_Parms(QMainWindow):
                 self.le_easl_dir.setText(str(loaded_parms["MyPath"]))
             elif easl_type == "LOCAL_COMPILED":
                 self.cmb_easl_type.setCurrentIndex(self.cmb_easl_type.findText("Local ExploreASL Compiled"))
-                self.le_easl_mcr.setText(str(loaded_parms["MyPath"]))
+                self.le_easl_mcr.setText(str(loaded_parms["MyCompiledPath"]))
                 self.le_mrc_dir.setText(str(loaded_parms["MCRPath"]))
             else:
                 pass

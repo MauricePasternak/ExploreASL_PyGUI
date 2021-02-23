@@ -154,7 +154,7 @@ def disconnect_widget_and_reset(widget, target_signal, default) -> None:
 
 
 def make_droppable_clearable_le(le_connect_to: callable = None,
-                                btn_connect_to: Union[None, QPushButton] = None,
+                                btn_connect_to: callable = None,
                                 layout_type: str = "hlay",
                                 default: str = '',
                                 **kwargs) -> Tuple[Union[QVBoxLayout, QHBoxLayout], DandD_FileExplorer2LineEdit,
@@ -296,8 +296,102 @@ def robust_getfile(dialogue_caption: str = "", default_dir: Union[Path, str] = P
     return True, path
 
 
+def dir_check(directory: Union[Path, str], parent=None, requirements: dict = None,
+              qmsgs: bool = False) -> (bool, Union[None, Path]):
+    """
+    Convenience function for checking whether a given path has fulfilled certain requirements
+
+    Parameters
+        • directory: The directory whose validity should be assessed
+        • parent: The parent widget to which any QMessageBoxes should be attached to
+        • requirements: A dict whose keys are any of the following:
+                - "child_file_exists" (The directory has a file with the indicated name)
+                - "child_dir_exists" (The directory has a subdirectory with the indicated name)
+                - "basename_equals" (The directory's name is the indicated name)
+                - "basename_fits_regex" (The directory's name fits some regex pattern)
+                - "child_fits_regex" (At least one child in the directory fits some regex)
+                - "contains" (The directory has an immediate glob pattern that fits some requirement)
+                - "rcontains" (The directory has a fitting glob pattern for some downstream path)
+                The values of this dict must be a list whose first element is the requirement that must be met
+                and whose second element is a list of strings to feed the QMessageBox error.
+        • qmsgs: A boolean of whether this QMessages should show up if a requirements condition is not met.
+
+    Example of requirements
+    {"child_file_exists": ["Foo.jpeg", ["Invalid Directory", "The directory did not contain the expected filepath"],
+    "rcontains": ["*.png", ["Invalid Directory", "The directory did not contain any png files"]
+    }
+
+    Returns
+        • Whether the operation was a success
+        • The directory as a Path object (if successful; None otherwise)
+
+    """
+    if isinstance(directory, str):
+        directory = Path(directory).resolve()
+
+    # At minimum, check if it is an existing directory
+    if not all([directory.is_dir(), directory.exists()]):
+        return False, None
+
+    if parent is None:
+        parent = QMessageBox()
+
+    if requirements:
+        for req_key, req_vals in requirements.items():
+            # The immediate child file must exist inside the indicated directory
+            if req_key == "child_file_exists":
+                if any([not (directory / req_vals[0]).exists(), not (directory / req_vals[0]).is_file()]):
+                    if qmsgs:
+                        QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
+                    return False, None
+            # The immediate child directory must exist inside the indicated directory
+            elif req_key == "child_dir_exists":
+                if any([not (directory / req_vals[0]).exists(), not (directory / req_vals[0]).is_dir()]):
+                    if qmsgs:
+                        QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
+                    return False, None
+            # The directory's name must exist among the indicated candidates
+            elif req_key == "basename_equals":
+                if any([directory.name not in req_vals[0]]):
+                    if qmsgs:
+                        QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
+                    return False, None
+            # The directory's name must fit some regex
+            elif req_key == "basename_fits_regex":
+                pattern = re.compile(req_vals[0])
+                if not pattern.search(directory.name):
+                    if qmsgs:
+                        QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
+                    return False, None
+            # The a child in the directory fits some regex
+            elif req_key == "child_fits_regex":
+                pattern = re.compile(req_vals[0])
+                hits = [pattern.search(str(path)) for path in directory.iterdir()]
+                if any([not any(hits)]):
+                    if qmsgs:
+                        QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
+                    return False, None
+            # The directory immediately contains some glob pattern
+            elif req_key == "contains":
+                if not peekable(directory.glob(req_vals[0])):
+                    if qmsgs:
+                        QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
+                    return False, None
+            # The directory contains some glob pattern in its tree
+            elif req_key == "rcontains":
+                if isinstance(req_vals[0], (list, tuple)):
+                    req_vals[0] = sep.join(req_vals[0])
+                if not peekable(directory.rglob(req_vals[0])):
+                    if qmsgs:
+                        QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
+                    return False, None
+            else:
+                raise ValueError(f"{dir_check.__name__} received an incorrect formatting for the requirements argument")
+
+    return True, directory
+
 def robust_getdir(parent=None, dialog_caption: str = "", default_dir: Union[str, Path] = Path.home(),
-                  requirements: dict = None, lineedit=None) -> (bool, Union[None, Path]):
+                  requirements: dict = None, qmsgs: bool = True, lineedit=None) -> (bool, Union[None, Path]):
     """
     Meta-function for returning a directory from a QFileDialogue.
 
@@ -315,6 +409,7 @@ def robust_getdir(parent=None, dialog_caption: str = "", default_dir: Union[str,
                 - "rcontains" (The directory has a fitting glob pattern for some downstream path)
                 The values of this dict must be a list whose first element is the requirement that must be met
                 and whose second element is a list of strings to feed the QMessageBox error.
+        • qmsgs: A boolean of whether this QMessages should show up if a requirements condition is not met.
         • lineedit: A QLineEdit whose text should be set to the new directory
 
     Example of requirements
@@ -333,52 +428,12 @@ def robust_getdir(parent=None, dialog_caption: str = "", default_dir: Union[str,
     directory = QFileDialog.getExistingDirectory(parent, dialog_caption, str(default_dir), QFileDialog.ShowDirsOnly)
     if directory == "":  # User cancels the operation
         return False, None
-    directory = Path(directory).resolve()
-    if requirements:
-        for req_key, req_vals in requirements.items():
-            # The immediate child file must exist inside the indicated directory
-            if req_key == "child_file_exists":
-                if any([not (directory / req_vals[0]).exists(), not (directory / req_vals[0]).is_file()]):
-                    QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
-                    return False, None
-            # The immediate child directory must exist inside the indicated directory
-            elif req_key == "child_dir_exists":
-                if any([not (directory / req_vals[0]).exists(), not (directory / req_vals[0]).is_dir()]):
-                    QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
-                    return False, None
-            # The directory's name must exist among the indicated candidates
-            elif req_key == "basename_equals":
-                if any([directory.name not in req_vals[0]]):
-                    QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
-                    return False, None
-            # The directory's name must fit some regex
-            elif req_key == "basename_fits_regex":
-                pattern = re.compile(req_vals[0])
-                if not pattern.search(directory.name):
-                    QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
-                    return False, None
-            # The a child in the directory fits some regex
-            elif req_key == "child_fits_regex":
-                pattern = re.compile(req_vals[0])
-                hits = [pattern.search(str(path)) for path in directory.iterdir()]
-                if any([not any(hits)]):
-                    QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
-                    return False, None
-            # The directory immediately contains some glob pattern
-            elif req_key == "contains":
-                if not peekable(directory.glob(req_vals[0])):
-                    QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
-                    return False, None
-            # The directory contains some glob pattern in its tree
-            elif req_key == "rcontains":
-                if isinstance(req_vals[0], (list, tuple)):
-                    req_vals[0] = sep.join(req_vals[0])
-                if not peekable(directory.rglob(req_vals[0])):
-                    QMessageBox.warning(parent, req_vals[1][0], req_vals[1][1], QMessageBox.Ok)
-                    return False, None
-            else:
-                pass
+
+    is_valid, directory = dir_check(parent=parent, directory=directory, requirements=requirements, qmsgs=qmsgs)
+    if not is_valid:
+        return False, None
 
     if lineedit is not None:
         lineedit.setText(str(directory))
+
     return True, directory

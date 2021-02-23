@@ -1,4 +1,3 @@
-import json
 from os import cpu_count, environ
 from itertools import chain
 from time import sleep
@@ -15,7 +14,7 @@ from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer
 from src.xASL_GUI_Executor_Modjobs import (xASL_GUI_RerunPrep, xASL_GUI_TSValter,
                                            xASL_GUI_ModSidecars, xASL_GUI_MergeDirs)
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le, set_formlay_options,
-                                                  robust_qmsg, robust_getdir)
+                                                  robust_qmsg, dir_check, robust_getdir)
 from pprint import pprint
 from collections import defaultdict
 import subprocess
@@ -24,23 +23,14 @@ from pathlib import Path
 from functools import partial
 from platform import system
 import signal
-from psutil import Process, NoSuchProcess, wait_procs, Popen
+import psutil
 import re
 import logging
 
 
 class ExploreASL_WorkerSignals(QObject):
-    """
-    Class for handling the signals sent by an ExploreASL worker
-    """
-    started_processing = Signal()
-    finished_processing = Signal()  # Signal sent by worker to watcher to help indicate it when to stop watching
-    stdout_processing_error = Signal(dict)  # Signal sent by a worker to update the main stdout errors dict
-    stderr_processing_error = Signal(dict)  # Signal sent by a worker to update the main stderr errors dict
-    encountered_fatal_error = Signal()  # Signal sent by worker to raise a dialogue informing the user of an error
-
-    received_pause = Signal(str)  # Signal sent by a worker to inform the textoutput that it has been paused
-    received_resume = Signal(str)  # Signal sent by a worker to inform the textoutput that it has resumed
+    signal_inform_output = Signal(str)  # Signal sent by a worker to inform the textoutput of some update
+    signal_finished_processing = Signal(bool, str)  # Signal of "errors_occurred" (bool) and study path (str)
 
 
 class ExploreASL_Worker(QRunnable):
@@ -52,9 +42,9 @@ class ExploreASL_Worker(QRunnable):
         super().__init__()
         # Main Attributes
         self.worker_parms: dict = worker_parms
-        self.easl_scenario = self.worker_parms["EXPLOREASL_TYPE"]
+        self.easl_scenario: str = self.worker_parms["EXPLOREASL_TYPE"]
         self.analysis_dir: str = self.worker_parms["D"]["ROOT"].rstrip("/\\")
-        self.par_path = str(next(Path(self.analysis_dir).glob("DataPar*.json")))
+        self.par_path: str = str(next(Path(self.analysis_dir).glob("DataPar*.json")))
         self.iworker = iworker
         self.nworkers = nworkers
         self.imodules = imodules
@@ -72,7 +62,7 @@ class ExploreASL_Worker(QRunnable):
                                            r"(?:%%%([^#%&{}\\<>*?/$!'\":@+`|=]+))?"
                                            r"(?:%%%([^#%&{}\\<>*?/$!'\":@+`|=]+))?\b")
         self.is_collecting_stdout_err = False
-        self.detected_errs = []
+        self.has_easl_errors = False
 
         # Set up the Logging-related Attributes
         try:
@@ -81,7 +71,7 @@ class ExploreASL_Worker(QRunnable):
             study_name: str = f"Unspecified Study Name"
         self.logger = logging.Logger(name=study_name, level=logging.DEBUG)
         basename = f"tmp_RunWorker_{str(self.iworker).zfill(3)}.log"
-        self.handler = logging.FileHandler(filename=Path(self.par_path).parent / basename, mode='w')
+        self.handler = logging.FileHandler(filename=Path(self.analysis_dir) / basename, mode='w')
         self.handler.setFormatter(logging.Formatter(fmt="%(asctime)s - %(name)s - %(levelname)s\n%(message)s"))
         self.handler.setLevel(logging.DEBUG)
         self.logger.addHandler(self.handler)
@@ -110,36 +100,36 @@ class ExploreASL_Worker(QRunnable):
             process_data = 1
             skip_pause = 1
 
-            # Generate the string that the command line will feed into the complied MATLAB session
+            # Generate the string that the command line will feed into the MATLAB session
             func_line = f"('{self.par_path}', {process_data}, {skip_pause}, {self.iworker}, {self.nworkers}, " \
                         f"[{' '.join([str(item) for item in self.imodules])}])"
             matlab_cmd = "matlab" if which("matlab") is not None else mpath
             if self.worker_parms["WORKER_MATLAB_VER"] >= 2019:
-                cmd_path = [f"{matlab_cmd}",
-                            "-nodesktop",
-                            "-nosplash",
-                            "-batch",
+                cmd_path = [f"{matlab_cmd}", "-nodesktop", "-nosplash", "-batch",
                             f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
             else:
-                cmd_path = [f"{matlab_cmd}",
-                            "-nosplash",
-                            "-nodisplay",
-                            "-r",
+                cmd_path = [f"{matlab_cmd}", "-nosplash", "-nodisplay", "-r",
                             f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
 
             # Prepare the Subprocess
             self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
                                f"{cmd_path}", msg_type="info")
-            self.proc = Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if system() == "Windows":
+                self.print_and_log(f"Worker {self.iworker}: Was instructed to not create any windows as well.", "info")
+                self.proc = psutil.Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         creationflags=subprocess.CREATE_NO_WINDOW
+                                         )
+            else:
+                self.proc = psutil.Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         elif self.easl_scenario == "LOCAL_COMPILED":
             process_data = 1
             skip_pause = 1
-            compiled_easl_path = self.worker_parms["MyPath"]
+            compiled_easl_path = self.worker_parms["MyCompiledPath"]
 
             # Generate the string that the command line will feed into the complied MATLAB session
-            func_line = f"{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} " \
-                        f"[{' '.join([str(item) for item in self.imodules])}])"
+            func_line = f'{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} ' \
+                        f'"[{" ".join([str(item) for item in self.imodules])}]"'
 
             # Command Line format and launch script extension differs between operating systems
             glob_pat = "*.sh" if system() in ["Linux", "Darwin"] else "*.exe"
@@ -151,64 +141,65 @@ class ExploreASL_Worker(QRunnable):
             compiled_easl_script = str(compiled_easl_script)
 
             # Off it goes
-            cmd_line = f"{compiled_easl_script} {matlab_runtime_path} {func_line}"
+            cmd_line = f"{compiled_easl_script}{matlab_runtime_path} {func_line}"
             self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
                                f"{cmd_line}", msg_type="info")
-            self.proc = Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              env=self.worker_env)
+            if system() == "Windows":
+                self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         env=self.worker_env,
+                                         creationflags=subprocess.CREATE_NO_WINDOW)
+            else:
+                self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         env=self.worker_env)
         else:
             pass
 
-        # TODO When ExploreASL given a good latch-on point, the worker can switch to listening in on errors from the
-        #  STDOUT stream of ExploreASL
-        err_container, module, subject, run, n_collected = [], None, None, None, 0
-        while True:
-            output = self.proc.stdout.readline()
+        #######################
+        # LISTEN DURING THE RUN
+        #######################
+        err_container, n_collected, module, subject, run, context = [], 0, None, None, None, ""
+        self.is_running = True
+        while self.proc.is_running():
 
-            # Break out once the process has finished or been killed
+            try:
+                if self.terminate_attempted or self.proc.status() == psutil.STATUS_ZOMBIE:
+                    break
+            except (psutil.NoSuchProcess, psutil.ZombieProcess) as check_err:
+                self.print_and_log(f"Worker {self.iworker} received the following exception while "
+                                   f"checking its status:\n{check_err}", "critical")
+                break
+
+            output = self.proc.stdout.readline().strip()  # This line is blocking in nature
+            # Break out of the process is no longer running
             if output == '' and self.proc.poll() is not None:
                 break
 
-            # If there is no relevant output but the process is still alive, try to minimize workload intensivity
-            if not output:
-                sleep(0.5)
-                continue
-
-            # Otherwise, different regexes are applied to understand what is happening
-            # If the line defines a new target
-            output = output.strip()
-            if self.regex_findtarget.search(output):
-                module, subject, run = self.regex_findtarget.search(output).groups()
+            # TODO When ExploreASL grants the ability to latch onto a new module/subject/run, get those givens to
+            #  refresh the context of the error
+            # elif self.regex_findtarget.search(output):
+            #     module, subject, run = self.regex_findtarget.search(output).groups()
+            #     context = f"Given the following context:\nModule:\t{module}\nSubject:\t{subject}\nRun:\t{run}"
 
             # If the line is the start of an error message, activate collecting mode
             elif self.regex_errstart.search(output):
                 self.is_collecting_stdout_err = True
+                self.has_easl_errors = True
 
-            # If the line is the end of an error message or too many lines have been collected, log the error and
-            # reset things
-
+            # If the line is the end of an error message, deactivate collecting mode and log the error away
             elif self.regex_errend.search(output) or n_collected > 50:
-                msg = '\n'.join(err_container)
-                if module == "Population":
-                    self.print_and_log(f"Worker {self.iworker} detected an error "
-                                       f"in the Population Module:\n{msg}")
-                elif module == "Structural":
-                    self.print_and_log(f"Worker {self.iworker} detected an error for Subject {subject} "
-                                       f"in the Structural Module:\n{msg}")
-                elif module == "ASL":
-                    self.print_and_log(f"Worker {self.iworker} detected an error for Subject {subject}, Run {run} "
-                                       f"in the ASL Module:\n{msg}")
-                else:
-                    pass
+                err_container.append("")
+                msg = "\n".join(err_container)
+                self.print_and_log(f"Worker {self.iworker} detected the following Error message from "
+                                   f"ExploreASL:{context}\n{msg}")
                 err_container.clear()
                 self.is_collecting_stdout_err = False
                 n_collected = 0
 
-            if self.is_collecting_stdout_err:
+            # Collect ExploreASL error output if collecting mode is on
+            if self.is_collecting_stdout_err and output not in {"", " ", "\n"}:
                 err_container.append(output)
                 n_collected += 1
 
-        self.is_running = True
         stdout, stderr = self.proc.communicate()
         self.print_and_log(f"Worker {self.iworker}: has received return code {self.proc.returncode}", msg_type="info")
         self.is_running = False
@@ -216,59 +207,40 @@ class ExploreASL_Worker(QRunnable):
             self.print_and_log(f"Following Attempt to Terminate, the following givens were determined:\n"
                                f"{self.proc_gone=}\n{self.proc_alive=}", msg_type="warning")
 
-        worker_analysis_dir = re.search(r'.*analysis', self.par_path).group()
-        stdout_error_dict = {}
-        stderr_error_dict = {}
-
-        ####################################################
-        # ATTEMPT TO CATCH STDOUT ERRORS FOR TROUBLESHOOTING
-        ####################################################
-        self.print_and_log(f"Worker {self.iworker}: Preparing to parse for any ExploreASL Errors", msg_type="info")
-        if self.imodules == [3]:  # Population module
-            stdout_error_regex = re.compile(r"ERROR: Job iteration terminated![\n\s]+ans ="
-                                            r"([\n\s\w'\/()|;,><=%^&*$#!@~`:.\[\]]+)"
-                                            r"CONT: but continue with next iteration")
-            captured_stdout_errors = stdout_error_regex.findall(stdout)
-            if len(captured_stdout_errors) == 1:
-                self.print_and_log(f"Worker {self.iworker}: Found STDOUT errors from ExploreASL output",
-                                   msg_type="info")
-                stdout_error_dict[worker_analysis_dir] = {"Population": captured_stdout_errors[0]}
-                self.signals.stdout_processing_error.emit(stdout_error_dict)
-            else:
-                self.print_and_log(f"Worker {self.iworker}: Did not find any STDOUT errors from ExploreASL output",
-                                   msg_type="info")
-
-        else:  # Anything other than the Population module
-            subject_regex_str = self.worker_parms["subject_regexp"].strip("^$")
-            stdout_error_regex = re.compile(
-                r"\(" + subject_regex_str + r"\)" +
-                r"(?:.*)"
-                r"ERROR: Job iteration terminated![\n\s]+ans ="
-                r"([\n\s\w'\/()|;,><=%^&*$#!@~`:.\[\]]+)"
-                r"CONT: but continue with next iteration", re.DOTALL)
-
-            captured_stdout_errors = stdout_error_regex.findall(stdout)
-            if len(captured_stdout_errors) > 0:
-                self.print_and_log(f"Worker {self.iworker}: Found STDOUT errors from ExploreASL output",
-                                   msg_type="info")
-                captured_stdout_errors = dict(captured_stdout_errors)
-                stdout_error_dict[worker_analysis_dir] = captured_stdout_errors
-                self.signals.stdout_processing_error.emit(stdout_error_dict)
-            else:
-                self.print_and_log(f"Worker {self.iworker}: Did not find any STDOUT errors from ExploreASL output",
-                                   msg_type="info")
-
         #################################
         # SEND THE APPROPRIATE END SIGNAL
         #################################
-        if self.proc.returncode == 0:
-            self.print_and_log(f"Worker {self.iworker}: Has finished and is emitting a DONE signal", "info")
-            self.signals.finished_processing.emit()
+        exitcode = self.proc.returncode
+        if all([self.terminate_attempted, not self.has_easl_errors]):
+            self.print_and_log(f"Worker {self.iworker}: Has finished based on a termination signal, but did not have "
+                               f"any ExploreASL errors on record", "info")
+            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
+        elif all([self.terminate_attempted, self.has_easl_errors]):
+            self.print_and_log(f"Worker {self.iworker}: Has finished based on a termination signal and had errors "
+                               f"recorded. Please see the log above to view the nature of the errors.", "info")
+            self.signals.signal_finished_processing.emit(False, self.analysis_dir)
+        elif all([not self.terminate_attempted, exitcode == 0, not self.has_easl_errors]):
+            self.print_and_log(f"Worker {self.iworker}: Has finished naturally and did not have any ExploreASL "
+                               f"errors on record", "info")
+            self.signals.signal_finished_processing.emit(False, self.analysis_dir)
+        elif all([not self.terminate_attempted, exitcode == 0, self.has_easl_errors]):
+            self.print_and_log(f"Worker {self.iworker}: Has finished naturally but had ExploreASL errors on record. "
+                               f"Please see the log above to view the nature of the errors", "info")
+            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
+        elif all([not self.terminate_attempted, exitcode != 0, not self.has_easl_errors]):
+            self.print_and_log(f"Worker {self.iworker}: Has finished due to a critical error, but otherwise did not "
+                               f"have any ExploreASL errors on record. The following Critical Error was captured:\n"
+                               f"{stderr}")
+            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
+        elif all([not self.terminate_attempted, exitcode != 0, self.has_easl_errors]):
+            self.print_and_log(f"Worker {self.iworker}: Has finished due to a critical error and also had other "
+                               f"ExploreASL errors on record. Please see the log above to view the nature of those "
+                               f"errors. Otherwise, here is the Critical Error that was captured:\n{stderr}")
+            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
         else:
-            self.print_and_log(f"Worker {self.iworker}: Has finished and is emitting an ERROR signal", "error")
-            stderr_error_dict[str(Path(self.par_path).parent)] = stderr
-            self.signals.stderr_processing_error.emit(stderr_error_dict)
-            self.signals.encountered_fatal_error.emit()
+            self.print_and_log(f"Worker {self.iworker}: This should never print. If it prints, please inform the "
+                               f"developers of this program of the circumstances that caused this message to occur.")
+            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
 
         ###############
         # FINAL CLEANUP
@@ -279,7 +251,7 @@ class ExploreASL_Worker(QRunnable):
 
     def print_and_log(self, msg: str, msg_type: str = "error"):
         try:
-            if msg_type in {"info", "warning", "error"}:
+            if msg_type in {"info", "warning", "error", "critical"}:
                 getattr(self.logger, msg_type)(msg)
             print(msg)
         except AttributeError as attr_err:
@@ -292,63 +264,70 @@ class ExploreASL_Worker(QRunnable):
             self.pause_resume_proc_tree(pid=self.proc.pid, pause=False, include_parent=True)
 
         self.terminate_attempted = True
-        self.print_and_log(f"Worker {self.iworker}: Received a TERMINATE signal. Stopping all child processes now",
-                           msg_type="warning")
-        if self.is_running and self.proc.poll() is None:
+        if self.is_running:
+            self.print_and_log(f"Worker {self.iworker}: Received a TERMINATE signal. Stopping all child processes now",
+                               msg_type="warning")
             self.proc_gone, self.proc_alive = self.kill_proc_tree(pid=self.proc.pid, include_parent=True)
+            self.signals.signal_inform_output.emit(f"Worker {self.iworker} of {self.nworkers} for study "
+                                                   f"{str(self.analysis_dir)} is now terminating")
 
     @Slot()
     def pause_run(self):
         self.print_and_log(f"Worker {self.iworker}: Received a Request to Pause all Work. Attempting to pause all "
                            f"child processes now", msg_type="info")
         self.pause_resume_proc_tree(pid=self.proc.pid, pause=True, include_parent=True)
-        print(f"{self.proc.is_running()=}")
         self.is_paused = True
-        self.signals.received_pause.emit(f"Worker {self.iworker} of {self.nworkers} for study {str(self.analysis_dir)} "
-                                         f"is now pausing")
+        self.signals.signal_inform_output.emit(f"Worker {self.iworker} of {self.nworkers} for study "
+                                               f"{str(self.analysis_dir)} is now pausing")
+        procs = self.proc.children()
+        procs.append(self.proc)
+        sleep(1)
+        for proc in procs:
+            print(f"Inner process {proc.name()} with status {proc.status()}")
 
     @Slot()
     def resume_run(self):
         self.print_and_log(f"Worker {self.iworker}: Received a Request to Resume all Work. Attempting to wake up all "
                            f"child processes now", msg_type="info")
         self.pause_resume_proc_tree(pid=self.proc.pid, pause=False, include_parent=True)
+        print(f"{self.proc.status()=}")
         self.is_paused = False
-        self.signals.received_resume.emit(f"Worker {self.iworker} of {self.nworkers} for study {str(self.analysis_dir)}"
-                                          f" is now resuming")
+        self.signals.signal_inform_output.emit(f"Worker {self.iworker} of {self.nworkers} for study"
+                                               f"{str(self.analysis_dir)} is now resuming")
 
     @staticmethod
     def kill_proc_tree(pid, sig=signal.SIGTERM, include_parent=True, timeout=None, on_terminate=None):
         """Kill a process tree (including grandchildren) with signal "sig" and return a (gone, still_alive) tuple.
         "on_terminate", if specified, is a callback function which is called as soon as a child terminates.
         """
-        parent = Process(pid)
+        parent = psutil.Process(pid)
         children = parent.children(recursive=True)
         if include_parent:
             children.append(parent)
         for p in children:
             try:
                 p.send_signal(sig)
-            except NoSuchProcess:
-                pass
-        gone, alive = wait_procs(children, timeout=timeout, callback=on_terminate)
+            except psutil.NoSuchProcess as no_proc_err:
+                print(f"Received a NoSuchProcessError: {no_proc_err}")
+        gone, alive = psutil.wait_procs(children, timeout=timeout, callback=on_terminate)
         return gone, alive
 
     @staticmethod
     def pause_resume_proc_tree(pid, pause: bool, include_parent=True):
         """Pause a process tree (including grandchildren)
         """
-        parent = Process(pid)
+        parent = psutil.Process(pid)
         children = parent.children(recursive=True)
         if include_parent:
             children.append(parent)
-        p: Process
-        for p in children:
+        proc: psutil.Process
+        for proc in children:
             try:
                 if pause:
-                    p.suspend()
+                    proc.suspend()
                 else:
-                    p.resume()
-            except NoSuchProcess:
+                    proc.resume()
+            except psutil.NoSuchProcess:
                 pass
 
 
@@ -805,26 +784,63 @@ class xASL_Executor(QMainWindow):
     ###################################
     # CONCURRENT AND POST-RUN FUNCTIONS
     ###################################
-    def post_run_main(self):
+    @staticmethod
+    def one_btn_blocks_other(calling_btn: QPushButton, receiver_btn: QPushButton):
+        calling_btn.setEnabled(False)
+        receiver_btn.setEnabled(True)
+
+    # This slot is responsible for updating the progressbar based on signals set from the watcher
+    @Slot(int, int)
+    def update_progressbar(self, val_to_inc_by, study_idx):
         """
-        Main wrapper function for all post-run followup
+        :param val_to_inc_by: the value of the .STATUS file that was just completed
+        :param study_idx: the index of the progressbar contained within formlay_progbars_list to be selected
         """
+        selected_progbar: QProgressBar = self.formlay_progbars_list[study_idx]
+        if self.config["DeveloperMode"]:
+            print(f"{self.update_progressbar.__name__} received a signal from watcher {study_idx} to increase "
+                  f"the progressbar value by {val_to_inc_by}")
+            print(f"The progressbar's value before update: {selected_progbar.value()} "
+                  f"out of maximum {selected_progbar.maximum()}")
+        selected_progbar.setValue(selected_progbar.value() + val_to_inc_by)
+        if self.config["DeveloperMode"]:
+            print(f"The progressbar's value after update: {selected_progbar.value()} "
+                  f"out of maximum {selected_progbar.maximum()}")
+
+    @Slot(bool, str)
+    def slot_post_run_processing(self, had_errors, study_dir):
+        self.total_process_dbt += 1
+        # TODO Sending a simple boolean is insufficient in interpreting the various scenarios where a user may terminate
+        #  versus errors born out of a crash, ExploreASL errors, etc. Will have to send strings instead and interpret
+        #  them accordingly
+        self.processing_summary_dict[study_dir].append(had_errors)
+
+        # Do not proceed until the total debt is cleared
+        if self.total_process_dbt != 0:
+            return
+
+        ###################################
+        # Otherwise post-processing happens
+
         # Re-activate all relevant widgets
         self.set_widgets_activation_states(True)
         # Stop the movie
         self.end_movie()
-        # Check if all expected operations took place
-        self.post_run_statusfile_and_error_assessment()
-        # Take care of temporary log files
-        self.post_run_handle_log_files()
-        # Check the progressbars
-        for progbar in self.formlay_progbars_list:
+
+        # Iterate over the studies and take the appropriate cleanup actions
+        studies_with_errors, studies_with_missinglocks = [], []
+        for (study_dir, list_had_errors), progbar in zip(self.processing_summary_dict.items(),
+                                                         self.formlay_progbars_list):
+
+            # TODO Perhaps re-introduce checking which .status files were actually made. The attribute
+            #  self.expected_status_files can still be used for this purpose
+            # For a given study, make sure the progressbar is full, which implies all files have been made
             if progbar.value() != progbar.maximum():
                 progbar.setPalette(self.red_palette)
+                studies_with_missinglocks.append(study_dir)
 
-    def post_run_handle_log_files(self):
-        study_dir: Path
-        for study_dir in self.expected_status_files.keys():
+            # Next, for a given study, clean up the temporary worker log files into a single log
+            study_dir = Path(study_dir).resolve()
             tmp_worker_files = sorted(study_dir.glob("tmp_RunWorker_*.log"))
             if len(tmp_worker_files) == 0:
                 continue
@@ -838,156 +854,23 @@ class xASL_Executor(QMainWindow):
             with open(study_dir / f"Run_Log_{err_write_date_str}.log", "w") as log_writer:
                 log_writer.write(to_write)
 
-    def post_run_statusfile_and_error_assessment(self):
-        """
-        1) Assesses any stdout errors that were captured during the run. That is, processes that finish successfully
-        with code 0 may have still experienced errors that stopped an iteration. These must be captured.
-        2) Assesses any stderr errors that were captured during the run. That is, processes that did not finish
-        correctly (i.e MATLAB crashed)
-        3) Assess the STATUS files that were generated against the expected files
-        4) Joins all the aforementioned together in an error file for that study
-        """
-        # stdout_errordict_list is a list whose elements are dicts whose keys are string paths to analysis directories
-        # and whose values are a list of regex-captured ExploreASL error messages
-        # stderr_errordict_list is a list whose elements are dicts whose keys are string paths to analysis directories
-        # and whose values are the string stderr message that was captured for that analysis directory
+            # Second, check if that study had any errors
+            if any(list_had_errors):
+                studies_with_errors.append(str(study_dir))
 
-        master_stdout_err_dict = defaultdict(list)
-        master_stderr_err_dict = defaultdict(list)
-        # First, assess the status of the stdout_errordicts_list
-        if len(self.stdout_errordicts_list) > 0:
-            # Must convert from a list of dicts to a dict of lists
-            for stdout_errordict in self.stdout_errordicts_list:
-                for study_path, study_errors in stdout_errordict.items():
-                    master_stdout_err_dict[study_path].append(study_errors)
-
-        # Same deal for the stderr_errordicts_list
-        if len(self.stderr_errordicts_list) > 0:
-            # Must convert from a list of dicts to a dict of lists
-            for stderr_errordict in self.stderr_errordicts_list:
-                for study_path, study_errors in stderr_errordict.items():
-                    master_stderr_err_dict[study_path].append(study_errors)
-
-        # Next, assess the status files
-        postrun_diagnosis = {}  # Dict whose keys are Path objects of analysis dirs and values are Path .status files
-        study_dir: Path
-        expected_files: List[Path]
-        for study_dir, expected_files in self.expected_status_files.items():
-            all_completed, incomplete_status_files = calculate_missing_STATUS(study_dir, expected_files)
-
-            if self.config["DeveloperMode"] and len(incomplete_status_files) > 0:
-                print(f"INCOMPLETE STATUS FILES FOR STUDY DIR: {study_dir}:")
-                pprint(incomplete_status_files)
-
-            if all_completed:
-                continue
-            else:
-                postrun_diagnosis[study_dir] = incomplete_status_files
-
-        # If at least one study had an issue, print out a warning and generate a log file in that study directory
-        if len(postrun_diagnosis) > 0:
-            study_dir: Path
-            incomplete_files: List[Path]
-            for study_dir, incomplete_files in postrun_diagnosis.items():
-                all_module_msgs: List[List[str]] = interpret_statusfile_errors(study_dir, incomplete_files,
-                                                                               self.exec_translators)
-                structmod_msgs, aslmod_msgs, popmod_msgs = all_module_msgs
-
-                specific_stdout_msg = []
-                # Extract the specific error messages
-                if str(study_dir) in list(master_stdout_err_dict.keys()):
-                    study_errs = master_stdout_err_dict[str(study_dir)]
-                    for err_dict in study_errs:
-                        for subject, err in err_dict.items():
-                            specific_stdout_msg.append(f"{subject}:\n{err.strip()}\n\n")
-
-                specific_stderr_msg = []
-                # Extract the specific stderr messages
-                if str(study_dir) in list(master_stderr_err_dict.keys()):
-                    study_errs = master_stderr_err_dict[str(study_dir)]
-                    for std_err_msg in study_errs:
-                        specific_stderr_msg.append(std_err_msg)
-
-                msg = ["The following could not be completed during the run:\n"] + \
-                      ["\n########################", "\nIn the Structural Module:\n"] + \
-                      [file + '\n' for file in structmod_msgs] + \
-                      ["\n########################", "\nIn the ASL Module:\n"] + \
-                      [file + '\n' for file in aslmod_msgs] + \
-                      ["\n########################", "\nIn the Population Module:\n"] + \
-                      [file + '\n' for file in popmod_msgs] + \
-                      ["\n########################", "\nSpecific Stdout Errors:\n"] + specific_stdout_msg + \
-                      ["\n########################", "\nSpecific Stderr Errors:\n"] + specific_stderr_msg
-
-                err_write_date_str = datetime.now().strftime("%a-%b-%d-%Y %H-%M-%S")
-                try:
-                    with open(study_dir / f"{err_write_date_str} ExploreASL run - errors.txt", 'w') as writer:
-                        writer.writelines(msg)
-                except OSError:
-                    pass
-            dirs_string = "\n".join([str(analysis_dir) for analysis_dir in postrun_diagnosis.keys()])
-            robust_qmsg(self, title=self.exec_errs["UnsuccessfulExploreASLrun"][0],
-                        body=self.exec_errs["UnsuccessfulExploreASLrun"][1], variables=[dirs_string])
+        if len(studies_with_errors) == 0 and len(studies_with_missinglocks) == 0:
+            robust_qmsg(self, "information", title="Successful ExploreASL Run",
+                        body="All expected operations took place.")
+        # This is a termination-like scenario
+        elif len(studies_with_errors) == 0 and len(studies_with_missinglocks) != 0:
+            robust_qmsg(self, "information", title="Successful ExploreASL Run",
+                        body="The following studies did not have any explicit errors detected, but did not have all "
+                             "expected operations take place. Perhaps the user terminated the processing?\n",
+                        variables="\n".join(studies_with_missinglocks))
         else:
-            robust_qmsg(self, msg_type="information", title="Successful ExploreASL",
-                        body="All expected operations took place\nMany thanks for using ExploreASL. If this has been "
-                             "helpful in your study please don't forget to cite this program in your manuscript.")
-
-    @staticmethod
-    def one_btn_blocks_other(calling_btn: QPushButton, receiver_btn: QPushButton):
-        calling_btn.setEnabled(False)
-        receiver_btn.setEnabled(True)
-
-    # Based on signal outout, this receives messages from watchers and outputs text feedback to the user
-    @Slot(str)
-    def update_text(self, msg):
-        self.textedit_textoutput.append(msg)
-
-    @Slot(dict)
-    def update_stdout_error_dicts(self, stdout_error_dict: dict):
-        self.stdout_errordicts_list.append(stdout_error_dict)
-        if self.config["DeveloperMode"]:
-            print("update_stdout_error_dicts got a signal")
-
-    @Slot(dict)
-    def update_stderr_error_dicts(self, stderr_error_dict):
-        self.stderr_errordicts_list.append(stderr_error_dict)
-        if self.config["DeveloperMode"]:
-            print("update_stderr_error_dicts got a signal")
-
-    # This slot is responsible for updating the progressbar based on signals set from the watcher
-    @Slot(int, int)
-    def update_progressbar(self, val_to_inc_by, study_idx):
-        """
-        :param val_to_inc_by: the value of the .STATUS file that was just completed
-        :param study_idx: the index of the progressbar contained within formlay_progbars_list to be selected
-        """
-        selected_progbar: QProgressBar = self.formlay_progbars_list[study_idx]
-        if self.config["DeveloperMode"]:
-            print(
-                f"update_progressbar received a signal from watcher {study_idx} to increase the progressbar value by "
-                f"{val_to_inc_by}")
-            print(f"The progressbar's value before update: {selected_progbar.value()} "
-                  f"out of maximum {selected_progbar.maximum()}")
-        selected_progbar.setValue(selected_progbar.value() + val_to_inc_by)
-        if self.config["DeveloperMode"]:
-            print(f"The progressbar's value after update: {selected_progbar.value()} "
-                  f"out of maximum {selected_progbar.maximum()}")
-
-    # This slot is responsible for re-activating the Run ExploreASL button
-    @Slot()
-    def update_process_debt_and_check_done(self):
-        """
-        Receives a signal that a process has finished, regardless of whether it was a success or crash, updates the
-        total debt accordingly, and launches the post-run function if the debt is cleared
-        """
-        self.total_process_dbt += 1
-        if self.config["DeveloperMode"]:
-            print(f"update_process_debt_and_check_done received a signal and incremented the debt. "
-                  f"The debt at this time is: {self.total_process_dbt}")
-
-        # If the debt is cleared, proceed to the post-run assessments and widget processing
-        if self.total_process_dbt == 0:
-            self.post_run_main()
+            robust_qmsg(self, "warning", title="Incomplete Study Runs",
+                        body="The following studies had errors that prevented their full completion:\n",
+                        variables="\n".join(studies_with_errors))
 
     # Convenience function; deactivates all widgets associated with running exploreASL
     def set_widgets_activation_states(self, state: bool):
@@ -1081,11 +964,9 @@ class xASL_Executor(QMainWindow):
         self.watchers = []
         self.total_process_dbt = 0
         self.expected_status_files = {}
-        self.stdout_errordicts_list = []
-        self.stderr_errordicts_list = []
 
-        # Disable widgets
-        # self.set_widgets_activation_states(False)
+        # Dict whose keys are study dirs paths (str) and values are lists of booleans of whether a worker had errors
+        self.processing_summary_dict = defaultdict(list)
 
         # Clear the textoutput each time
         self.textedit_textoutput.clear()
@@ -1095,12 +976,10 @@ class xASL_Executor(QMainWindow):
                 zip(self.formlay_cmbs_ncores_list,  # Comboboxes for number of cores
                     self.formlay_lineedits_list,  # Lineedits for analysis directory path
                     self.formlay_cmbs_runopts_list,  # Comboboxes for the modules to run
-                    self.formlay_progbars_list,  # Progressbars for the study
-                    self.formlay_stopbtns_list,  # Stop Buttons for that study
-
-                    self.formlay_pausebtns_list,
-                    self.formlay_resumebtns_list,
-
+                    self.formlay_progbars_list,  # Progressbars
+                    self.formlay_stopbtns_list,  # Stop Buttons
+                    self.formlay_pausebtns_list,  # Pause Buttons
+                    self.formlay_resumebtns_list,  # Resume Buttons
                     )):
 
             #########################################
@@ -1110,9 +989,8 @@ class xASL_Executor(QMainWindow):
             # Also create a debt counter to be fed to the watcher so that it can eventually disengage
             inner_worker_block = []
             debt = 0
-            # %%%%%%%%%%%%%%%%%%%%%%
-            # Step 1 - For the study, load in the parameters
 
+            # Step 1 - For the study, load in the parameters
             forbidden = {"", ".", "/", "\\", "~"}
             if path.text() in forbidden:
                 robust_qmsg(self, title=self.exec_errs["Forbidden Study Character"][0],
@@ -1126,7 +1004,6 @@ class xASL_Executor(QMainWindow):
             except StopIteration:
                 robust_qmsg(self, title=self.exec_errs["DataPar File Not Found"][0],
                             body=self.exec_errs["DataPar File Not Found"][1], variables=[str(ana_path)])
-                # self.set_widgets_activation_states(True)
                 return
 
             # Load in the DataPar.json file and Extract essential parameters
@@ -1145,20 +1022,17 @@ class xASL_Executor(QMainWindow):
                 robust_qmsg(self, title=self.exec_errs["BadDataParFileJson"][0],
                             body=self.exec_errs["BadDataParFileJson"][1],
                             variables=[str(ana_path), f"{json_read_error}"])
-                # self.set_widgets_activation_states(True)
                 return
             except KeyError as parms_keyerror:
                 robust_qmsg(self, title=self.exec_errs["BadDataParFileKeys"][0],
                             body=self.exec_errs["BadDataParFileKeys"][1],
                             variables=[str(ana_path), f"{parms_keyerror}"])
-                # self.set_widgets_activation_states(True)
                 return
 
             # Check that the parms file's D.ROOT matches the lineedit's resolved filepath
             if root_in_parms != str(ana_path):
                 robust_qmsg(self, title=self.exec_errs["NoStartExploreASL"][0],
                             body=self.exec_errs["NoStartExploreASL"][1], variables=[str(ana_path)])
-                # self.set_widgets_activation_states(True)
                 return
 
             # Regex check for subject hits
@@ -1171,7 +1045,6 @@ class xASL_Executor(QMainWindow):
             if not any(hits):
                 robust_qmsg(self, title=self.exec_errs["NoStartExploreASL"][0],
                             body=self.exec_errs["NoStartExploreASL"][1], variables=[str(ana_path)])
-                # self.set_widgets_activation_states(True)
                 return
 
             # Perform the appropriate checks depending on the ExploreASL Scenario (local, compiled, docker, etc.)
@@ -1179,7 +1052,6 @@ class xASL_Executor(QMainWindow):
                 # If it is a local version, then the MATLAB version and the path to the MATLAB command must be legit
                 can_proceed, int_mlab_ver = self.runcheck_matlab_ver()
                 if not can_proceed:
-                    # self.set_widgets_activation_states(True)
                     return
                 else:
                     parms["WORKER_MATLAB_VER"] = int_mlab_ver
@@ -1189,7 +1061,6 @@ class xASL_Executor(QMainWindow):
             else:
                 robust_qmsg(self, title=self.exec_errs["Unsupported ExploreASL Scenario"][0],
                             body=self.exec_errs["Unsupported ExploreASL Scenario"][1], variables=[str(ana_path)])
-                # self.set_widgets_activation_states(True)
                 return
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1203,25 +1074,53 @@ class xASL_Executor(QMainWindow):
                 if runtime_path is None:
                     robust_qmsg(self, title=self.exec_errs["Unknown MATLAB Runtime"][0],
                                 body=self.exec_errs["Unknown MATLAB Runtime"][1])
-                    # self.set_widgets_activation_states(True)
                     return
                 runtime_path = Path(runtime_path).resolve()
 
+                # Last-minute quality control for the nature of the MATLAB Runtime path
                 system_dict = {"Windows": ["PATH", ";", "win64"],
                                "Linux": ["LD_LIBRARY_PATH", ":", "glnax64"],
                                "Darwin": ["DYLD_LIBRARY_PATH", ":", "maci64"]}
                 x = system()
+                runtime_paths = peekable(runtime_path.rglob(system_dict[x][2]))
+                is_dir_valid, runtime_path = dir_check(runtime_path, self,
+                                                       {"basename_fits_regex": ["v\\d{2}", []],
+                                                        "rcontains": [system_dict[x][2], []]
+                                                        }, qmsgs=False)
+                if not is_dir_valid:
+                    robust_qmsg(self, title=self.exec_errs["Bad MATLAB Runtime"][0],
+                                body=self.exec_errs["Bad MATLAB"][1],
+                                variables=[str(ana_path)])
+                    return
+
                 try:
                     current_paths = worker_env.get(system_dict[x][0], "")
-                    if isinstance(current_paths, list, tuple):
+                    if isinstance(current_paths, (list, tuple)):
                         current_paths = "".join(current_paths)
-                    located_paths = [path for path in runtime_path.rglob(system_dict[x][2]) if
-                                     all([path.is_dir(), str(path not in current_paths)])]
+                    located_paths = [str(path) for path in runtime_paths if
+                                     all([path.is_dir(), str(path) not in current_paths])]
                     paths2add = system_dict[x][1].join(located_paths)
                     current_paths += paths2add
                     worker_env[system_dict[x][0]] = current_paths
                 except KeyError:
-                    # self.set_widgets_activation_states(True)
+                    return
+
+                # Next, check the compiled EASL Directory
+                compiled_easl = parms.get("MyCompiledPath", None)
+                if compiled_easl is None:
+                    robust_qmsg(self, title=self.exec_errs["Unknown CompiledEASL Directory"][0],
+                                body=self.exec_errs["Unknown CompiledEASL Directory"][1],
+                                variables=[str(ana_path)])
+                    return
+
+                is_dir_valid, compiled_easl = dir_check(compiled_easl, self,
+                                                        {"contains": ["*.ctf", []],
+                                                         "rcontains": ["ExploreASL_Master*", []]
+                                                         }, qmsgs=False)
+                if not is_dir_valid:
+                    robust_qmsg(self, title=self.exec_errs["Bad CompiledEASL Directory"][0],
+                                body=self.exec_errs["Bad CompiledEASL Directory"][1],
+                                variables=[str(ana_path)])
                     return
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1269,7 +1168,6 @@ class xASL_Executor(QMainWindow):
             if not workload or len(expected_status_files) == 0:
                 robust_qmsg(self, title=self.exec_errs["NoWorkloadDetected"][0],
                             body=self.exec_errs["NoWorkloadDetected"][1], variables=[str(ana_path)])
-                # self.set_widgets_activation_states(True)
                 return
 
             # progressbar.reset_colnames()
@@ -1303,7 +1201,7 @@ class xASL_Executor(QMainWindow):
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 6 - Set up watcher connections
             # Connect the watcher to signal to the text output
-            watcher.signals.update_text_output_signal.connect(self.update_text)
+            watcher.signals.update_text_output_signal.connect(self.textedit_textoutput.append)
             # Connect the watcher to signal to the progressbar
             watcher.signals.update_progbar_signal.connect(self.update_progressbar)
 
@@ -1314,26 +1212,14 @@ class xASL_Executor(QMainWindow):
             # Step 7 - Set up worker connections
             # Worker connections setup within a study
             for idx, worker in enumerate(inner_worker_block):
-                # Connect the finished signal to the watcher debt to help it understand when it should stop watching
-                worker.signals.finished_processing.connect(watcher.increment_debt)
-                worker.signals.encountered_fatal_error.connect(watcher.increment_debt)
-                # Connect the finished signal to the run btn reactivator so that the run button may be reactivated
-                # via debt repayment counter
-                worker.signals.finished_processing.connect(self.update_process_debt_and_check_done)
-                worker.signals.encountered_fatal_error.connect(self.update_process_debt_and_check_done)
-                # Connect the error encountered signal to the slot that updates the executor's track record of the
-                # accounted for errors
-                worker.signals.stdout_processing_error.connect(self.update_stdout_error_dicts)
-                worker.signals.stderr_processing_error.connect(self.update_stderr_error_dicts)
-                # Connect the stop button for that study to its terminator function
-                stop_btn.clicked.connect(worker.terminate_run)
-
-                # Pause and Resume Signals
+                # Revamped worker signals
+                worker.signals.signal_finished_processing.connect(watcher.slot_increment_debt)
+                worker.signals.signal_finished_processing.connect(self.slot_post_run_processing)
+                worker.signals.signal_inform_output.connect(self.textedit_textoutput.append)
+                # Resume, Pause, and Stop Button Signals
                 pause_btn.clicked.connect(worker.pause_run)
-                worker.signals.received_pause.connect(self.textedit_textoutput.append)
-
                 resume_btn.clicked.connect(worker.resume_run)
-                worker.signals.received_resume.connect(self.textedit_textoutput.append)
+                stop_btn.clicked.connect(worker.terminate_run)
 
                 self.textedit_textoutput.append(
                     f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study:\n{ana_path}")
@@ -1406,14 +1292,15 @@ class ExploreASL_Watcher(QRunnable):
         self.observer.schedule(event_handler=self.event_handler,
                                path=str(self.dir_to_watch),
                                recursive=True)
+        path_key = "MyPath" if self.datapar_dict["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
 
-        if all([is_earlier_version(easl_dir=self.datapar_dict["MyPath"], threshold_higher=120, higher_eq=False),
+        if all([is_earlier_version(easl_dir=self.datapar_dict[path_key], threshold_higher=120, higher_eq=False),
                 len(list(self.dir_to_watch.parent.glob("*/*FLAIR*"))) == 0
                 ]):
             self.struct_status_file_translator = translators["Structural_Module_Filename2Description_PRE120_NOFLAIR"]
         else:
             self.struct_status_file_translator: dict = translators["Structural_Module_Filename2Description"]
-        if is_earlier_version(easl_dir=self.datapar_dict["MyPath"], threshold_higher=140, higher_eq=False):
+        if is_earlier_version(easl_dir=self.datapar_dict[path_key], threshold_higher=140, higher_eq=False):
             self.asl_status_file_translator: dict = translators["ASL_Module_Filename2Description_PRE140"]
         else:
             self.asl_status_file_translator: dict = translators["ASL_Module_Filename2Description"]
@@ -1462,10 +1349,8 @@ class ExploreASL_Watcher(QRunnable):
     # Processes the information sent from the event hander and emits signals to update widgets in the main Executor
     @Slot(str)
     def process_message(self, created_path):
-        if self.config["DeveloperMode"]:
-            print(f"Watcher process_message received message: {created_path}")
-
         if created_path in self.msgs_seen:
+            print(f"{created_path} was already seen")
             return
         else:
             self.msgs_seen.add(created_path)
@@ -1478,7 +1363,7 @@ class ExploreASL_Watcher(QRunnable):
         workload_val = None
         files_to_skip = []
 
-        if created_path.is_dir():  # Lock dir
+        if created_path.name == "locked":  # Lock dir
             n_statfile = len(list(created_path.parent.glob("*.status")))
             if detected_module.group(1) == "Structural" and n_statfile < len(self.struct_status_file_translator.keys()):
                 msg = f"Structural Module has started for subject: {detected_subject.group()}"
@@ -1509,7 +1394,7 @@ class ExploreASL_Watcher(QRunnable):
             workload_val = self.workload_translator[created_path.name]
 
         else:
-            print(f"Neither a file nor a directory was detected: {str(created_path)=}")
+            pass
 
         # Emit the message to inform the user of the most recent progress
         if msg:
@@ -1528,9 +1413,8 @@ class ExploreASL_Watcher(QRunnable):
         if workload_val:
             self.signals.update_progbar_signal.emit(workload_val, self.study_idx)
 
-    # Must use slots system, as it is thread-safe
-    @Slot()
-    def increment_debt(self):
+    @Slot(bool, str)
+    def slot_increment_debt(self):
         self.watch_debt += 1
 
     def run(self):

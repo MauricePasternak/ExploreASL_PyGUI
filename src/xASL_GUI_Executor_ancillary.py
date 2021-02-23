@@ -4,6 +4,7 @@ from platform import system
 from typing import List, Tuple, Union
 import json
 
+
 def is_earlier_version(easl_dir: Union[Path, str], threshold_higher: int = 140, higher_eq: bool = True,
                        threshold_lower: int = 0, lower_eq: bool = True):
     """
@@ -73,6 +74,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
 
     def get_structural_workload(analysis_directory: Path, parms: dict, incl_regex: re.Pattern,
                                 workload_translator: dict):
+        path_key = "MyPath" if parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
         structuralmod_dict = {}
         status_files = []
         workload = {"010_LinearReg_T1w2MNI.status", "020_LinearReg_FLAIR2T1w.status",
@@ -93,7 +95,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
 
             # Account for version 1.2.1 and earlier
             has_flair = len(list(subject_path.glob(glob_dictionary["FLAIR"]))) > 0
-            if is_earlier_version(parms["MyPath"], threshold_higher=130) and not has_flair:
+            if is_earlier_version(parms[path_key], threshold_higher=130) and not has_flair:
                 workload = {"010_LinearReg_T1w2MNI.status", "060_Segment_T1w.status",
                             "080_Resample2StandardSpace.status", "090_GetVolumetrics.status",
                             "100_VisualQC_Structural.status", "999_ready.status"}
@@ -112,11 +114,12 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
 
     def get_asl_workload(analysis_directory, parms: dict, workload_translator: dict, incl_regex: re.Pattern,
                          conditions: List[Tuple[str, bool]] = None):
+        path_key = "MyPath" if parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
         aslmod_dict = {}
         status_files = []
         glob_dictionary = {"ASL": "*ASL*.nii*", "FLAIR": "*FLAIR.nii*", "M0": "*M0.nii*"}
         # OLD EXPECTATION
-        if is_earlier_version(parms["MyPath"], threshold_higher=140, higher_eq=False):
+        if is_earlier_version(parms[path_key], threshold_higher=140, higher_eq=False):
             workload = {"020_RealignASL.status", "030_RegisterASL.status", "040_ResampleASL.status",
                         "050_PreparePV.status", "060_ProcessM0.status", "070_Quantification.status",
                         "080_CreateAnalysisMask.status", "090_VisualQC_ASL.status", "999_ready.status"}
@@ -263,8 +266,8 @@ def interpret_statusfile_errors(study_dir: Path, incomplete_files: List[Path], t
     """
 
     with open(next(study_dir.glob("DataPar*.json")), "r") as parms_reader:
-        parms = parms_reader.read(parms_reader)
-        easl_dir = Path(parms["MyPath"])
+        parms = json.load(parms_reader)
+        path_key = "MyPath" if parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
 
     # Prepare containers and translators
     struct_dict = {}  # dict whose keys are subject names and whose values are Path objects to .status files
@@ -274,7 +277,7 @@ def interpret_statusfile_errors(study_dir: Path, incomplete_files: List[Path], t
     struct_msgs = []  # list whose elements are string messages pertaining to the Structural module
     pop_msgs = []  # list whose elements are string messages pertaining to the Population
     stuct_status_file_translator = translators["Structural_Module_Filename2Description"]
-    if is_earlier_version(easl_dir=easl_dir, threshold_higher=140, higher_eq=False):
+    if is_earlier_version(easl_dir=Path(parms[path_key]), threshold_higher=140, higher_eq=False):
         asl_status_file_translator = translators["ASL_Module_Filename2Description"]
     else:
         asl_status_file_translator = translators["ASL_Module_Filename2Description_PRE140"]

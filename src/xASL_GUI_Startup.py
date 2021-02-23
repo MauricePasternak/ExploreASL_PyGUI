@@ -114,6 +114,8 @@ def startup():
                          "ScreenSize": (screen_size.width(), screen_size.height()),  # Screen dimensions
                          "DeveloperMode": True}  # Whether to launch the app in developer mode or not
 
+        # TODO Okay, this is no longer sufficient in light of compatibility with the compiled version. Consider a custom
+        #  QMessageBox, perhaps?
         # We must also check for the MATLAB version present on the machine
         desc = "Is a standard MATLAB program installed on this machine?"
         check_for_local = QMessageBox.question(QWidget(), "MATLAB Detection", desc,
@@ -140,9 +142,13 @@ def startup():
                                         f"Detected the matlab path to be: {cmd_path}\n"
                                         f"Detected the matlab version to be: {version}", QMessageBox.Ok)
         else:
-            QMessageBox.information(QWidget(), "No off-local support at the current time",
-                                    "The current version of ExploreASL_GUI does not offer support for compiled or "
-                                    "virtual MATLAB runtimes.", QMessageBox.Ok)
+            body_txt = "See which applies to you:\n1) If you intend to use MATLAB at a later point in time, you " \
+                       "will have the option to specify its location in the Main Window of this program." \
+                       "\n\n2) If you do not intend use a MATLAB Installation, you will need to download the MATLAB " \
+                       "Runtime as well as the compiled version of ExploreASL, then specify the filepaths to these" \
+                       "when defining Study Parameters. At the current time, the compiled version only supports the " \
+                       "2019a Runtime."
+            QMessageBox.information(QWidget(), "Instructions for non-MATLAB cases", body_txt, QMessageBox.Ok)
 
         # Assuming the above was successful, dcm2niix may not have executable permission; add execute permissions
         dcm2niix_dir = project_dir / "External" / "DCM2NIIX" / f"DCM2NIIX_{system()}"
