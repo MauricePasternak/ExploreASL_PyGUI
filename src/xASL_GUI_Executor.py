@@ -30,7 +30,7 @@ import logging
 
 class ExploreASL_WorkerSignals(QObject):
     signal_inform_output = Signal(str)  # Signal sent by a worker to inform the textoutput of some update
-    signal_finished_processing = Signal(bool, str)  # Signal of "errors_occurred" (bool) and study path (str)
+    signal_finished_processing = Signal(tuple, str)  # Signal of "exit description" (tuple of bool) and study path (str)
 
 
 class ExploreASL_Worker(QRunnable):
@@ -117,8 +117,7 @@ class ExploreASL_Worker(QRunnable):
             if system() == "Windows":
                 self.print_and_log(f"Worker {self.iworker}: Was instructed to not create any windows as well.", "info")
                 self.proc = psutil.Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                         creationflags=subprocess.CREATE_NO_WINDOW
-                                         )
+                                         creationflags=subprocess.CREATE_NO_WINDOW)
             else:
                 self.proc = psutil.Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -126,33 +125,34 @@ class ExploreASL_Worker(QRunnable):
             process_data = 1
             skip_pause = 1
             compiled_easl_path = self.worker_parms["MyCompiledPath"]
-
-            # Generate the string that the command line will feed into the complied MATLAB session
-            func_line = f'{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} ' \
-                        f'"[{" ".join([str(item) for item in self.imodules])}]"'
-
-            # Command Line format and launch script extension differs between operating systems
-            glob_pat = "*.sh" if system() in ["Linux", "Darwin"] else "*.exe"
-            matlab_runtime_path = f" {self.worker_parms['MCRPath']}" if system() in ["Linux", "Darwin"] else ""
+            glob_pat = "*.exe" if system() == "Windows" else "*.sh"
 
             # Ensure the easl launch script actually has executable permissions
             compiled_easl_script = next(Path(compiled_easl_path).glob(glob_pat))
             compiled_easl_script.chmod(0o775)
             compiled_easl_script = str(compiled_easl_script)
+            # On Linux and Mac, the xASL_latest script also needs to be granted permission
+            if system() != "Windows":
+                ancillary_script = Path(compiled_easl_path).resolve() / "xASL_latest"
+                ancillary_script.chmod(0o775)
 
-            # Off it goes
-            cmd_line = f"{compiled_easl_script}{matlab_runtime_path} {func_line}"
-            self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
-                               f"{cmd_line}", msg_type="info")
+            # Generate the string that the command line will feed into the complied MATLAB session
             if system() == "Windows":
+                func_line = f'{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} ' \
+                            f'"[{" ".join([str(item) for item in self.imodules])}]"'
+                cmd_line = [compiled_easl_script, func_line]
+                self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
+                                   f"{' '.join(cmd_line)}", msg_type="info")
                 self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                         env=self.worker_env,
-                                         creationflags=subprocess.CREATE_NO_WINDOW)
+                                         env=self.worker_env, creationflags=subprocess.CREATE_NO_WINDOW)
             else:
+                linux_bs = f"'{self.imodules}'"
+                func_line = f'"{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} {linux_bs}"'
+                cmd_line = [compiled_easl_script, self.worker_parms["MCRPath"], func_line]
+                self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
+                                   f"{' '.join(cmd_line)}", msg_type="info")
                 self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                          env=self.worker_env)
-        else:
-            pass
 
         #######################
         # LISTEN DURING THE RUN
@@ -200,7 +200,9 @@ class ExploreASL_Worker(QRunnable):
                 err_container.append(output)
                 n_collected += 1
 
-        stdout, stderr = self.proc.communicate()
+            print(output)
+
+        _, stderr = self.proc.communicate()
         self.print_and_log(f"Worker {self.iworker}: has received return code {self.proc.returncode}", msg_type="info")
         self.is_running = False
         if self.terminate_attempted:
@@ -211,36 +213,16 @@ class ExploreASL_Worker(QRunnable):
         # SEND THE APPROPRIATE END SIGNAL
         #################################
         exitcode = self.proc.returncode
-        if all([self.terminate_attempted, not self.has_easl_errors]):
-            self.print_and_log(f"Worker {self.iworker}: Has finished based on a termination signal, but did not have "
-                               f"any ExploreASL errors on record", "info")
-            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
-        elif all([self.terminate_attempted, self.has_easl_errors]):
-            self.print_and_log(f"Worker {self.iworker}: Has finished based on a termination signal and had errors "
-                               f"recorded. Please see the log above to view the nature of the errors.", "info")
-            self.signals.signal_finished_processing.emit(False, self.analysis_dir)
-        elif all([not self.terminate_attempted, exitcode == 0, not self.has_easl_errors]):
-            self.print_and_log(f"Worker {self.iworker}: Has finished naturally and did not have any ExploreASL "
-                               f"errors on record", "info")
-            self.signals.signal_finished_processing.emit(False, self.analysis_dir)
-        elif all([not self.terminate_attempted, exitcode == 0, self.has_easl_errors]):
-            self.print_and_log(f"Worker {self.iworker}: Has finished naturally but had ExploreASL errors on record. "
-                               f"Please see the log above to view the nature of the errors", "info")
-            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
-        elif all([not self.terminate_attempted, exitcode != 0, not self.has_easl_errors]):
-            self.print_and_log(f"Worker {self.iworker}: Has finished due to a critical error, but otherwise did not "
-                               f"have any ExploreASL errors on record. The following Critical Error was captured:\n"
-                               f"{stderr}")
-            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
-        elif all([not self.terminate_attempted, exitcode != 0, self.has_easl_errors]):
-            self.print_and_log(f"Worker {self.iworker}: Has finished due to a critical error and also had other "
-                               f"ExploreASL errors on record. Please see the log above to view the nature of those "
-                               f"errors. Otherwise, here is the Critical Error that was captured:\n{stderr}")
-            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
-        else:
-            self.print_and_log(f"Worker {self.iworker}: This should never print. If it prints, please inform the "
-                               f"developers of this program of the circumstances that caused this message to occur.")
-            self.signals.signal_finished_processing.emit(True, self.analysis_dir)
+        has_crashed = all([not self.terminate_attempted, exitcode != 0])
+        log_msg = f"Worker {self.iworker}: Has finished with the following exit signature:\n" \
+                  f"\t- Was terminated by user? {self.terminate_attempted}\n" \
+                  f"\t- Had ExploreASL errors? {self.has_easl_errors}\n" \
+                  f"\t- Experienced a crash-like error? {has_crashed}"
+        self.print_and_log(log_msg, "info")
+        if has_crashed:
+            self.print_and_log(f"Worker {self.iworker}: Has recovered the following crash report:\n{stderr}")
+        self.signals.signal_finished_processing.emit((self.terminate_attempted, self.has_easl_errors, has_crashed),
+                                                     self.analysis_dir)
 
         ###############
         # FINAL CLEANUP
@@ -807,13 +789,13 @@ class xASL_Executor(QMainWindow):
             print(f"The progressbar's value after update: {selected_progbar.value()} "
                   f"out of maximum {selected_progbar.maximum()}")
 
-    @Slot(bool, str)
-    def slot_post_run_processing(self, had_errors, study_dir):
+    @Slot(tuple, str)
+    def slot_post_run_processing(self, exit_signature: Tuple[bool], study_dir: str):
+        """
+        exit_signature is a tuple of booleans in the form: has_been_terminated, has_easl_errs, has_crashed
+        """
         self.total_process_dbt += 1
-        # TODO Sending a simple boolean is insufficient in interpreting the various scenarios where a user may terminate
-        #  versus errors born out of a crash, ExploreASL errors, etc. Will have to send strings instead and interpret
-        #  them accordingly
-        self.processing_summary_dict[study_dir].append(had_errors)
+        self.processing_summary_dict[study_dir].append(exit_signature)
 
         # Do not proceed until the total debt is cleared
         if self.total_process_dbt != 0:
@@ -828,8 +810,9 @@ class xASL_Executor(QMainWindow):
         self.end_movie()
 
         # Iterate over the studies and take the appropriate cleanup actions
-        studies_with_errors, studies_with_missinglocks = [], []
-        for (study_dir, list_had_errors), progbar in zip(self.processing_summary_dict.items(),
+        s_terminated, s_easl_errs, s_crashed, s_missinglocks = [], [], [], []
+        exit_signatures: List[Tuple[bool]]
+        for (study_dir, exit_signatures), progbar in zip(self.processing_summary_dict.items(),
                                                          self.formlay_progbars_list):
 
             # TODO Perhaps re-introduce checking which .status files were actually made. The attribute
@@ -837,7 +820,7 @@ class xASL_Executor(QMainWindow):
             # For a given study, make sure the progressbar is full, which implies all files have been made
             if progbar.value() != progbar.maximum():
                 progbar.setPalette(self.red_palette)
-                studies_with_missinglocks.append(study_dir)
+                s_missinglocks.append(study_dir)
 
             # Next, for a given study, clean up the temporary worker log files into a single log
             study_dir = Path(study_dir).resolve()
@@ -854,23 +837,41 @@ class xASL_Executor(QMainWindow):
             with open(study_dir / f"Run_Log_{err_write_date_str}.log", "w") as log_writer:
                 log_writer.write(to_write)
 
-            # Second, check if that study had any errors
-            if any(list_had_errors):
-                studies_with_errors.append(str(study_dir))
+            # Finally, parse the exit signatures
+            b_userterm, b_has_easlerrs, b_has_crashed = tuple(zip(*exit_signatures))
+            if any(b_userterm):
+                s_terminated.append(str(study_dir))
+            if any(b_has_easlerrs):
+                s_easl_errs.append(str(study_dir))
+            if any(b_has_crashed):
+                s_crashed.append(str(study_dir))
 
-        if len(studies_with_errors) == 0 and len(studies_with_missinglocks) == 0:
+        # Finally, make the correct judgement based on the lists above
+        b_no_errs = [len(a_list) == 0 for a_list in [s_terminated, s_easl_errs, s_crashed, s_missinglocks]]
+        # If everything went according to plan
+        if all(b_no_errs):
             robust_qmsg(self, "information", title="Successful ExploreASL Run",
                         body="All expected operations took place.")
-        # This is a termination-like scenario
-        elif len(studies_with_errors) == 0 and len(studies_with_missinglocks) != 0:
-            robust_qmsg(self, "information", title="Successful ExploreASL Run",
-                        body="The following studies did not have any explicit errors detected, but did not have all "
-                             "expected operations take place. Perhaps the user terminated the processing?\n",
-                        variables="\n".join(studies_with_missinglocks))
-        else:
-            robust_qmsg(self, "warning", title="Incomplete Study Runs",
-                        body="The following studies had errors that prevented their full completion:\n",
-                        variables="\n".join(studies_with_errors))
+            return
+        # Otherwise, make the correct report
+        report_str = 'ExploreASL_GUI Error Run Report:'
+        final_msg = ["\n" + "%" * 50 + "\n" +
+                     " " * ((150 - len(report_str))//2) + report_str + " " * ((150 - len(report_str))//2) + "\n" +
+                     "%" * 50]
+        descs = ["were terminated by the user",
+                 "had one or more errors detected within ExploreASL (please check the RunLog for that study)",
+                 "featured a crash",
+                 "did not complete all anticipated steps"
+                 ]
+        for s_witherr, desc in zip([s_terminated, s_easl_errs, s_crashed, s_missinglocks], descs):
+            if len(s_witherr) == 0:
+                continue
+            studies = "\n⬤ ".join(s_witherr)
+            final_msg.append(f"The following studies {desc}:\n⬤ {studies}")
+
+        self.textedit_textoutput.append("\n\n".join(final_msg))
+        robust_qmsg(self, "warning", title="One or more errors detected during run",
+                    body="Please take a look at the text output for a summary of the errors detected")
 
     # Convenience function; deactivates all widgets associated with running exploreASL
     def set_widgets_activation_states(self, state: bool):
@@ -1079,7 +1080,7 @@ class xASL_Executor(QMainWindow):
 
                 # Last-minute quality control for the nature of the MATLAB Runtime path
                 system_dict = {"Windows": ["PATH", ";", "win64"],
-                               "Linux": ["LD_LIBRARY_PATH", ":", "glnax64"],
+                               "Linux": ["LD_LIBRARY_PATH", ":", "glnxa64"],
                                "Darwin": ["DYLD_LIBRARY_PATH", ":", "maci64"]}
                 x = system()
                 runtime_paths = peekable(runtime_path.rglob(system_dict[x][2]))
@@ -1089,7 +1090,7 @@ class xASL_Executor(QMainWindow):
                                                         }, qmsgs=False)
                 if not is_dir_valid:
                     robust_qmsg(self, title=self.exec_errs["Bad MATLAB Runtime"][0],
-                                body=self.exec_errs["Bad MATLAB"][1],
+                                body=self.exec_errs["Bad MATLAB Runtime"][1],
                                 variables=[str(ana_path)])
                     return
 
@@ -1112,11 +1113,15 @@ class xASL_Executor(QMainWindow):
                                 body=self.exec_errs["Unknown CompiledEASL Directory"][1],
                                 variables=[str(ana_path)])
                     return
-
-                is_dir_valid, compiled_easl = dir_check(compiled_easl, self,
-                                                        {"contains": ["*.ctf", []],
-                                                         "rcontains": ["ExploreASL_Master*", []]
-                                                         }, qmsgs=False)
+                if system() == "Windows":
+                    is_dir_valid, compiled_easl = dir_check(compiled_easl, self,
+                                                            {"contains": ["*.ctf", []]
+                                                             }, qmsgs=False)
+                else:
+                    is_dir_valid, compiled_easl = dir_check(compiled_easl, self,
+                                                            {"contains": ["*.ctf", []],
+                                                             "child_file_exists": ["xASL_latest", []]
+                                                             }, qmsgs=False)
                 if not is_dir_valid:
                     robust_qmsg(self, title=self.exec_errs["Bad CompiledEASL Directory"][0],
                                 body=self.exec_errs["Bad CompiledEASL Directory"][1],
@@ -1147,7 +1152,6 @@ class xASL_Executor(QMainWindow):
             # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
             # maxvalue from that
             # This now ALSO makes the lock dirs that do not exist
-            # TODO Check how this calculating anticipated workload works with the new compiled system
             workload, expected_status_files = calculate_anticipated_workload(parmsdict=parms,
                                                                              run_options=run_opts.currentText(),
                                                                              translators=self.exec_translators)
@@ -1413,7 +1417,7 @@ class ExploreASL_Watcher(QRunnable):
         if workload_val:
             self.signals.update_progbar_signal.emit(workload_val, self.study_idx)
 
-    @Slot(bool, str)
+    @Slot(tuple, str)
     def slot_increment_debt(self):
         self.watch_debt += 1
 

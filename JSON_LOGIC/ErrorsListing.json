@@ -235,14 +235,14 @@
     "Invalid MATALB Runtime Path Specified",
     [
       "The MATLAB Runtime path specified in the DataPar.json for this study:\n",
-      "Is not a valid directory. It must end with the version number v##. An example of a valid path would be:\nC:\\Program Files\\MATLAB\\MATLAB Runtime\\v96"
+      "\nIs not a valid directory. It must end with the version number v##. An example of a valid path would be:\nC:\\Program Files\\MATLAB\\MATLAB Runtime\\v96"
     ]
   ],
   "Bad CompiledEASL Directory": [
     "Invalid ExploreASL Compiled Directory Specified",
     [
       "The Compiled ExploreASL path specified in the DataPar.json for this study:\n",
-      "Is not a valid directory. It must contain the xASL_latest.ctf file. An example of a valid path would be:\nC:\\Users\\JohnSmith\\Documents\\MATLAB\\xASL_latest"
+      "\nIs not a valid directory. It must contain the xASL_latest.ctf file. An example of a valid path would be:\nC:\\Users\\JohnSmith\\Documents\\MATLAB\\xASL_latest"
     ]
   ],
   "NoWorkloadDetected": [
