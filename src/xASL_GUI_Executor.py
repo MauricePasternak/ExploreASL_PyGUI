@@ -140,9 +140,9 @@ class ExploreASL_Worker(QRunnable):
             if system() == "Windows":
                 func_line = f'{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} ' \
                             f'"[{" ".join([str(item) for item in self.imodules])}]"'
-                cmd_line = [compiled_easl_script, func_line]
+                cmd_line = f"{compiled_easl_script} {func_line}"
                 self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
-                                   f"{' '.join(cmd_line)}", msg_type="info")
+                                   f"{cmd_line}", msg_type="info")
                 self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                          env=self.worker_env, creationflags=subprocess.CREATE_NO_WINDOW)
             else:
@@ -164,9 +164,7 @@ class ExploreASL_Worker(QRunnable):
             try:
                 if self.terminate_attempted or self.proc.status() == psutil.STATUS_ZOMBIE:
                     break
-            except (psutil.NoSuchProcess, psutil.ZombieProcess) as check_err:
-                self.print_and_log(f"Worker {self.iworker} received the following exception while "
-                                   f"checking its status:\n{check_err}", "critical")
+            except psutil.NoSuchProcess:
                 break
 
             output = self.proc.stdout.readline().strip()  # This line is blocking in nature
@@ -1186,7 +1184,7 @@ class xASL_Executor(QMainWindow):
             self.expected_status_files[ana_path] = expected_status_files
             if self.config["DeveloperMode"]:
                 print(f"EXPECTED STATUS FILES TO BE GENERATED FOR STUDY: {str(ana_path)}")
-                pprint(expected_status_files)
+                pprint(sorted(expected_status_files))
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 5 - Create a Watcher for that study
