@@ -197,7 +197,6 @@ class ExploreASL_Worker(QRunnable):
             if self.is_collecting_stdout_err and output not in {"", " ", "\n"}:
                 err_container.append(output)
                 n_collected += 1
-
             print(output)
 
         _, stderr = self.proc.communicate()
@@ -483,7 +482,7 @@ class xASL_Executor(QMainWindow):
                 inner_le = DandD_FileExplorer2LineEdit(acceptable_path_type="Directory")
                 inner_le.setToolTip(self.exec_tips["inner_le"])
                 inner_le.setClearButtonEnabled(True)
-                inner_le.setPlaceholderText("Select the analysis directory to your study")
+                inner_le.setPlaceholderText("Specify your study's directory here")
                 inner_le.textChanged.connect(self.is_ready_to_run)
                 inner_btn_browsedirs = RowAwareQPushButton(self.formlay_nrows, "...")
                 inner_btn_browsedirs.row_idx_signal.connect(self.set_analysis_directory)
@@ -533,11 +532,11 @@ class xASL_Executor(QMainWindow):
                                    inner_btn_pause, inner_btn_resume
                                    ]:
                         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                inner_formlay.addRow("Assigned Number of Cores", inner_cmb_ncores)
+                inner_formlay.addRow("Alloted Cores", inner_cmb_ncores)
                 inner_hbox = QHBoxLayout()
                 inner_hbox.addWidget(inner_le)
                 inner_hbox.addWidget(inner_btn_browsedirs)
-                inner_formlay.addRow("Path to Analysis Folder", inner_hbox)
+                inner_formlay.addRow("Study Folder", inner_hbox)
                 inner_formlay.addRow("Which Modules to Run", inner_cmb_procopts)
                 inner_formlay.addRow("Control Processing", inner_hbox_ctrls)
 
@@ -603,7 +602,7 @@ class xASL_Executor(QMainWindow):
          self.le_modjob,
          self.btn_modjob) = make_droppable_clearable_le(btn_connect_to=self.set_modjob_analysis_dir,
                                                         acceptable_path_type="Directory")
-        self.le_modjob.setPlaceholderText("Drag & Drop analysis directory here")
+        self.le_modjob.setPlaceholderText("Drag & Drop study directory here")
         self.le_modjob.setToolTip(self.exec_tips["inner_le"])
         self.btn_runmodjob = QPushButton("Modify for Re-run", self.grp_procmod, clicked=self.run_modjob)
 
@@ -616,7 +615,7 @@ class xASL_Executor(QMainWindow):
 
         # Add the widgets to the form layout
         self.formlay_promod.addRow("Which modification job to run", self.cmb_modjob)
-        self.formlay_promod.addRow("Path to analysis dir to modify", self.hlay_modjob)
+        self.formlay_promod.addRow("Path to study directory to modify", self.hlay_modjob)
         self.vlay_procmod.addLayout(self.formlay_promod)
         self.vlay_procmod.addWidget(self.btn_runmodjob)
 

@@ -92,7 +92,7 @@ class xASL_Plotting(QMainWindow):
         self.hlay_analysis_dir, self.le_analysis_dir, self.btn_analysis_dir = make_droppable_clearable_le(
             btn_connect_to=self.set_analysis_dir,
             acceptable_path_type="Directory")
-        self.le_analysis_dir.setPlaceholderText("Drag & Drop an analysis directory here")
+        self.le_analysis_dir.setPlaceholderText("Specify your study's directory here")
         self.le_analysis_dir.setToolTip(self.plot_tips["le_analysis_dir"])
         self.hlay_metadata, self.le_metadata, self.btn_metadata = make_droppable_clearable_le(
             btn_connect_to=self.set_metadata_file,

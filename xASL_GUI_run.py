@@ -2,6 +2,8 @@ from src.xASL_GUI_Startup import startup
 import platform
 import os
 
+# TODO Discuss with the group about the GUI deprecating compatibility with ExploreASL versions <1.5.0
+
 if __name__ == '__main__':
     if platform.system() == "Darwin":
         release, _, machine_info = platform.mac_ver()

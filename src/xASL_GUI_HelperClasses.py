@@ -1,9 +1,66 @@
 from PySide2.QtWidgets import (QLineEdit, QAbstractItemView, QListWidget, QPushButton, QHBoxLayout, QComboBox,
-                               QDoubleSpinBox)
+                               QDoubleSpinBox, QFormLayout)
 from PySide2.QtCore import Qt, Signal, QModelIndex, QSize
 from PySide2.QtGui import QFont, QIcon
 import os
 from pathlib import Path
+from collections import deque
+
+
+# Credit to ekhumoro @ stackoverflow for initial clarification of how to set this up
+# https://stackoverflow.com/questions/66232460/pyside2-how-to-re-implement-qformlayout-takerow
+class xASL_FormLayout(QFormLayout):
+    def __init__(self, has_cache: bool = True, maxlen: int = None, *args, **kwargs):
+        super(xASL_FormLayout, self).__init__(*args, **kwargs)
+        self.has_cache = has_cache
+        if self.has_cache:
+            self.cache = deque(maxlen=maxlen) if maxlen is not None else deque()
+
+    def takeRow(self, row: int):
+        label_item = self.itemAt(row, QFormLayout.LabelRole)
+        field_item = self.itemAt(row, QFormLayout.FieldRole)
+        label = None
+        # IMPORTANT: Get refs before removal
+        if label_item is not None:
+            label = label_item.widget()
+        try:
+            field = field_item.layout()
+            is_layout = True
+        except AttributeError:
+            field = field_item.widget()
+            is_layout = False
+        # Remove widgets
+        if label_item is not None:
+            self.removeItem(label_item)
+        self.removeItem(field_item)
+        self.removeRow(row)
+        # Set their parents to None to make them disappear
+        if label_item is not None:
+            label.setParent(None)
+        if is_layout:
+            index = field.count()
+            while index > 0:
+                child = field.itemAt(index - 1).widget()
+                child.setParent(None)
+                index -= 1
+
+        field.setParent(None)
+
+        # Save to the cache from the ability to be restored
+        if self.has_cache:
+            self.cache.append((label, field))
+        return label, field
+
+    def restoreRow(self, insert_idx: int, fifo: bool = True):
+        if not self.has_cache:
+            return
+        if (-1 * self.rowCount()) < insert_idx < 0:
+            insert_idx = self.rowCount() + 1 + insert_idx
+        to_insert = self.cache.pop() if fifo else self.cache.popleft()
+        if to_insert[0] is not None:
+            self.insertRow(insert_idx, to_insert[0], to_insert[1])
+        else:
+            self.insertRow(insert_idx, to_insert[1])
 
 
 class DandD_Graphing_ListWidget2LineEdit(QLineEdit):

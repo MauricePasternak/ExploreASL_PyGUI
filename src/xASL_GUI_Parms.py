@@ -1,7 +1,7 @@
 from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import QSize
-from src.xASL_GUI_HelperClasses import DandD_FileExplorer2ListWidget
+from src.xASL_GUI_HelperClasses import DandD_FileExplorer2ListWidget, xASL_FormLayout
 from src.xASL_GUI_Executor_ancillary import is_earlier_version
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (make_scrollbar_area, make_droppable_clearable_le, set_formlay_options,
                                                   robust_getdir, robust_getfile, robust_qmsg)
@@ -70,16 +70,13 @@ class xASL_Parms(QMainWindow):
         for widget_name, tiptext in self.parms_tips.items():
             getattr(self, widget_name).setToolTip(tiptext)
 
-        # After all UI is set up, make certain connections
-        self.resize(self.minimumSizeHint())
-
         # Additional MacOS actions
         if system() == "Darwin":
             self.btn_load_parms.setMinimumHeight(60)
             self.btn_make_parms.setMinimumHeight(60)
 
     def UI_Setup_Basic(self):
-        self.formlay_basic = QFormLayout(self.cont_basic)
+        self.formlay_basic = xASL_FormLayout(parent=self.cont_basic)
         self.current_easl_type = "Local ExploreASL Directory"
         self.cmb_easl_type = self.make_cmb_and_items(["Local ExploreASL Directory", "Local ExploreASL Compiled"])
         self.cmb_easl_type.currentTextChanged.connect(self.switch_easldir_opts)
@@ -129,20 +126,17 @@ class xASL_Parms(QMainWindow):
         self.cmb_quality = self.make_cmb_and_items(["Low", "High"])
         self.cmb_quality.setCurrentIndex(1)
 
-        for desc, widget in zip(["ExploreASL Type", "ExploreASL Directory", "Name of Study", "Analysis Directory",
-                                 "Dataset is in BIDS format?", self.chk_showregex_field,
-                                 "Subjects to Assess\n(Drag && Drop Directories)", "",
-                                 "Subjects to Exclude\n(Drag && Drop Directories)", "",
-                                 "Vendor", "Sequence Type",
-                                 "Labelling Type", "M0 was acquired?", "Single M0 Value",
-                                 "M0 Position in ASL", "Quality"],
-                                [self.cmb_easl_type, self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
-                                 self.chk_overwrite_for_bids, self.le_subregex,
-                                 self.lst_included_subjects, self.btn_included_subjects,
-                                 self.lst_excluded_subjects, self.btn_excluded_subjects,
-                                 self.cmb_vendor, self.cmb_sequencetype, self.cmb_labelingtype,
-                                 self.cmb_m0_isseparate, self.spinbox_m0_isseparate,
-                                 self.cmb_m0_posinasl, self.cmb_quality]):
+        descs = ["ExploreASL Type", "ExploreASL Directory", "Name of Study", "Study Directory",
+                 "Dataset is in BIDS format?", self.chk_showregex_field,
+                 "Subjects to Assess\n(Drag && Drop Directories)", "",
+                 "Subjects to Exclude\n(Drag && Drop Directories)", "", "Vendor", "Sequence Type", "Labelling Type",
+                 "M0 was acquired?", "Single M0 Value", "M0 Position in ASL", "Quality"]
+        widgets = [self.cmb_easl_type, self.hlay_easl_dir, self.le_studyname, self.hlay_study_dir,
+                   self.chk_overwrite_for_bids, self.le_subregex, self.lst_included_subjects,
+                   self.btn_included_subjects, self.lst_excluded_subjects, self.btn_excluded_subjects, self.cmb_vendor,
+                   self.cmb_sequencetype, self.cmb_labelingtype, self.cmb_m0_isseparate, self.spinbox_m0_isseparate,
+                   self.cmb_m0_posinasl, self.cmb_quality]
+        for desc, widget in zip(descs, widgets):
             self.formlay_basic.addRow(desc, widget)
             if system() == "Darwin":
                 try:
@@ -181,12 +175,11 @@ class xASL_Parms(QMainWindow):
         self.spinbox_slice_readout = QDoubleSpinBox(maximum=1000, minimum=0, value=37)
         self.hlay_slice_readout.addWidget(self.cmb_slice_readout)
         self.hlay_slice_readout.addWidget(self.spinbox_slice_readout)
-        for description, widget in zip(["Number of Suppression Pulses", "Suppression Timings", "Readout Dimension",
-                                        "Initial Post-Labeling Delay (ms)", "Labeling Duration (ms)",
-                                        "Slice Readout Time (ms)"],
-                                       [self.cmb_nsup_pulses, self.le_sup_pulse_vec, self.cmb_readout_dim,
-                                        self.spinbox_initialpld,
-                                        self.spinbox_labdur, self.hlay_slice_readout]):
+        descs = ["Number of Suppression Pulses", "Suppression Timings", "Readout Dimension",
+                 "Initial Post-Labeling Delay (ms)", "Labeling Duration (ms)", "Slice Readout Time (ms)"]
+        widgets = [self.cmb_nsup_pulses, self.le_sup_pulse_vec, self.cmb_readout_dim, self.spinbox_initialpld,
+                   self.spinbox_labdur, self.hlay_slice_readout]
+        for description, widget in zip(descs, widgets):
             self.formlay_seqparms.addRow(description, widget)
             if system() == "Darwin":
                 try:
@@ -208,13 +201,12 @@ class xASL_Parms(QMainWindow):
         self.chk_quant_quantifym0 = QCheckBox(checked=True)
         self.chk_quant_divbym0 = QCheckBox(checked=True)
         self.chk_save_cbf4d = QCheckBox(checked=False)
-        for description, widget in zip(["Lambda", "Arterial T2*", "Blood T1", "Tissue T1", "Number of Compartments",
-                                        "Apply Scaling to ASL", "Apply Scaling to M0", "Convert PWI to Label",
-                                        "Quantify M0", "Divide by M0", "Save CBF as Timeseries"],
-                                       [self.spinbox_lambda, self.spinbox_artt2, self.spinbox_bloodt1,
-                                        self.spinbox_tissuet1, self.cmb_ncomparts, self.chk_quant_applyss_asl,
-                                        self.chk_quant_applyss_m0, self.chk_quant_pwi2label, self.chk_quant_quantifym0,
-                                        self.chk_quant_divbym0, self.chk_save_cbf4d]):
+        descs = ["Lambda", "Arterial T2*", "Blood T1", "Tissue T1", "Number of Compartments", "Apply Scaling to ASL",
+                 "Apply Scaling to M0", "Convert PWI to Label", "Quantify M0", "Divide by M0", "Save CBF as Timeseries"]
+        widgets = [self.spinbox_lambda, self.spinbox_artt2, self.spinbox_bloodt1, self.spinbox_tissuet1,
+                   self.cmb_ncomparts, self.chk_quant_applyss_asl, self.chk_quant_applyss_m0, self.chk_quant_pwi2label,
+                   self.chk_quant_quantifym0, self.chk_quant_divbym0, self.chk_save_cbf4d]
+        for description, widget in zip(descs, widgets):
             self.formlay_quantparms.addRow(description, widget)
             if system() == "Darwin":
                 try:
@@ -284,12 +276,11 @@ class xASL_Parms(QMainWindow):
         self.chk_skipnoflair = QCheckBox(checked=False)
         self.chk_skipnoasl = QCheckBox(checked=True)
         self.chk_skipnom0 = QCheckBox(checked=False)
-        for desc, widget in zip(["Remove Spikes", "Spike Removal Threshold", "Correct for Motion",
-                                 "Delete Temporary Files", "Skip Subjects without FLAIR",
-                                 "Skip Subjects without ASL", "Skip subjects without M0"],
-                                [self.chk_removespikes, self.spinbox_spikethres, self.chk_motioncorrect,
-                                 self.chk_deltempfiles, self.chk_skipnoflair, self.chk_skipnoasl,
-                                 self.chk_skipnom0]):
+        descs = ["Remove Spikes", "Spike Removal Threshold", "Correct for Motion", "Delete Temporary Files",
+                 "Skip Subjects without FLAIR", "Skip Subjects without ASL", "Skip subjects without M0"]
+        widgets = [self.chk_removespikes, self.spinbox_spikethres, self.chk_motioncorrect, self.chk_deltempfiles,
+                   self.chk_skipnoflair, self.chk_skipnoasl, self.chk_skipnom0]
+        for desc, widget in zip(descs, widgets):
             self.formlay_genpparms.addRow(desc, widget)
             if system() == "Darwin":
                 try:
@@ -305,11 +296,11 @@ class xASL_Parms(QMainWindow):
         self.chk_run_dartel = QCheckBox(checked=False)
         self.chk_hammersroi = QCheckBox(checked=False)
         self.chk_fixcat12res = QCheckBox(checked=False)
-
-        for desc, widget in zip(["Segmentation Method", "Run DARTEL Module", "Longitudinal Registration", "Hammers ROI",
-                                 "Fix CAT12 Resolution"],
-                                [self.cmb_segmethod, self.chk_run_dartel, self.chk_runlongreg, self.chk_hammersroi,
-                                 self.chk_fixcat12res]):
+        descs = ["Segmentation Method", "Run DARTEL Module", "Longitudinal Registration", "Hammers ROI",
+                 "Fix CAT12 Resolution"]
+        widgets = [self.cmb_segmethod, self.chk_run_dartel, self.chk_runlongreg, self.chk_hammersroi,
+                   self.chk_fixcat12res]
+        for desc, widget in zip(descs, widgets):
             self.formlay_strpparms.addRow(desc, widget)
             if system() == "Darwin":
                 try:
@@ -335,13 +326,11 @@ class xASL_Parms(QMainWindow):
         self.spinbox_pvckernel_3 = QSpinBox(minimum=1, maximum=20, value=1)
         for spinbox in [self.spinbox_pvckernel_1, self.spinbox_pvckernel_2, self.spinbox_pvckernel_3]:
             self.hlay_pvckernel.addWidget(spinbox)
-        for desc, widget in zip(["Image Contrast used for",
-                                 "Use Affine Registration", "Use DCT Registration", "Register M0 to ASL",
-                                 "Use MNI as Dummy Template", "Perform Native PVC", "Gaussian Kernel for PVC",
-                                 "PVC Kernel Dimensions"],
-                                [self.cmb_imgcontrast,
-                                 self.cmb_affineregbase, self.cmb_dctreg, self.chk_regm0toasl, self.chk_usemniasdummy,
-                                 self.chk_nativepvc, self.chk_gaussianpvc, self.hlay_pvckernel]):
+        descs = ["Image Contrast used for", "Use Affine Registration", "Use DCT Registration", "Register M0 to ASL",
+                 "Use MNI as Dummy Template", "Perform Native PVC", "Gaussian Kernel for PVC", "PVC Kernel Dimensions"]
+        widgets = [self.cmb_imgcontrast, self.cmb_affineregbase, self.cmb_dctreg, self.chk_regm0toasl,
+                   self.chk_usemniasdummy, self.chk_nativepvc, self.chk_gaussianpvc, self.hlay_pvckernel]
+        for desc, widget in zip(descs, widgets):
             self.formlay_aslpparms.addRow(desc, widget)
             if system() == "Darwin":
                 try:
@@ -356,9 +345,9 @@ class xASL_Parms(QMainWindow):
         self.chk_subjectvasmask = QCheckBox(checked=True)
         self.chk_subjecttismask = QCheckBox(checked=True)
         self.chk_wholebrainmask = QCheckBox(checked=True)
-        for desc, widget in zip(["Susceptibility Mask", "Vascular Mask", "Tissue Mask", "Wholebrain Mask"],
-                                [self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask,
-                                 self.chk_wholebrainmask]):
+        descs = ["Susceptibility Mask", "Vascular Mask", "Tissue Mask", "Wholebrain Mask"]
+        widgets = [self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask, self.chk_wholebrainmask]
+        for desc, widget in zip(descs, widgets):
             self.formlay_maskparms.addRow(desc, widget)
             if system() == "Darwin":
                 try:
@@ -490,33 +479,47 @@ class xASL_Parms(QMainWindow):
         # Avoid false errors
         if self.current_easl_type == option:
             return
-        # Otherwise, switch layout as needed
+
         if self.current_easl_type == "Local ExploreASL Directory" and option == "Local ExploreASL Compiled":
             row, _ = self.formlay_basic.getLayoutPosition(self.hlay_easl_dir)
-            self.formlay_basic.removeRow(row)
-            self.hlay_easl_mcr, self.le_easl_mcr, self.btn_easl_mcr = make_droppable_clearable_le(
-                btn_connect_to=self.set_exploreasl_mcr, default="")
-            self.hlay_mrc_dir, self.le_mrc_dir, self.btn_mrc_dir = make_droppable_clearable_le(
-                btn_connect_to=self.set_mcr_dir, default="")
+            _, self.hlay_easl_dir = self.formlay_basic.takeRow(row)
             self.formlay_basic.insertRow(row, "ExploreASL Runtime Directory", self.hlay_easl_mcr)
             self.formlay_basic.insertRow(row, "MATLAB Runtime Directory", self.hlay_mrc_dir)
             self.current_easl_type = "Local ExploreASL Compiled"
-
-            # Tooltips
-            self.le_easl_mcr.setToolTip(self.parms_tips["le_easl_mcr"])
-            self.le_mrc_dir.setToolTip(self.parms_tips["le_mrc_dir"])
-
         elif self.current_easl_type == "Local ExploreASL Compiled" and option == "Local ExploreASL Directory":
             row, _ = self.formlay_basic.getLayoutPosition(self.hlay_mrc_dir)
-            self.formlay_basic.removeRow(row)
-            self.formlay_basic.removeRow(row)
-            self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
-                btn_connect_to=self.set_exploreasl_dir, default='')
+            _, self.hlay_mrc_dir = self.formlay_basic.takeRow(row)
+            _, self.hlay_easl_mcr = self.formlay_basic.takeRow(row)
             self.formlay_basic.insertRow(row, "ExploreASL Directory", self.hlay_easl_dir)
             self.current_easl_type = "Local ExploreASL Directory"
 
-            # Tooltips
-            self.le_easl_dir.setToolTip(self.parms_tips["le_easl_dir"])
+        # # Otherwise, switch layout as needed
+        # if self.current_easl_type == "Local ExploreASL Directory" and option == "Local ExploreASL Compiled":
+        #     row, _ = self.formlay_basic.getLayoutPosition(self.hlay_easl_dir)
+        #     self.formlay_basic.removeRow(row)
+        #     self.hlay_easl_mcr, self.le_easl_mcr, self.btn_easl_mcr = make_droppable_clearable_le(
+        #         btn_connect_to=self.set_exploreasl_mcr, default="")
+        #     self.hlay_mrc_dir, self.le_mrc_dir, self.btn_mrc_dir = make_droppable_clearable_le(
+        #         btn_connect_to=self.set_mcr_dir, default="")
+        #     self.formlay_basic.insertRow(row, "ExploreASL Runtime Directory", self.hlay_easl_mcr)
+        #     self.formlay_basic.insertRow(row, "MATLAB Runtime Directory", self.hlay_mrc_dir)
+        #     self.current_easl_type = "Local ExploreASL Compiled"
+        #
+        #     # Tooltips
+        #     self.le_easl_mcr.setToolTip(self.parms_tips["le_easl_mcr"])
+        #     self.le_mrc_dir.setToolTip(self.parms_tips["le_mrc_dir"])
+        #
+        # elif self.current_easl_type == "Local ExploreASL Compiled" and option == "Local ExploreASL Directory":
+        #     row, _ = self.formlay_basic.getLayoutPosition(self.hlay_mrc_dir)
+        #     self.formlay_basic.removeRow(row)
+        #     self.formlay_basic.removeRow(row)
+        #     self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
+        #         btn_connect_to=self.set_exploreasl_dir, default='')
+        #     self.formlay_basic.insertRow(row, "ExploreASL Directory", self.hlay_easl_dir)
+        #     self.current_easl_type = "Local ExploreASL Directory"
+        #
+        #     # Tooltips
+        #     self.le_easl_dir.setToolTip(self.parms_tips["le_easl_dir"])
 
     # Controls the behavior of the M0 comboboxes
     def m0_pos_in_asl_ctrlfunc(self):

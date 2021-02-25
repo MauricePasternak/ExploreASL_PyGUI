@@ -1,4 +1,5 @@
 from src.xASL_GUI_MainWin import xASL_MainWin
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import robust_qmsg
 from PySide2.QtWidgets import QApplication, QMessageBox, QWidget
 from PySide2.QtGui import QIcon
 from platform import system
@@ -13,7 +14,7 @@ import subprocess
 import re
 
 
-def get_local_matlab() -> (bool, Union[str, None]):
+def get_local_matlab() -> (Union[str, None], Union[str, None]):
     matlab_cmd_path = which("matlab")
     matlab_ver_regex = re.compile(r"R\d{4}[ab]")
     # Get version #
@@ -35,7 +36,8 @@ def get_local_matlab() -> (bool, Union[str, None]):
         if system() == "Linux" and '/usr/' in matlab_cmd_path:
             print(f"User clearly has the matlab command in {matlab_cmd_path}, but the version number could not be "
                   f"ascertained. Attempting to locate around '/usr/local/")
-            for search_pattern in ["/usr/local/matlab**/bin", "/usr/local/**/MATLAB/*/bin"]:
+            for search_pattern in ["/usr/local/matlab**/bin", "/usr/local/**/MATLAB/*/bin",
+                                   "/home/.local/matlab**/bin", "/home/.local/**/MATLAB/*/bin"]:
                 try:
                     local_result = next(iglob(search_pattern, recursive=True))
                     local_match = matlab_ver_regex.search(local_result[0])
@@ -50,7 +52,7 @@ def get_local_matlab() -> (bool, Union[str, None]):
             print("Version was not readily visible in PATH. Attempting backup subprocess method to extract version")
             result = subprocess.run(["matlab", "-nosplash", "-nodesktop", "-batch", "matlabroot"],
                                     capture_output=True, text=True)
-            match = matlab_ver_regex.search(result.stdout)
+            match = matlab_ver_regex.search(str(result.stdout))
             if result.returncode == 0 and match:
                 matlab_ver = match.group()
             return matlab_ver, matlab_cmd_path
@@ -128,19 +130,18 @@ def startup():
             master_config["MATLAB_VER"] = version
             master_config["MATLAB_CMD_PATH"] = cmd_path
             if cmd_path is None:
-                QMessageBox.warning(QWidget(), "No MATLAB Command Found",
-                                    "The matlab command could not be found on this local system. ASL analysis "
-                                    "cannot be locally performed without the GUI knowing from where MATLAB can be "
-                                    "launched.", QMessageBox.Ok)
+                robust_qmsg(None, "warning", "No MATLAB Command Found",
+                            "The matlab command could not be located on this system. Please use the main window's "
+                            "menu to manually specify where it is located if you wish to use a non-compiled ExploreASL")
             elif cmd_path is not None and version is None:
-                QMessageBox.warning(QWidget(), "No MATLAB Version Found",
-                                    f"The matlab command was found at:\n{str(cmd_path)}.\nHowever, the version could "
-                                    f"not be determined. The GUI requires knowledge of the MATLAB version being run "
-                                    f"in order to process data", QMessageBox.Ok)
+                # This should never print. Once matlab is located properly, the matlabroot command will display R####
+                robust_qmsg(None, "warning", "No MATLAB Version Found",
+                            ["The matlab command was found at:\n", "\nHowever, the version could not be determined."],
+                            [cmd_path])
             else:
-                QMessageBox.information(QWidget(), "Local MATLAB Located & Version discerned",
-                                        f"Detected the matlab path to be: {cmd_path}\n"
-                                        f"Detected the matlab version to be: {version}", QMessageBox.Ok)
+                robust_qmsg(None, "information", "Local MATLAB Location & Version discerned",
+                            ["Detected the matlab path to be:\n", "\nDetected the matlab version to be: "],
+                            [cmd_path, version])
         else:
             body_txt = "See which applies to you:\n1) If you intend to use MATLAB at a later point in time, you " \
                        "will have the option to specify its location in the Main Window of this program." \
@@ -148,7 +149,7 @@ def startup():
                        "Runtime as well as the compiled version of ExploreASL, then specify the filepaths to these" \
                        "when defining Study Parameters. At the current time, the compiled version only supports the " \
                        "2019a Runtime."
-            QMessageBox.information(QWidget(), "Instructions for non-MATLAB cases", body_txt, QMessageBox.Ok)
+            robust_qmsg(None, "information", "Instructions for non-MATLAB cases", body_txt)
 
         # Assuming the above was successful, dcm2niix may not have executable permission; add execute permissions
         dcm2niix_dir = project_dir / "External" / "DCM2NIIX" / f"DCM2NIIX_{system()}"
