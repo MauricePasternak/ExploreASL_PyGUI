@@ -90,11 +90,11 @@
   ],
   "InvalidCompiledExploreASLDir": [
     "Invalid Compiled ExploreASL Directory",
-    "The path you specified is not a valid Compiled ExploreASL Directory"
+    "The path you specified is not a valid Compiled ExploreASL Directory. The indicated directory must be the compiled directory containing the xASL_latest.ctf file."
   ],
   "InvalidMCRDir": [
     "Invalid MATLAB Runtime Directory Selected",
-    "The path you specified is not a valid MATLAB Runtime directory"
+    "The path you specified is not a valid MATLAB Runtime directory. The indicated directory must be of the name v##\nAn example of a valid directory would be:\nC:\\Program Files\\MATLAB\\MATLAB Runtime\\v96"
   ],
   "InvalidStudyDirectory": [
     "Invalid Study Directory Selected",

@@ -4,7 +4,7 @@ from PySide2.QtCore import QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2ListWidget, xASL_FormLayout
 from src.xASL_GUI_Executor_ancillary import is_earlier_version
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (make_scrollbar_area, make_droppable_clearable_le, set_formlay_options,
-                                                  robust_getdir, robust_getfile, robust_qmsg)
+                                                  dir_check, robust_getdir, robust_getfile, robust_qmsg)
 import json
 import re
 from pathlib import Path
@@ -14,6 +14,7 @@ from functools import partial
 from shutil import which
 from typing import List, Union
 from platform import system
+from nilearn import image
 
 
 class xASL_Parms(QMainWindow):
@@ -61,11 +62,15 @@ class xASL_Parms(QMainWindow):
         # Misc Players
         self.import_error_logger = []
         self.asl_json_sidecar_data = {}
+        self.nslices = None
         self.can_update_slicereadouttime = False
 
+        # Main UI Setup
+        self.prep_nonwidget_dicts()
         self.UI_Setup_Basic()
         self.UI_Setup_Advanced()
         self.UI_Setup_ProcessingSettings()
+        self.prep_widget_dicts()
         # With all widgets set, give them tooltips
         for widget_name, tiptext in self.parms_tips.items():
             getattr(self, widget_name).setToolTip(tiptext)
@@ -74,6 +79,21 @@ class xASL_Parms(QMainWindow):
         if system() == "Darwin":
             self.btn_load_parms.setMinimumHeight(60)
             self.btn_make_parms.setMinimumHeight(60)
+
+    @staticmethod
+    def rev_dict(d: dict):
+        return {v: k for k, v in d.items()}
+
+    def prep_nonwidget_dicts(self):
+        self.d_m0_posinasl = {"M0 exists as a separate scan": None, "M0 is the first ASL control-label pair": "[1 2]",
+                              "M0 is the first ASL scan volume": 1, "M0 is the second ASL scan volume": 2}
+        self.d_sequencetype = {"3D GRaSE": "3D_GRASE", "3D Spiral": "3D_spiral", "2D EPI": "2D_EPI"}
+        self.d_labelingtype = {"Pulsed ASL": "PASL", "Pseudo-continuous ASL": "PCASL", "Continuous ASL": "CASL"}
+
+    def prep_widget_dicts(self):
+        self.d_atlases = {"TotalGM": self.chk_atlas_GM, "DeepWM": self.chk_atlas_WM, "Hammers": self.chk_atlas_hammers,
+                          "HOcort_CONN": self.chk_atlas_HOcort, "HOsub_CONN": self.chk_atlas_HOsub,
+                          "Mindboggle_OASIS_DKT31_CMA": self.chk_atlas_oasis}
 
     def UI_Setup_Basic(self):
         self.formlay_basic = xASL_FormLayout(parent=self.cont_basic)
@@ -93,7 +113,7 @@ class xASL_Parms(QMainWindow):
         self.le_studyname = QLineEdit(text="My Study")
         self.chk_overwrite_for_bids = QCheckBox(checked=False)
         self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = make_droppable_clearable_le(
-            btn_connect_to=self.set_study_dir, default='')
+            le_connect_to=self.read_first_asl_json, btn_connect_to=self.set_study_dir, default='')
         self.le_study_dir.setPlaceholderText("Indicate the analysis directory filepath here")
 
         self.le_subregex = QLineEdit(text='\\d+')
@@ -109,9 +129,9 @@ class xASL_Parms(QMainWindow):
         self.lst_excluded_subjects.setMinimumHeight(self.config["ScreenSize"][1] // 10)
         self.btn_excluded_subjects = QPushButton("Clear Excluded", clicked=self.lst_excluded_subjects.clear)
         self.cmb_vendor = self.make_cmb_and_items(["Siemens", "Philips", "GE", "GE_WIP"])
-        self.cmb_sequencetype = self.make_cmb_and_items(["3D GRaSE", "2D EPI", "3D Spiral"])
+        self.cmb_sequencetype = self.make_cmb_and_items(self.d_sequencetype.keys())
         self.cmb_sequencetype.currentTextChanged.connect(self.update_readout_dim)
-        self.cmb_labelingtype = self.make_cmb_and_items(["Pulsed ASL", "Pseudo-continuous ASL", "Continuous ASL"])
+        self.cmb_labelingtype = self.make_cmb_and_items(self.d_labelingtype.keys())
         self.cmb_labelingtype.currentTextChanged.connect(self.autocalc_slicereadouttime)
         self.lab_spin_m0_isseparate = QLabel(text="M0 Single Value")
         self.spinbox_m0_isseparate = QDoubleSpinBox(minimum=1, maximum=1E12, value=1E6)
@@ -120,9 +140,7 @@ class xASL_Parms(QMainWindow):
                                                           "Use a single value as the M0"])
         self.cmb_m0_isseparate.currentTextChanged.connect(self.enable_m0value_field)
         self.cmb_m0_isseparate.currentTextChanged.connect(self.m0_pos_in_asl_ctrlfunc)
-        self.cmb_m0_posinasl = self.make_cmb_and_items(
-            ["M0 exists as a separate scan", "M0 is the first ASL control-label pair",
-             "M0 is the first ASL scan volume", "M0 is the second ASL scan volume"])
+        self.cmb_m0_posinasl = self.make_cmb_and_items(list(self.d_m0_posinasl.keys()))
         self.cmb_quality = self.make_cmb_and_items(["Low", "High"])
         self.cmb_quality.setCurrentIndex(1)
 
@@ -166,19 +184,21 @@ class xASL_Parms(QMainWindow):
         self.cmb_nsup_pulses = self.make_cmb_and_items(["0", "2", "4", "5"], 1)
         self.le_sup_pulse_vec = QLineEdit(placeholderText="Vector of timings, in seconds, of suppression pulses")
         self.cmb_readout_dim = self.make_cmb_and_items(["3D", "2D"])
-        self.spinbox_initialpld = QDoubleSpinBox(maximum=2500, minimum=0, value=1800)
+        self.spinbox_initialpld = QDoubleSpinBox(maximum=10000, minimum=0, value=1800)
         self.spinbox_initialpld.valueChanged.connect(self.autocalc_slicereadouttime)
-        self.spinbox_labdur = QDoubleSpinBox(maximum=2000, minimum=0, value=800)
+        self.spinbox_labdur = QDoubleSpinBox(maximum=10000, minimum=0, value=800)
         self.spinbox_labdur.valueChanged.connect(self.autocalc_slicereadouttime)
         self.hlay_slice_readout = QHBoxLayout()
         self.cmb_slice_readout = self.make_cmb_and_items(["Use Indicated Value", "Use Shortest TR"])
         self.spinbox_slice_readout = QDoubleSpinBox(maximum=1000, minimum=0, value=37)
         self.hlay_slice_readout.addWidget(self.cmb_slice_readout)
         self.hlay_slice_readout.addWidget(self.spinbox_slice_readout)
+        self.le_skipdummyasl = QLineEdit(placeholderText="ASL slices to crop out, as a vector integers")
         descs = ["Number of Suppression Pulses", "Suppression Timings", "Readout Dimension",
-                 "Initial Post-Labeling Delay (ms)", "Labeling Duration (ms)", "Slice Readout Time (ms)"]
+                 "Initial Post-Labeling Delay (ms)", "Labeling Duration (ms)", "Slice Readout Time (ms)",
+                 "ASL Slice Removal"]
         widgets = [self.cmb_nsup_pulses, self.le_sup_pulse_vec, self.cmb_readout_dim, self.spinbox_initialpld,
-                   self.spinbox_labdur, self.hlay_slice_readout]
+                   self.spinbox_labdur, self.hlay_slice_readout, self.le_skipdummyasl]
         for description, widget in zip(descs, widgets):
             self.formlay_seqparms.addRow(description, widget)
             if system() == "Darwin":
@@ -345,8 +365,21 @@ class xASL_Parms(QMainWindow):
         self.chk_subjectvasmask = QCheckBox(checked=True)
         self.chk_subjecttismask = QCheckBox(checked=True)
         self.chk_wholebrainmask = QCheckBox(checked=True)
-        descs = ["Susceptibility Mask", "Vascular Mask", "Tissue Mask", "Wholebrain Mask"]
-        widgets = [self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask, self.chk_wholebrainmask]
+        self.vlay_atlases = QVBoxLayout()
+        self.chk_atlas_GM = QCheckBox(text="Grey Matter", checked=True)
+        self.chk_atlas_WM = QCheckBox(text="White Matter", checked=True)
+        self.chk_atlas_hammers = QCheckBox(text="Hammers", checked=False)
+        self.chk_atlas_HOcort = QCheckBox(text="Harvard Cortical", checked=False)
+        self.chk_atlas_HOsub = QCheckBox(text="Harvard Subcortical", checked=False)
+        self.chk_atlas_oasis = QCheckBox(text="OASIS DKT31", checked=False)
+        for chk in [self.chk_atlas_GM, self.chk_atlas_WM, self.chk_atlas_hammers, self.chk_atlas_HOcort,
+                    self.chk_atlas_HOsub, self.chk_atlas_oasis]:
+            self.vlay_atlases.addWidget(chk)
+
+        descs = ["Susceptibility Mask", "Vascular Mask", "Tissue Mask", "Wholebrain Mask",
+                 "\nAtlases to use\nin the\nPopulation\nModule"]
+        widgets = [self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask, self.chk_wholebrainmask,
+                   self.vlay_atlases]
         for desc, widget in zip(descs, widgets):
             self.formlay_maskparms.addRow(desc, widget)
             if system() == "Darwin":
@@ -375,18 +408,59 @@ class xASL_Parms(QMainWindow):
         else:
             self.cmb_readout_dim.setCurrentIndex(0)
 
-    def autocalc_slicereadouttime(self):
-        if not self.can_update_slicereadouttime or self.cmb_labelingtype.currentText() in ["Pseudo-continuous ASL",
-                                                                                           "Continuous ASL"]:
+    def read_first_asl_json(self):
+        try:
+            if self.le_study_dir.text() in {"", " ", ".", "/", "~"}:
+                return
+
+            glob_pat = "*_asl.json" if self.chk_overwrite_for_bids.isChecked() else "ASL4D*.json"
+            study_dir = Path(self.le_study_dir.text()).resolve()
+            if not study_dir.is_dir() or not study_dir.exists():
+                self.can_update_slicereadouttime = False
+                return
+            asl_file = next(study_dir.rglob(glob_pat))
+            with open(asl_file) as json_reader:
+                self.asl_json_sidecar_data: dict = json.load(json_reader)
+                if self.asl_json_sidecar_data.get("NumberOfSlices", None) is None:
+                    to_load = asl_file.with_suffix(".nii")
+                    if not to_load.exists():
+                        to_load = asl_file.with_suffix(".nii.gz")
+                        if not to_load.exists():
+                            self.can_update_slicereadouttime = False
+                            return
+                    img = image.load_img(str(to_load))
+                    if img.ndim == 4:
+                        self.can_update_slicereadouttime = True
+                        self.nslices = img.shape[-2]
+                    elif img.ndim == 3:
+                        self.can_update_slicereadouttime = True
+                        self.nslices = img.shape[-1]
+                    else:
+                        self.can_update_slicereadouttime = False
+                        self.nslices = None
+                else:
+                    self.can_update_slicereadouttime = True
+                    self.nslices = self.asl_json_sidecar_data["NumberOfSlices"]
+
+        except (StopIteration, json.JSONDecodeError):
+            self.can_update_slicereadouttime = False
             return
 
-        tr = self.asl_json_sidecar_data["RepetitionTime"] * 1000
+    def autocalc_slicereadouttime(self):
+        if any([not self.can_update_slicereadouttime, self.nslices is None,
+                self.cmb_labelingtype.currentText() == "Pulsed ASL"]):
+            return
+        try:
+            tr = self.asl_json_sidecar_data["RepetitionTime"] * 1000
+        except KeyError:
+            return
         labdur = self.spinbox_labdur.value()
         ini_pld = self.spinbox_initialpld.value()
-        nslices = self.asl_json_sidecar_data["NumberOfSlices"]
-        readouttime = round((tr - labdur - ini_pld) / nslices, 2)
-
-        self.spinbox_slice_readout.setValue(readouttime)
+        try:
+            readouttime = round((tr - labdur - ini_pld) / self.nslices, 2)
+            self.spinbox_slice_readout.setValue(readouttime)
+        except ZeroDivisionError:
+            return
 
     def overwrite_bids_fields(self):
         self.flag_impossible_m0 = False
@@ -437,29 +511,13 @@ class xASL_Parms(QMainWindow):
                 self.flag_impossible_m0 = True
                 bad_jsons.append(asl_sidecar)
 
-            # LabelingType
-            asl_sidecar_data["LabelingType"] = {"Pulsed ASL": "PASL",
-                                                "Pseudo-continuous ASL": "PCASL",
-                                                "Continuous ASL": "CASL"
-                                                }[self.cmb_labelingtype.currentText()]
-
-            # Post Label Delay
+            # Polish up certain fields
+            asl_sidecar_data["LabelingType"] = self.d_labelingtype[self.cmb_labelingtype.currentText()]
             asl_sidecar_data["PostLabelingDelay"] = self.spinbox_initialpld.value() / 1000
-
-            # Label Duration
             if self.cmb_labelingtype.currentText() in ["Pseudo-continuous ASL", "Continuous ASL"]:
                 asl_sidecar_data["LabelingDuration"] = self.spinbox_labdur.value() / 1000
-
-            # Background Suppression
-            if self.cmb_nsup_pulses.currentText() == "0":
-                asl_sidecar_data["BackgroundSuppression"] = False
-            else:
-                asl_sidecar_data["BackgroundSuppression"] = True
-
-            # PulseSequenceType
-            asl_sidecar_data["PulseSequenceType"] = {"3D Spiral": "3D_spiral",
-                                                     "3D GRaSE": "3D_GRASE",
-                                                     "2D EPI": "2D_EPI"}[self.cmb_sequencetype.currentText()]
+            asl_sidecar_data["BackgroundSuppression"] = False if self.cmb_nsup_pulses.currentText() == "0" else True
+            asl_sidecar_data["PulseSequenceType"] = self.d_sequencetype[self.cmb_sequencetype.currentText()]
 
             with open(asl_sidecar, 'w') as asl_sidecar_writer:
                 json.dump(asl_sidecar_data, asl_sidecar_writer, indent=3)
@@ -472,8 +530,6 @@ class xASL_Parms(QMainWindow):
     ################
     # Misc Functions
     ################
-
-    # Super inefficient...perhaps a better alternative exists?
     def switch_easldir_opts(self, option):
         print(f"{self.switch_easldir_opts.__name__} has received option: {option}")
         # Avoid false errors
@@ -492,34 +548,6 @@ class xASL_Parms(QMainWindow):
             _, self.hlay_easl_mcr = self.formlay_basic.takeRow(row)
             self.formlay_basic.insertRow(row, "ExploreASL Directory", self.hlay_easl_dir)
             self.current_easl_type = "Local ExploreASL Directory"
-
-        # # Otherwise, switch layout as needed
-        # if self.current_easl_type == "Local ExploreASL Directory" and option == "Local ExploreASL Compiled":
-        #     row, _ = self.formlay_basic.getLayoutPosition(self.hlay_easl_dir)
-        #     self.formlay_basic.removeRow(row)
-        #     self.hlay_easl_mcr, self.le_easl_mcr, self.btn_easl_mcr = make_droppable_clearable_le(
-        #         btn_connect_to=self.set_exploreasl_mcr, default="")
-        #     self.hlay_mrc_dir, self.le_mrc_dir, self.btn_mrc_dir = make_droppable_clearable_le(
-        #         btn_connect_to=self.set_mcr_dir, default="")
-        #     self.formlay_basic.insertRow(row, "ExploreASL Runtime Directory", self.hlay_easl_mcr)
-        #     self.formlay_basic.insertRow(row, "MATLAB Runtime Directory", self.hlay_mrc_dir)
-        #     self.current_easl_type = "Local ExploreASL Compiled"
-        #
-        #     # Tooltips
-        #     self.le_easl_mcr.setToolTip(self.parms_tips["le_easl_mcr"])
-        #     self.le_mrc_dir.setToolTip(self.parms_tips["le_mrc_dir"])
-        #
-        # elif self.current_easl_type == "Local ExploreASL Compiled" and option == "Local ExploreASL Directory":
-        #     row, _ = self.formlay_basic.getLayoutPosition(self.hlay_mrc_dir)
-        #     self.formlay_basic.removeRow(row)
-        #     self.formlay_basic.removeRow(row)
-        #     self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
-        #         btn_connect_to=self.set_exploreasl_dir, default='')
-        #     self.formlay_basic.insertRow(row, "ExploreASL Directory", self.hlay_easl_dir)
-        #     self.current_easl_type = "Local ExploreASL Directory"
-        #
-        #     # Tooltips
-        #     self.le_easl_dir.setToolTip(self.parms_tips["le_easl_dir"])
 
     # Controls the behavior of the M0 comboboxes
     def m0_pos_in_asl_ctrlfunc(self):
@@ -558,16 +586,12 @@ class xASL_Parms(QMainWindow):
     # LineEdit-setting and checking Functions
     #########################################
     def set_mcr_dir(self):
-        errs = ["Invalid Matlab Runtime Directory",
-                "The indicated directory must be of the name v##\nAn example of a valid directory would be:\n"
-                "C:\\Program Files\\MATLAB\\MATLAB Runtime\\v96"]
+        errs = [self.parms_errs["InvalidMCRDir"][0], self.parms_errs["InvalidMCRDir"][1]]
         robust_getdir(self, "Path to MATLAB Runtime Directory", self.config["DefaultRootDir"],
-                      {"basename_fits_regex": ["v\\d{2,3}", errs]},
-                      lineedit=self.le_mrc_dir)
+                      {"basename_fits_regex": ["v\\d{2,3}", errs]}, lineedit=self.le_mrc_dir)
 
     def set_exploreasl_mcr(self):
-        errs = ["Invalid ExploreASL Compiled Runtime Directory",
-                "The indicated directory must be the compiled directory containing the xASL_latest.ctf file"]
+        errs = [self.parms_errs["InvalidCompiledExploreASLDir"][0], self.parms_errs["InvalidCompiledExploreASLDir"][1]]
         robust_getdir(self, "Path to local ExploreASL compiled runtime", self.config["DefaultRootDir"],
                       {"rcontains": ["xASL_latest*", errs]}, lineedit=self.le_easl_mcr)
 
@@ -604,36 +628,36 @@ class xASL_Parms(QMainWindow):
         json_parms = {}
         # Finally, the nature of the current ExploreASL types must be valid
         if self.current_easl_type == "Local ExploreASL Directory":
-            easl_dir = Path(self.le_easl_dir.text()).resolve()
-            pathforchecking = easl_dir
-            if any([self.le_easl_dir.text() in forbidden, not easl_dir.is_dir(), not easl_dir.exists()]):
+            valid, easl_dir = dir_check(self.le_easl_dir.text(), self)
+            if not valid or self.le_easl_dir.text() in forbidden:
                 robust_qmsg(self, title=self.parms_errs["InvalidExploreASLDir"][0],
                             body=self.parms_errs["InvalidExploreASLDir"][1])
                 return
             json_parms["MyPath"] = self.le_easl_dir.text()
             json_parms["EXPLOREASL_TYPE"] = "LOCAL_UNCOMPILED"
+            pathforchecking = str(easl_dir)
         elif self.current_easl_type == "Local ExploreASL Compiled":
-            path_path = ""
-            for str_path, err_str in zip([self.le_mrc_dir.text(), self.le_easl_mcr.text()],
-                                         ["InvalidMCRDir", "InvalidCompiledExploreASLDir"]):
-                path_path = Path(str_path).resolve()
-                if any([str_path in forbidden, not path_path.is_dir(), not path_path.exists()]):
-                    robust_qmsg(self, title=self.parms_errs[err_str][0],
-                                body=self.parms_errs[err_str][1])
-                    return
-            pathforchecking = path_path
-
-            json_parms["MyCompiledPath"] = self.le_easl_mcr.text()
-            json_parms["MCRPath"] = self.le_mrc_dir.text()
+            errs = [self.parms_errs["InvalidMCRDir"][0], self.parms_errs["InvalidMCRDir"][1]]
+            s1, mrc_dir = dir_check(self.le_mrc_dir.text(), self, {"basename_fits_regex": ["v\\d{2,3}", errs]})
+            if not s1:
+                return
+            errs = [self.parms_errs["InvalidCompiledExploreASLDir"][0],
+                    self.parms_errs["InvalidCompiledExploreASLDir"][1]]
+            s2, easl_mcr = dir_check(self.le_easl_mcr.text(), self, {"rcontains": ["xASL_latest*", errs]})
+            if not s2:
+                return
+            pathforchecking = str(easl_mcr)
+            json_parms["MyCompiledPath"] = str(easl_mcr)
+            json_parms["MCRPath"] = str(mrc_dir)
             json_parms["EXPLOREASL_TYPE"] = "LOCAL_COMPILED"
             if "MyPath" in json_parms:
                 del json_parms["MyPath"]
-
+        # TODO Docker scenario goes here
         else:
             raise ValueError(f"Unexpected value for current_easl_type: {self.current_easl_type}")
 
+        # TODO This will be deprecated in a future release
         # Compatibility
-
         str_bsup = "BackgroundSuppressionNumberPulses" if not is_earlier_version(pathforchecking, 140, False) \
             else "BackGrSupprPulses"
         if is_earlier_version(pathforchecking, threshold_higher=150, higher_eq=False):
@@ -658,17 +682,13 @@ class xASL_Parms(QMainWindow):
                    "Use a single value as the M0": self.spinbox_m0_isseparate.value()}
             [self.cmb_m0_isseparate.currentText()],
             "M0_GMScaleFactor": float(self.spinbox_gmscale.value()),
-            "M0PositionInASL4D": {"M0 is the first ASL control-label pair": "[1 2]",
-                                  "M0 is the first ASL scan volume": 1,
-                                  "M0 is the second ASL scan volume": 2,
-                                  "M0 exists as a separate scan": None,
-                                  }[self.cmb_m0_posinasl.currentText()],
+            "M0PositionInASL4D": self.d_m0_posinasl[self.cmb_m0_posinasl.currentText()],
 
             # Sequence Parameters
             "readout_dim": self.cmb_readout_dim.currentText(),
             "Vendor": self.cmb_vendor.currentText(),
-            "Sequence": {"3D Spiral": "3D_spiral", "3D GRaSE": "3D_GRASE", "2D EPI": "2D_EPI"}
-            [self.cmb_sequencetype.currentText()],
+            "Sequence": self.d_sequencetype[self.cmb_sequencetype.currentText()],
+            "DummyScanPositionInASL4D": self.prep_skipdummyasl_vec(),
 
             # General Processing Parameters
             "Quality": {"High": 1, "Low": 0}[self.cmb_quality.currentText()],
@@ -710,10 +730,7 @@ class xASL_Parms(QMainWindow):
             "Q": {
                 str_bsup: int(self.cmb_nsup_pulses.currentText()),
                 "BackgroundSuppressionPulseTime": self.prep_suppression_vec(),
-                "LabelingType": {"Pulsed ASL": "PASL",
-                                 "Pseudo-continuous ASL": "CASL",
-                                 "Continuous ASL": "CASL"
-                                 }[self.cmb_labelingtype.currentText()],
+                "LabelingType": self.d_labelingtype[self.cmb_labelingtype.currentText()],
                 "Initial_PLD": float(self.spinbox_initialpld.value()),
                 "LabelingDuration": float(self.spinbox_labdur.value()),
                 "SliceReadoutTime": float(self.spinbox_slice_readout.value()),
@@ -724,13 +741,21 @@ class xASL_Parms(QMainWindow):
             },
             # Masking Parameters
             "S": {
-                "bMasking": self.prep_masking_vec()
+                "bMasking": self.prep_masking_vec(),
+                "Atlases": self.prep_atlas_vec()
             }
         })
 
-        # Compatibility issue with "M0PositionInASL4D"
+        # TODO; this will be deprecated in a future release
+        # Compatibility issue with "M0PositionInASL4D"; remove at lower ExploreASL versions
         if json_parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED":
-            if all([is_earlier_version(easl_dir=Path(self.le_easl_dir.text()), threshold_higher=150),
+            ref_le_widget = self.le_easl_dir
+        elif json_parms["EXPLOREASL_TYPE"] == "LOCAL_COMPILED":
+            ref_le_widget = self.le_easl_mcr
+        else:
+            ref_le_widget = None
+        if ref_le_widget is not None:
+            if all([is_earlier_version(easl_dir=Path(ref_le_widget.text()), threshold_higher=150, higher_eq=False),
                     json_parms.get("M0PositionInASL4D") is None]):
                 del json_parms["M0PositionInASL4D"]
 
@@ -810,18 +835,14 @@ class xASL_Parms(QMainWindow):
             "M0": self.get_m0,
             "M0_GMScaleFactor": self.spinbox_gmscale.setValue,
             "M0PositionInASL4D": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
-                                         widget=self.cmb_m0_posinasl,
-                                         args={"[1 2]": "M0 is the first ASL control-label pair",
-                                               1: "M0 is the first ASL scan volume",
-                                               2: "M0 is the second ASL scan volume",
-                                               None: "M0 exists as a separate scan"
-                                               }),
+                                         widget=self.cmb_m0_posinasl, args=self.rev_dict(self.d_m0_posinasl)),
 
             # Sequence Parameters
             "readout_dim": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_readout_dim),
             "Vendor": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_vendor),
             "Sequence": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_sequencetype,
-                                args={"3D_spiral": "3D Spiral", "3D_GRASE": "3D GRaSE", "2D_EPI": "2D EPI"}),
+                                args=self.rev_dict(self.d_sequencetype)),
+            "DummyScanPositionInASL4D": self.get_skipdummyasl_vec,
 
             # General Processing Parameters
             "Quality": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_quality,
@@ -867,13 +888,10 @@ class xASL_Parms(QMainWindow):
             # Quantification Parameters
             "ApplyQuantification": self.get_quantparms,
             "Q": {
-                bsup_str: partial(self.main_setter, action="cmb_setCurrentIndex_simple",
-                                  widget=self.cmb_nsup_pulses),
+                bsup_str: partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_nsup_pulses),
                 "BackgroundSuppressionPulseTime": self.get_suppression_vec,
                 "LabelingType": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
-                                        widget=self.cmb_labelingtype,
-                                        args={"PASL": "Pulsed ASL", "CASL": "Pseudo-continuous ASL",
-                                              "PCASL": "Pseudo-continuous ASL"}),
+                                        widget=self.cmb_labelingtype, args=self.rev_dict(self.d_labelingtype)),
                 "Initial_PLD": self.spinbox_initialpld.setValue,
                 "LabelingDuration": self.spinbox_labdur.setValue,
                 "SliceReadoutTime": self.spinbox_slice_readout.setValue,
@@ -885,7 +903,8 @@ class xASL_Parms(QMainWindow):
             },
             # Masking Parameters
             "S": {
-                "bMasking": self.get_masking_vec
+                "bMasking": self.get_masking_vec,
+                "Atlases": self.get_atlases
             }
         }
 
@@ -983,18 +1002,53 @@ class xASL_Parms(QMainWindow):
 
     # noinspection PyTypeChecker
     def prep_suppression_vec(self):
-        str_timings = self.le_sup_pulse_vec.text()
+        str_timings = self.le_sup_pulse_vec.text().strip()
         if str_timings == "":
             return []
-        num_timings: List[str] = str_timings.split(",")
+
+        num_timings: List[str] = []
+        for delim in [",", " ", ";"]:
+            if delim in str_timings:
+                num_timings = str_timings.split(delim)
+                break
+        # Last attempt
+        if len(num_timings) == 0:
+            num_timings: List[str, float] = re.findall(r"[0-9.]+", str_timings)
+            if len(num_timings) == 0:
+                return []
+
         idx: int
         for idx, timing in enumerate(num_timings.copy()):
             timing = timing.strip()
-            isdigit_flag = self.isDigit(timing)
-            if not isdigit_flag:
+            if not self.isDigit(timing):
                 return []
             num_timings[idx] = float(timing)
         return num_timings
+
+    # noinspection PyTypeChecker
+    def prep_skipdummyasl_vec(self):
+        str_slices2skip: str = self.le_skipdummyasl.text()
+        if str_slices2skip == "":
+            return None
+
+        vec_slices2skip: List[str] = []
+        for delim in [",", " ", ";"]:
+            if delim in str_slices2skip:
+                vec_slices2skip = str_slices2skip.split(delim)
+                break
+        # Last attempt
+        if len(vec_slices2skip) == 0:
+            vec_slices2skip: List[str, float] = re.findall(r"[0-9]+", str_slices2skip)
+            if len(vec_slices2skip) == 0:
+                return None
+
+        idx: int
+        for idx, timing in enumerate(vec_slices2skip.copy()):
+            timing = timing.strip()
+            if not timing.isdigit():
+                return None
+            vec_slices2skip[idx] = int(timing)
+        return vec_slices2skip
 
     def prep_pvc_kernel_vec(self):
         return [self.spinbox_pvckernel_1.value(), self.spinbox_pvckernel_2.value(), self.spinbox_pvckernel_3.value()]
@@ -1002,6 +1056,9 @@ class xASL_Parms(QMainWindow):
     def prep_masking_vec(self):
         return [int(self.chk_suscepmask.isChecked()), int(self.chk_subjectvasmask.isChecked()),
                 int(self.chk_subjecttismask.isChecked()), int(self.chk_wholebrainmask.isChecked())]
+
+    def prep_atlas_vec(self):
+        return [name for name, chkbox in self.d_atlases.items() if chkbox.isChecked()]
 
     @staticmethod
     def isDigit(val: str):
@@ -1050,6 +1107,16 @@ class xASL_Parms(QMainWindow):
         str_suppr_vec = ", ".join([str(suppr_val) for suppr_val in suppr_vec])
         self.le_sup_pulse_vec.setText(str_suppr_vec)
 
+    def get_skipdummyasl_vec(self, skip_vec: List[int]):
+        if skip_vec is None:
+            self.le_skipdummyasl.setText("")
+        if not all([isinstance(x, int) for x in skip_vec]):
+            self.import_error_logger.append("Skip Dummy ASL Vector")
+            self.le_skipdummyasl.setText("")
+            return
+        str_skipasldummy = ", ".join([str(slice_idx) for slice_idx in skip_vec])
+        self.le_skipdummyasl.setText(str_skipasldummy)
+
     def get_pvc_kernel_vec(self, pvc_vec):
         try:
             if any([len(pvc_vec) != 3,
@@ -1076,6 +1143,10 @@ class xASL_Parms(QMainWindow):
         for widget, val in zip([self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask,
                                 self.chk_wholebrainmask], masking_vec):
             widget.setChecked(bool(val))
+
+    def get_atlases(self, atlasname_vec):
+        for atlasname, checkbox in self.d_atlases.items():
+            checkbox.setChecked(atlasname in atlasname_vec)
 
     def fill_subject_list(self, loaded_parms: dict):
         try:

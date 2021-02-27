@@ -331,7 +331,7 @@ class xASL_Executor(QMainWindow):
 
         # Other instance variables
         self.threadpool = QThreadPool()
-        self.processing_movieplayer = xASL_ImagePlayer(Path(self.config["ProjectDir"]) / "media" / "processing.gif")
+        self.movie_path = Path(self.config["ProjectDir"]) / "media" / "EASL_Running.gif"
 
         # MISC VARIABLES
         self.red_palette = QPalette()
@@ -440,6 +440,7 @@ class xASL_Executor(QMainWindow):
         self.formlay_stopbtns_list = []
         self.formlay_pausebtns_list = []
         self.formlay_resumebtns_list = []
+        self.formlay_movies_list = []
 
         for widget in [self.lab_coresinfo, self.lab_coresleft, self.cont_nstudies, self.cont_tasks, self.cont_progbars]:
             self.vlay_taskschedule.addWidget(widget)
@@ -509,6 +510,9 @@ class xASL_Executor(QMainWindow):
                 inner_btn_resume = QPushButton(QIcon(str(resume_icon_path)), "", enabled=False)
                 inner_btn_resume.setToolTip("Resume this paused study")
 
+                inner_movie = xASL_ImagePlayer(self.movie_path, (self.config["ScreenSize"][0]//25,
+                                                                 self.config["ScreenSize"][1]//52))
+
                 # HBoxLayout for the control btns
                 inner_hbox_ctrls = QHBoxLayout()
                 inner_hbox_ctrls.addWidget(inner_btn_resume)
@@ -518,10 +522,11 @@ class xASL_Executor(QMainWindow):
                 # Signals and Slots for the ctrl btns
                 inner_btn_resume.clicked.connect(partial(self.one_btn_blocks_other, calling_btn=inner_btn_resume,
                                                          receiver_btn=inner_btn_pause))
-                inner_btn_resume.clicked.connect(self.processing_movieplayer.movie.start)
+                inner_btn_resume.clicked.connect(inner_movie.movie.start)
                 inner_btn_pause.clicked.connect(partial(self.one_btn_blocks_other, calling_btn=inner_btn_pause,
                                                         receiver_btn=inner_btn_resume))
-                inner_btn_pause.clicked.connect(self.processing_movieplayer.movie.stop)
+                inner_btn_pause.clicked.connect(inner_movie.movie.stop)
+                inner_btn_stop.clicked.connect(inner_movie.movie.stop)
 
                 # Package it all in another FormLayout
                 inner_grp = QGroupBox(title=f"Study {inner_btn_browsedirs.row_idx}")
@@ -532,13 +537,14 @@ class xASL_Executor(QMainWindow):
                                    inner_btn_pause, inner_btn_resume
                                    ]:
                         widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                inner_formlay.setLabelAlignment(Qt.AlignLeft)
                 inner_formlay.addRow("Alloted Cores", inner_cmb_ncores)
                 inner_hbox = QHBoxLayout()
                 inner_hbox.addWidget(inner_le)
                 inner_hbox.addWidget(inner_btn_browsedirs)
                 inner_formlay.addRow("Study Folder", inner_hbox)
                 inner_formlay.addRow("Which Modules to Run", inner_cmb_procopts)
-                inner_formlay.addRow("Control Processing", inner_hbox_ctrls)
+                inner_formlay.addRow(inner_movie, inner_hbox_ctrls)
 
                 # Add progressbars
                 inner_progbar = QProgressBar(orientation=Qt.Horizontal, value=0, maximum=100, minimum=0)
@@ -558,6 +564,7 @@ class xASL_Executor(QMainWindow):
                 self.formlay_stopbtns_list.append(inner_btn_stop)
                 self.formlay_pausebtns_list.append(inner_btn_pause)
                 self.formlay_resumebtns_list.append(inner_btn_resume)
+                self.formlay_movies_list.append(inner_movie)
 
         # Removal of rows
         elif diff < 0:
@@ -575,10 +582,9 @@ class xASL_Executor(QMainWindow):
                 self.formlay_cmbs_runopts_list.pop()
                 self.formlay_progbars_list.pop()
                 self.formlay_stopbtns_list.pop()
-
                 self.formlay_pausebtns_list.pop()
                 self.formlay_resumebtns_list.pop()
-
+                self.formlay_movies_list.pop()
                 self.formlay_nrows -= 1
 
         # Adjust the number of cores selectable in each of the comboboxes
@@ -803,8 +809,13 @@ class xASL_Executor(QMainWindow):
 
         # Re-activate all relevant widgets
         self.set_widgets_activation_states(True)
-        # Stop the movie
-        self.end_movie()
+
+        # Stop the movies
+        movie: xASL_ImagePlayer
+        for movie in self.formlay_movies_list:
+            if movie.movie.state() == QMovie.Running:
+                movie.movie.stop()
+            movie.movie.jumpToFrame(0)
 
         # Iterate over the studies and take the appropriate cleanup actions
         s_terminated, s_easl_errs, s_crashed, s_missinglocks = [], [], [], []
@@ -894,24 +905,6 @@ class xASL_Executor(QMainWindow):
             else:  # A run has ended
                 pause_btn.setEnabled(not state)
                 resume_btn.setEnabled(not state)
-
-    # Convenience function; adds a gif indicating processing below the textoutput and starts the gif
-    def begin_movie(self):
-        """
-        Convenience function; adds a gif indicating processing below the textoutput and starts the gif
-        """
-        self.processing_movieplayer.movie.start()
-        self.processing_movieplayer.setVisible(True)
-        self.vlay_textoutput.addWidget(self.processing_movieplayer)
-
-    # Convenience function; removes the gif below the textoutput and stops the gif
-    def end_movie(self):
-        """
-        Convenience function; removes the gif below the textoutput and stops the gif
-        """
-        self.processing_movieplayer.movie.stop()
-        self.processing_movieplayer.setVisible(False)
-        self.vlay_textoutput.removeWidget(self.processing_movieplayer)
 
     ###################
     # PRE-RUN QC CHECKS
@@ -1237,7 +1230,8 @@ class xASL_Executor(QMainWindow):
 
         self.set_widgets_activation_states(False)
 
-        self.begin_movie()
+        for movie in self.formlay_movies_list:
+            movie.movie.start()
 
 
 class ExploreASL_WatcherSignals(QObject):

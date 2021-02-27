@@ -46,6 +46,7 @@ class xASL_GUI_Dehybridizer(QWidget):
         self.SetupUI_LeftandRightSections()
         movieplayer_path = Path(self.config["ProjectDir"]) / "media" / "processing.gif"
         self.expanddirs_movieplayer = xASL_ImagePlayer(movieplayer_path)
+        self.expanddirs_movieplayer.setAlignment(Qt.AlignCenter)
 
         self.chk_makebackup = QCheckBox(text="(STRONGLY RECOMMENDED) Make a backup of the source directory "
                                              "before folder restructuring?", checked=True)
