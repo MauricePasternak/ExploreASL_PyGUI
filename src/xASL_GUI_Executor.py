@@ -10,7 +10,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2LineEdit
 from src.xASL_GUI_Executor_ancillary import *
-from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer
+from src.xASL_GUI_AnimationClasses import xASL_ImagePlayer, xASL_Lab
 from src.xASL_GUI_Executor_Modjobs import (xASL_GUI_RerunPrep, xASL_GUI_TSValter,
                                            xASL_GUI_ModSidecars, xASL_GUI_MergeDirs)
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le, set_formlay_options,
@@ -510,8 +510,7 @@ class xASL_Executor(QMainWindow):
                 inner_btn_resume = QPushButton(QIcon(str(resume_icon_path)), "", enabled=False)
                 inner_btn_resume.setToolTip("Resume this paused study")
 
-                inner_movie = xASL_ImagePlayer(self.movie_path, (self.config["ScreenSize"][0]//25,
-                                                                 self.config["ScreenSize"][1]//52))
+                inner_movie = xASL_ImagePlayer(self.movie_path)
 
                 # HBoxLayout for the control btns
                 inner_hbox_ctrls = QHBoxLayout()
@@ -543,7 +542,7 @@ class xASL_Executor(QMainWindow):
                 inner_hbox.addWidget(inner_le)
                 inner_hbox.addWidget(inner_btn_browsedirs)
                 inner_formlay.addRow("Study Folder", inner_hbox)
-                inner_formlay.addRow("Which Modules to Run", inner_cmb_procopts)
+                inner_formlay.addRow(xASL_Lab(inner_movie, "Which Modules to Run"), inner_cmb_procopts)
                 inner_formlay.addRow(inner_movie, inner_hbox_ctrls)
 
                 # Add progressbars
