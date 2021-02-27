@@ -197,7 +197,7 @@ class ExploreASL_Worker(QRunnable):
             if self.is_collecting_stdout_err and output not in {"", " ", "\n"}:
                 err_container.append(output)
                 n_collected += 1
-            print(output)
+                print(output)
 
         _, stderr = self.proc.communicate()
         self.print_and_log(f"Worker {self.iworker}: has received return code {self.proc.returncode}", msg_type="info")

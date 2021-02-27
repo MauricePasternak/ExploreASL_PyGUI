@@ -989,7 +989,7 @@ class DandD_Label2LineEdit(QLineEdit):
         self.setAcceptDrops(True)
         self.setReadOnly(True)
         self.superparent = superparent  # This is the Importer Widget itself
-        self.sibling_awareness = [''] * 6
+        self.sibling_awareness = [''] * 7
         self.id = identification  # This is the python index of which level after ..\\raw does this lineedit represent
         self.textChanged.connect(self.modifiedtextChanged)
 

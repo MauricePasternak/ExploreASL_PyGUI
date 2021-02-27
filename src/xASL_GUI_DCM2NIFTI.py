@@ -504,11 +504,11 @@ class DCM2NIFTI_Converter:
 
         # Execute DCM2NIIX
         if system() == "Windows":
-            result = subprocess.run(command.split(" "))
+            result = subprocess.run(command.split(" "), creationflags=subprocess.CREATE_NO_WINDOW)
             stderr, return_code = result.stderr, result.returncode
         else:
             p = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 text=True, shell=True)
+                                 text=True, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
             p.wait()
             stdout, stderr = p.communicate()
             return_code = p.returncode
