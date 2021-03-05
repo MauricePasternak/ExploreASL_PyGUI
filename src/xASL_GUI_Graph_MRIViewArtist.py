@@ -1,5 +1,6 @@
 from PySide2.QtWidgets import *
 from PySide2.QtCore import *
+from PySide2.QtGui import QCursor
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backend_bases import PickEvent
@@ -200,21 +201,26 @@ class xASL_GUI_MRIViewArtist(QWidget):
         y_var = self.manager.axes_arg_y()
 
         df = self.parent_cw.loader.long_data
-        subject = df.loc[(df[x_var] == parameters[0]) & (df[y_var] == parameters[1]), "SUBJECT"].tolist()
+        subject_run = df.loc[(df[x_var] == parameters[0]) & (df[y_var] == parameters[1]), "SUBJECT"].tolist()
 
         # Sometimes if a dtype change has occurred and this is a stipplot, the data may still be numerical, but the
         # graph interpreted the new data correctly as categorical, resulting in strings
-        if len(subject) == 0 and self.manager.cmb_axestype.currentText() == "Strip Plot":
+        if len(subject_run) == 0 and self.manager.cmb_axestype.currentText() == "Strip Plot":
             df[x_var] = df[x_var].values.astype(np.str)
-            subject = df.loc[(df[x_var] == parameters[0]) & (df[y_var] == parameters[1]), "SUBJECT"].tolist()
+            subject_run = df.loc[(df[x_var] == parameters[0]) & (df[y_var] == parameters[1]), "SUBJECT"].tolist()
 
         if self.parent_cw.config["DeveloperMode"]:
             print(f"Inside on_pick function in the MRIViewArtist.\n"
                   f"Based on the click made, the following subjects correspond to datapoints nearest to the click:\n"
-                  f"{subject}\nSelecting the closest one.\n")
+                  f"{subject_run}\nSelecting the closest one.\n")
 
-        if len(subject) == 1:
-            cmb_idx = self.manager.cmb_selectsubject.findText(subject[0])
+        if len(subject_run) == 1:
+            # Show a tooltip as long as the mouse button is held down
+            position: QPoint = QCursor.pos()
+            tip = QToolTip()
+            tip.showText(position, f"{subject_run[0]}", self.parent_cw)
+
+            cmb_idx = self.manager.cmb_selectsubject.findText(subject_run[0])
             if cmb_idx == -1:
                 return
             self.manager.cmb_selectsubject.setCurrentIndex(cmb_idx)

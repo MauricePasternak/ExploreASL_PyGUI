@@ -36,7 +36,6 @@
     "cmb_labelingtype": "Specify the labelling strategy used during ASL scan acquisition",
     "cmb_m0_isseparate": "Specify whether a proton density scan (M0) was acquired\nIf a scan was not acquired, the mean control ASL image set\nwill be used as a substitute.",
     "spinbox_m0_isseparate": "This is the value that your PWI image will be divided by when using a single-value M0 mask.",
-    "cmb_m0_posinasl": "If a proton density (M0) scan was acquired, specify its location.\nThis argument is ignored if the user has indicated that an M0 scan\nwas not acquired",
     "cmb_quality": "Indicate the precision with which certain processing steps should be taken, such\nas segmentation. Higher quality results in longer processing times.",
     "cmb_nsup_pulses": "Specify the number of background suppression pulses that were utilized\nfor ASL scans in your study",
     "cmb_readout_dim": "Specify the dimension of ASL acquisitions as they came off the scanner",

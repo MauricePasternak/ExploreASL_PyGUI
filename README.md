@@ -77,27 +77,27 @@ Starting with the upcoming version 0.2.9, releases for Windows, MacOS, and Linux
 
 The graphical user interface is split into 4 main modules existing as separate windows linked together by a central file explorer hub from which they can be launched:
 
-![Image of MainWindow](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/MainWindow.png)
+![Image of MainWindow](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/MainWindow.png)
 
 The first module most users will utilize is the Importer Module. The user defines the root directory of their dataset and which eventually contains dicom files at terminal directories within the folder structure. This module then converts the dicoms therein into nifti volumes within a BIDS-compliant data structure, [utilizing Chris Rorden's dcm2niix executable in the process](https://github.com/rordenlab/dcm2niix):
 
-![Image of Importer](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Importer.png)
+![Image of Importer](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Importer.png)
 
 Sometimes directories may have multiple pieces of information on the same directory level. An additional submodule, Folder Unpack, can pry apart such directories into their separate components. For example a directory level with syntax subject_visit may be expanded into SUBJECT/subject/VISIT/visit, where SUBJECT and VISIT may be user-specified parent folders containing all the described names (i.e. subjects, scans, etc.)
 
-![Image of Dehybridizer](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Dehybridizer.png)
+![Image of Dehybridizer](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Dehybridizer.png)
 
 The main ExploreASL program has over 55 adjustable parameters to account for ASL acquisition variability. Defining these parameters is simplified through the ParmsMaker Module and the resulting DataPar.json file is automatically saved to the indicated study directory. In addition, existing DataPar.json files can be re-loaded, edited, and then re-saved back into the study directory.
 
-![Image of ParmsMaker](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/ParmsMaker.png)
+![Image of ParmsMaker](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/ParmsMaker.png)
 
-Once data is imported and parameters defined, the user will be prepared to run the main program. The Executor Module allows for multi-processing analysis of multiple studies and/or multiple subjects per study simultaneously. Specific studies may be terminated at any time.
+Once data is imported and parameters defined, the user will be prepared to run the main program. The Executor Module allows for multi-processing analysis of multiple studies and/or multiple subjects per study simultaneously. The user is free to pause, resume, or terminate studies independently of one another. If errors occur, the module also creates a Run_Log file with a timestamp. Inside, relevant information taken from the ExploreASL program may help with diagnosing errors and bugs. 
 
-![Image of Executor](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Executor.png)
+![Image of Executor](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Executor.png)
 
 Finally, with the data analyzed, the user may feel free to visualize the processed dataset. The Post Processing & Visualization Module allows for users to interactively drag & drop all loaded data to generate publication-quality plots and load in both functional & structural MRI scans based on user clicks on specific datapoints.
 
-![Image of PostProc](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/PostProc.png)
+![Image of PostProc](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/PostProc.png)
 
 ### Modification Jobs
 
@@ -105,21 +105,21 @@ Multiple modification jobs are avaliable to allow or re-runs, tweaks prior to a 
 
 Progress in ExploreASL is handled through the creation of .status files that indicate the completion of critical steps. This GUI eases the user specification of .status files to remove, allowing only those particular steps to be repeated.
 
-![Image of Modjob Rerun](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_Rerun.png)
+![Image of Modjob Rerun](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Modjob_Rerun.png)
 
 Users may wish to include additional covariates during the creation of biasfields when the Population Module is re-run. An SQL-like one-sided merge is performed that allows automatic & hassle-free addition of thousands of rows of metadata as opposed to careful user copy & pasting.
 
-![Image of Modjob AlterTSV](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_AlterTSV.png)
+![Image of Modjob AlterTSV](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Modjob_AlterTSV.png)
 
 Although the DICOM --> NIFTI import process covers most expected ASL flavors, it is feasible that certain subjects & scans may require very specific settings indicated in the JSON files corresponding to each image volume. It is possible to specify which JSONs require specific key-value pairs to be introduced either through user drag & dropping of subject directories or through a comma-separated-values configuration file.
 
 Finally, with the data analyzed, the user may feel free to visualize the processed dataset. The Post Processing & Visualization Module allows for users to interactively drag & drop all loaded data to generate publication-quality plots and load in both functional & structural MRI scans based on user clicks on specific datapoints.
 
-![Image of Modjob ModJSONSidecars](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_ModJSONSidecars.png)
+![Image of Modjob ModJSONSidecars](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Modjob_ModJSONSidecars.png)
 
 Users may with to which to merge multiple analysis directories (i.e. to perform the Population Module for meta-analysis purposes). To avoid the tedious task of copy-pasting potentially thousands of files and directories, the GUI can accomplish this with the user only needing to specify the destination and the directories to merge. Symlinks are supported to save disk space.
 
-![Image of Modjob MergeDirs](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Modjob_MergeDirs.png)
+![Image of Modjob MergeDirs](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Modjob_MergeDirs.png)
 
 From start to finish, this GUI is designed to streamline the processing and eventual publication of arterial spin labelling image data.
 
@@ -163,18 +163,18 @@ For the Github page of main program that this GUI interfaces with, click on the 
 
 A: The underlying toolkit utilized in the creation of this program is PySide2, a Python wrapper around the cross-platform C++ software Qt. As such, the program should be compatible with the most common operating systems, including:
 - Windows 10
-- Mac OS X: 10.14 (Mojave) and 10.15 (Catalina). 10.16 (Big Sur) is NOT supported at this time
+- Mac OS X: 10.14 (Mojave), 10.15 (Catalina), and 10.16 (BigSur) 
 - Linux 20.04 LTS (tested; earlier versions such as 18.04 may be unstable)
 
 > **Q: Do I need MATLAB in order to run this program?**
 
-A: Unfortunately, as ExploreASL itself has not been compiled into a binary executable, the GUI currently remains reliant on the user having an installed & activated version of MATLAB. For the current version of the GUI, the following restrictions are in place:
-- Windows 10: MATLAB 2019a
-- Mac OS X and Linux: MATLAB 2017a
+A: In certain cases, you do not need a full installation. Instead, you'd require a smaller MATLAB Runtime (2019A), and the compiled ExploreASL program. At the time of this version (0.2.9 pre-release), the compiled ExploreASL versions only exist for:
+- Windows 10
+- Linux 20.04 LTS
 
 > **Q: Does the GUI support running Docker images at the current time?**
 
-A: No. That support may be added in a future update.
+A: No. But this is now in the works as a feature to be added in.
 
 > **Q: The number of cores listed in your Executor module is off. My machine has ___ cores but you list ___ instead.**
 
@@ -183,7 +183,7 @@ A: This is primarily an issue on older and/or lower-binned CPUs that do not have
 > **Q: What are the recommended system requirements for this GUI?**
 
 A: Most functionality apart from Executor does not require immense resources. Running in a multi-processing manner with the Executor Module, on the other hand, should be used with the following guidelines:
-- 2.5 GB of RAM per active core allocated towards a study. **DO NOT** allocate too many cores towards a study/studies if your RAM capacity is insufficient. The program will become slow and unresponsive, as your computer will run out of memory.
+- 3.5 GB of RAM per active core allocated towards a study. **DO NOT** allocate too many cores towards a study/studies if your RAM capacity is insufficient. The program will become slow and unresponsive, as your computer will run out of memory.
 - An acceptable cooler for your CPU, as it will be going at it for ~15 minutes per single subject visit at "High" quality setting for both Structural and ASL modules. For a study of 120 visits split among all cores in a 6-core machine, that amounts to ~5 hours of heavy workload. Assuming the user wishes to utilize their machine to the fullest extent without overheating, a recommended top-end air-cooler is the [NH-D15 Chromax Black](https://noctua.at/en/nh-d15-chromax-black) for 6-16 physical core CPUs.
 - As file writing/reading occurs in the course of the analysis, having an SSD or NVMe-SSD over a traditional hard drive can allow for reduced processing time.
 
@@ -209,6 +209,14 @@ A: Use the main window's menu: File --> Specify path to MATLAB executable. The p
 > **Q: I have a formidable computer with dozens of cores, and I got a Segmentation Violation Detected error in the "ExploreASL run - errors.txt" file. What does this mean?**
 
 A: It's not a fault of the GUI or ExploreASL itself. It's a fault of MATLAB and how its glnax64 library plays with the current kernel/version of your operating system, leading to a crash when a significant number of cores are used for an extended period of time. You can simply press "Run ExploreASL" again. The program will pick up approximately from where it left off thanks to the .status file system. 
+
+> **Q: Is it safe to stop a study being run?**
+
+A: No, the type of termination done here is a full-stop termination. Although unlikely, it is possible that the processing is killed in the middle of a crucial file transfer operation, thereby corrupting NIFTI images. If you are forced to terminate a study at anything other than the first few seconds grace period, it is advisable to consider the data potentially compromised.
+
+> **Q: Is it safe to pause a study being run?**
+
+A: Unlike termination, pausing studies should be safe. The program will simply pick off where it paused when the user chooses to resume programming.
 
 ---
 

@@ -80,21 +80,33 @@ class xASL_Parms(QMainWindow):
             self.btn_load_parms.setMinimumHeight(60)
             self.btn_make_parms.setMinimumHeight(60)
 
-    @staticmethod
-    def rev_dict(d: dict):
-        return {v: k for k, v in d.items()}
-
+    ######################################
+    # Class Attribute Organizing Functions
+    ######################################
     def prep_nonwidget_dicts(self):
-        self.d_m0_posinasl = {"M0 exists as a separate scan": None, "M0 is the first ASL control-label pair": "[1 2]",
-                              "M0 is the first ASL scan volume": 1, "M0 is the second ASL scan volume": 2}
         self.d_sequencetype = {"3D GRaSE": "3D_GRASE", "3D Spiral": "3D_spiral", "2D EPI": "2D_EPI"}
         self.d_labelingtype = {"Pulsed ASL": "PASL", "Pseudo-continuous ASL": "PCASL", "Continuous ASL": "CASL"}
 
     def prep_widget_dicts(self):
-        self.d_atlases = {"TotalGM": self.chk_atlas_GM, "DeepWM": self.chk_atlas_WM, "Hammers": self.chk_atlas_hammers,
+        self.d_atlases = {"TotalGM": self.chk_atlas_GM, "DeepWM": self.chk_atlas_WM,
+                          "MNI_structural": self.chk_atlas_MNI, "Hammers": self.chk_atlas_hammers,
                           "HOcort_CONN": self.chk_atlas_HOcort, "HOsub_CONN": self.chk_atlas_HOsub,
                           "Mindboggle_OASIS_DKT31_CMA": self.chk_atlas_oasis}
+        self.d_m0 = {"Proton density scan (M0) was acquired": "separate_scan",
+                     "Use mean control ASL as M0 mimic": "UseControlAsM0",
+                     "Use a single value as the M0": self.spinbox_m0_isseparate.value}
 
+    @staticmethod
+    def rev_dict(d: dict):
+        return {v: k for k, v in d.items()}
+
+    @staticmethod
+    def activate_dict(d: dict):
+        return {k: (v() if callable(v) else v) for k, v in d.items()}
+
+    ####################
+    # UI Setup Functions
+    ####################
     def UI_Setup_Basic(self):
         self.formlay_basic = xASL_FormLayout(parent=self.cont_basic)
         self.current_easl_type = "Local ExploreASL Directory"
@@ -139,8 +151,7 @@ class xASL_Parms(QMainWindow):
                                                           "Use mean control ASL as M0 mimic",
                                                           "Use a single value as the M0"])
         self.cmb_m0_isseparate.currentTextChanged.connect(self.enable_m0value_field)
-        self.cmb_m0_isseparate.currentTextChanged.connect(self.m0_pos_in_asl_ctrlfunc)
-        self.cmb_m0_posinasl = self.make_cmb_and_items(list(self.d_m0_posinasl.keys()))
+        self.le_m0_posinasl = QLineEdit(placeholderText="Indicate the positions of M0 scans within the ASL timeseries")
         self.cmb_quality = self.make_cmb_and_items(["Low", "High"])
         self.cmb_quality.setCurrentIndex(1)
 
@@ -153,7 +164,7 @@ class xASL_Parms(QMainWindow):
                    self.chk_overwrite_for_bids, self.le_subregex, self.lst_included_subjects,
                    self.btn_included_subjects, self.lst_excluded_subjects, self.btn_excluded_subjects, self.cmb_vendor,
                    self.cmb_sequencetype, self.cmb_labelingtype, self.cmb_m0_isseparate, self.spinbox_m0_isseparate,
-                   self.cmb_m0_posinasl, self.cmb_quality]
+                   self.le_m0_posinasl, self.cmb_quality]
         for desc, widget in zip(descs, widgets):
             self.formlay_basic.addRow(desc, widget)
             if system() == "Darwin":
@@ -368,16 +379,18 @@ class xASL_Parms(QMainWindow):
         self.vlay_atlases = QVBoxLayout()
         self.chk_atlas_GM = QCheckBox(text="Grey Matter", checked=True)
         self.chk_atlas_WM = QCheckBox(text="White Matter", checked=True)
+        self.chk_atlas_MNI = QCheckBox(text="MNI", checked=False)
         self.chk_atlas_hammers = QCheckBox(text="Hammers", checked=False)
         self.chk_atlas_HOcort = QCheckBox(text="Harvard Cortical", checked=False)
         self.chk_atlas_HOsub = QCheckBox(text="Harvard Subcortical", checked=False)
         self.chk_atlas_oasis = QCheckBox(text="OASIS DKT31", checked=False)
-        for chk in [self.chk_atlas_GM, self.chk_atlas_WM, self.chk_atlas_hammers, self.chk_atlas_HOcort,
+        for chk in [self.chk_atlas_GM, self.chk_atlas_WM, self.chk_atlas_MNI,
+                    self.chk_atlas_hammers, self.chk_atlas_HOcort,
                     self.chk_atlas_HOsub, self.chk_atlas_oasis]:
             self.vlay_atlases.addWidget(chk)
 
         descs = ["Susceptibility Mask", "Vascular Mask", "Tissue Mask", "Wholebrain Mask",
-                 "\nAtlases to use\nin the\nPopulation\nModule"]
+                 "\n\nAtlases to use\nin the\nPopulation\nModule"]
         widgets = [self.chk_suscepmask, self.chk_subjectvasmask, self.chk_subjecttismask, self.chk_wholebrainmask,
                    self.vlay_atlases]
         for desc, widget in zip(descs, widgets):
@@ -387,14 +400,12 @@ class xASL_Parms(QMainWindow):
                     widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 except AttributeError:
                     continue
-
         # Additional MacOS settings:
         if system() == "Darwin":
             for formlay, vspacing in zip([self.formlay_genpparms, self.formlay_strpparms, self.formlay_aslpparms,
                                           self.formlay_maskparms],
                                          [5, 5, 5, 5]):
                 set_formlay_options(formlay, row_wrap_policy="dont_wrap", vertical_spacing=vspacing)
-
             self.spinbox_pvckernel_1.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             self.spinbox_pvckernel_2.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             self.spinbox_pvckernel_3.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -403,10 +414,7 @@ class xASL_Parms(QMainWindow):
     # Json Sidecar Related Functions
     ################################
     def update_readout_dim(self, text):
-        if text == "2D EPI":
-            self.cmb_readout_dim.setCurrentIndex(1)
-        else:
-            self.cmb_readout_dim.setCurrentIndex(0)
+        self.cmb_readout_dim.setCurrentIndex(int(text == "2D EPI"))
 
     def read_first_asl_json(self):
         try:
@@ -496,9 +504,7 @@ class xASL_Parms(QMainWindow):
             # Priority 2 - if the M0 is present within the asl nifti, as indicated by the user, go with that
             elif self.cmb_m0_isseparate.currentText() == "Proton density scan (M0) was acquired":
 
-                if self.cmb_m0_posinasl.currentText() in ["M0 is the first ASL control-label pair",
-                                                          "M0 is the first ASL scan volume",
-                                                          "M0 is the second ASL scan volume"]:
+                if self.le_m0_posinasl.text() != "":
                     asl_sidecar_data["M0"] = True
                 else:
                     self.flag_impossible_m0 = True
@@ -532,37 +538,42 @@ class xASL_Parms(QMainWindow):
     ################
     def switch_easldir_opts(self, option):
         print(f"{self.switch_easldir_opts.__name__} has received option: {option}")
+        SCENARIO_UNCOMPILED = "Local ExploreASL Directory"
+        SCENARIO_COMPILED = "Local ExploreASL Compiled"
+        SCENARIO_DOCKER = "Docker Image"
         # Avoid false errors
         if self.current_easl_type == option:
             return
 
-        if self.current_easl_type == "Local ExploreASL Directory" and option == "Local ExploreASL Compiled":
+        if self.current_easl_type == SCENARIO_UNCOMPILED and option == SCENARIO_COMPILED:
             row, _ = self.formlay_basic.getLayoutPosition(self.hlay_easl_dir)
             _, self.hlay_easl_dir = self.formlay_basic.takeRow(row)
             self.formlay_basic.insertRow(row, "ExploreASL Runtime Directory", self.hlay_easl_mcr)
             self.formlay_basic.insertRow(row, "MATLAB Runtime Directory", self.hlay_mrc_dir)
-            self.current_easl_type = "Local ExploreASL Compiled"
-        elif self.current_easl_type == "Local ExploreASL Compiled" and option == "Local ExploreASL Directory":
+
+        elif self.current_easl_type == SCENARIO_COMPILED and option == SCENARIO_UNCOMPILED:
             row, _ = self.formlay_basic.getLayoutPosition(self.hlay_mrc_dir)
             _, self.hlay_mrc_dir = self.formlay_basic.takeRow(row)
             _, self.hlay_easl_mcr = self.formlay_basic.takeRow(row)
             self.formlay_basic.insertRow(row, "ExploreASL Directory", self.hlay_easl_dir)
-            self.current_easl_type = "Local ExploreASL Directory"
 
-    # Controls the behavior of the M0 comboboxes
-    def m0_pos_in_asl_ctrlfunc(self):
-        if self.cmb_m0_isseparate.currentText() != "Proton density scan (M0) was acquired":
-            self.cmb_m0_posinasl.setCurrentIndex(0)
-            self.cmb_m0_posinasl.setEnabled(False)
+        # TODO Docker scenarios go here
+        elif self.current_easl_type == SCENARIO_UNCOMPILED and option == SCENARIO_DOCKER:
+            pass
+        elif self.current_easl_type == SCENARIO_COMPILED and option == SCENARIO_DOCKER:
+            pass
+        elif self.current_easl_type == SCENARIO_DOCKER and option == SCENARIO_UNCOMPILED:
+            pass
+        elif self.current_easl_type == SCENARIO_DOCKER and option == SCENARIO_COMPILED:
+            pass
         else:
-            self.cmb_m0_posinasl.setEnabled(True)
+            pass
+
+        self.current_easl_type = option
 
     # Activates the spinbox for single-value M0 division if specified
     def enable_m0value_field(self, text):
-        if text == "Use a single value as the M0":
-            self.spinbox_m0_isseparate.setEnabled(True)
-        else:
-            self.spinbox_m0_isseparate.setEnabled(False)
+        self.spinbox_m0_isseparate.setEnabled(text == "Use a single value as the M0")
 
     # Clears the currently-included subjects list and resets the regex
     def clear_included(self):
@@ -626,7 +637,7 @@ class xASL_Parms(QMainWindow):
                         variables=[f"{self.le_subregex.text()}"])
             return
         json_parms = {}
-        # Finally, the nature of the current ExploreASL types must be valid
+        # Next, the nature of the current ExploreASL types must be valid
         if self.current_easl_type == "Local ExploreASL Directory":
             valid, easl_dir = dir_check(self.le_easl_dir.text(), self)
             if not valid or self.le_easl_dir.text() in forbidden:
@@ -656,18 +667,24 @@ class xASL_Parms(QMainWindow):
         else:
             raise ValueError(f"Unexpected value for current_easl_type: {self.current_easl_type}")
 
-        # TODO This will be deprecated in a future release
-        # Compatibility
-        str_bsup = "BackgroundSuppressionNumberPulses" if not is_earlier_version(pathforchecking, 140, False) \
-            else "BackGrSupprPulses"
-        if is_earlier_version(pathforchecking, threshold_higher=150, higher_eq=False):
-            str_pvcker = "PVCorrectionNativeSpaceKernel"
-            str_dopvc = "bPVCorrectionNativeSpace"
-            str_pvcgaus = "bPVCorrectionGaussianMM"
-        else:
-            str_pvcker = "PVCNativeSpaceKernel"
-            str_dopvc = "bPVCNativeSpace"
-            str_pvcgaus = "bPVCGaussianMM"
+        # Next check: you cannot have ControlAsM0 and BackgroundSuppressionNumberPulses greater than zero if no
+        # BSup Timings are given
+        is_ctrlaslasm0 = self.cmb_m0_isseparate.currentText() == "Use mean control ASL as M0 mimic"
+        is_npulsetimingsempty = self.prep_vec(self.le_sup_pulse_vec, r"[0-9.]+", []) == []
+        is_npulsenumzero = int(self.cmb_nsup_pulses.currentText()) == 0
+        if any([
+            all([is_ctrlaslasm0, is_npulsetimingsempty, not is_npulsenumzero]),
+            all([is_ctrlaslasm0, not is_npulsetimingsempty, is_npulsenumzero])
+        ]):
+            robust_qmsg(self, title="Unsupported Parameters",
+                        body=f"The user has indicated the following combination of parameters:\n"
+                             f"- Use mean control ASL as M0 mimic? {is_ctrlaslasm0}\n"
+                             f"- Num background suppression pulses is zero? {is_npulsenumzero}\n"
+                             f"- Background suppression timings are empty? {is_npulsetimingsempty}\n\n"
+                             f"If using the mean control ASL to emulate the M0 image, please either specify the "
+                             f"timings of the suppression pulses or set the number of suppression pulses to zero if "
+                             f"your study did not use any.")
+            return
 
         json_parms.update({
             "name": self.le_studyname.text(),
@@ -677,18 +694,15 @@ class xASL_Parms(QMainWindow):
                           range(self.lst_excluded_subjects.count())],
             "M0_conventionalProcessing":
                 {"New Image Processing": 0, "Standard Processing": 1}[self.cmb_m0_algorithm.currentText()],
-            "M0": {"Proton density scan (M0) was acquired": "separate_scan",
-                   "Use mean control ASL as M0 mimic": "UseControlAsM0",
-                   "Use a single value as the M0": self.spinbox_m0_isseparate.value()}
-            [self.cmb_m0_isseparate.currentText()],
+            "M0": self.activate_dict(self.d_m0)[self.cmb_m0_isseparate.currentText()],
             "M0_GMScaleFactor": float(self.spinbox_gmscale.value()),
-            "M0PositionInASL4D": self.d_m0_posinasl[self.cmb_m0_posinasl.currentText()],
+            "M0PositionInASL4D": partial(self.prep_vec, le=self.le_m0_posinasl)(),
 
             # Sequence Parameters
             "readout_dim": self.cmb_readout_dim.currentText(),
             "Vendor": self.cmb_vendor.currentText(),
             "Sequence": self.d_sequencetype[self.cmb_sequencetype.currentText()],
-            "DummyScanPositionInASL4D": self.prep_skipdummyasl_vec(),
+            "DummyScanPositionInASL4D": partial(self.prep_vec, le=self.le_skipdummyasl)(),
 
             # General Processing Parameters
             "Quality": {"High": 1, "Low": 0}[self.cmb_quality.currentText()],
@@ -717,9 +731,9 @@ class xASL_Parms(QMainWindow):
             [self.cmb_dctreg.currentText()],
             "bRegisterM02ASL": int(self.chk_removespikes.isChecked()),
             "bUseMNIasDummyStructural": int(self.chk_usemniasdummy.isChecked()),
-            str_dopvc: int(self.chk_nativepvc.isChecked()),
-            str_pvcgaus: int(self.chk_gaussianpvc.isChecked()),
-            str_pvcker: self.prep_pvc_kernel_vec(),
+            "bPVCNativeSpace": int(self.chk_nativepvc.isChecked()),
+            "bPVCGaussianMM": int(self.chk_gaussianpvc.isChecked()),
+            "PVCNativeSpaceKernel": self.prep_pvc_kernel_vec(),
 
             # Environment Parameters
             "FSLdirectory": self.le_fslpath.text(),
@@ -728,8 +742,9 @@ class xASL_Parms(QMainWindow):
             # Quantification Parameters
             "ApplyQuantification": self.prep_quantparms(),
             "Q": {
-                str_bsup: int(self.cmb_nsup_pulses.currentText()),
-                "BackgroundSuppressionPulseTime": self.prep_suppression_vec(),
+                "BackgroundSuppressionNumberPulses": int(self.cmb_nsup_pulses.currentText()),
+                "BackgroundSuppressionPulseTime": partial(self.prep_vec, le=self.le_sup_pulse_vec, regex=r"[0-9.]+",
+                                                          default=[])(),
                 "LabelingType": self.d_labelingtype[self.cmb_labelingtype.currentText()],
                 "Initial_PLD": float(self.spinbox_initialpld.value()),
                 "LabelingDuration": float(self.spinbox_labdur.value()),
@@ -745,19 +760,6 @@ class xASL_Parms(QMainWindow):
                 "Atlases": self.prep_atlas_vec()
             }
         })
-
-        # TODO; this will be deprecated in a future release
-        # Compatibility issue with "M0PositionInASL4D"; remove at lower ExploreASL versions
-        if json_parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED":
-            ref_le_widget = self.le_easl_dir
-        elif json_parms["EXPLOREASL_TYPE"] == "LOCAL_COMPILED":
-            ref_le_widget = self.le_easl_mcr
-        else:
-            ref_le_widget = None
-        if ref_le_widget is not None:
-            if all([is_earlier_version(easl_dir=Path(ref_le_widget.text()), threshold_higher=150, higher_eq=False),
-                    json_parms.get("M0PositionInASL4D") is None]):
-                del json_parms["M0PositionInASL4D"]
 
         try:
             with open(study_dir / "DataPar.json", 'w') as w:
@@ -800,26 +802,6 @@ class xASL_Parms(QMainWindow):
                         body=self.parms_errs["BadParFile"][1] + f"{datapar_json_e}")
             return
 
-        # Compatibility with name changes over ExploreASL Versions; this will be deprecated after a few version
-        # advancements
-        try:
-            path_key = "MyPath" if parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
-            bsup_str = "BackgroundSuppressionNumberPulses" if not is_earlier_version(parms[path_key], 140, False) \
-                else "BackGrSupprPulses"
-            if is_earlier_version(parms[path_key], threshold_higher=150, higher_eq=False):
-                str_pvcker = "PVCorrectionNativeSpaceKernel"
-                str_dopvc = "bPVCorrectionNativeSpace"
-                str_pvcgaus = "bPVCorrectionGaussianMM"
-            else:
-                str_pvcker = "PVCNativeSpaceKernel"
-                str_dopvc = "bPVCNativeSpace"
-                str_pvcgaus = "bPVCGaussianMM"
-        except KeyError:
-            bsup_str = "BackgroundSuppressionNumberPulses"
-            str_pvcker = "PVCNativeSpaceKernel"
-            str_dopvc = "bPVCNativeSpace"
-            str_pvcgaus = "bPVCGaussianMM"
-
         # Preliminary Functions to run
         self.get_easl_paths(loaded_parms=parms)  # Ensure the correct easl setup is in play first!
 
@@ -834,8 +816,7 @@ class xASL_Parms(QMainWindow):
                                                  args={0: "New Image Processing", 1: "Standard Processing"}),
             "M0": self.get_m0,
             "M0_GMScaleFactor": self.spinbox_gmscale.setValue,
-            "M0PositionInASL4D": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
-                                         widget=self.cmb_m0_posinasl, args=self.rev_dict(self.d_m0_posinasl)),
+            "M0PositionInASL4D": self.get_m0_pos_in_asl,
 
             # Sequence Parameters
             "readout_dim": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_readout_dim),
@@ -877,9 +858,9 @@ class xASL_Parms(QMainWindow):
                                         args={0: "Disabled", 1: "Enabled + no PVC", 2: "Enabled + PVC"}),
             "bRegisterM02ASL": self.chk_regm0toasl.setChecked,
             "bUseMNIasDummyStructural": self.chk_usemniasdummy.setChecked,
-            str_dopvc: self.chk_nativepvc.setChecked,
-            str_pvcgaus: self.chk_gaussianpvc.setChecked,
-            str_pvcker: self.get_pvc_kernel_vec,
+            "bPVCNativeSpace": self.chk_nativepvc.setChecked,
+            "bPVCGaussianMM": self.chk_gaussianpvc.setChecked,
+            "PVCNativeSpaceKernel": self.get_pvc_kernel_vec,
 
             # Environment Parameters
             "MakeNIfTI4DICOM": self.chk_outputcbfmaps.setChecked,
@@ -888,7 +869,8 @@ class xASL_Parms(QMainWindow):
             # Quantification Parameters
             "ApplyQuantification": self.get_quantparms,
             "Q": {
-                bsup_str: partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_nsup_pulses),
+                "BackgroundSuppressionNumberPulses": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
+                                                             widget=self.cmb_nsup_pulses),
                 "BackgroundSuppressionPulseTime": self.get_suppression_vec,
                 "LabelingType": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
                                         widget=self.cmb_labelingtype, args=self.rev_dict(self.d_labelingtype)),
@@ -989,6 +971,34 @@ class xASL_Parms(QMainWindow):
     #############################################
     # Convenience methods for translation to json
     #############################################
+    # noinspection PyTypeChecker
+    def prep_vec(self, le: QLineEdit, regex=r"[0-9]+", default=None, delim_vec: List[str] = None):
+        delim_vec = [",", " ", ";"] if delim_vec is None else delim_vec
+        func = int if regex == r"[0-9]+" else float
+
+        str_version = le.text().strip()
+        if str_version == "":
+            return default
+
+        vec_version = []
+        for delim in delim_vec:
+            if delim in str_version:
+                vec_version = str_version.split(delim)
+                break
+        # Last attempt
+        if len(vec_version) == 0:
+            vec_version = re.findall(regex, str_version)
+            if len(vec_version) == 0:
+                return default
+
+        idx: int
+        for idx, str_element in enumerate(vec_version.copy()):
+            element = str_element.strip()
+            if not self.isDigit(element):
+                return default
+            vec_version[idx] = func(element)
+        return vec_version
+
     def prep_mypath(self):
         if self.current_easl_type == "Local ExploreASL Directory":
             return self.le_easl_dir.text()
@@ -999,56 +1009,6 @@ class xASL_Parms(QMainWindow):
         quant_wids = [self.chk_quant_applyss_asl, self.chk_quant_applyss_m0, self.chk_quant_pwi2label,
                       self.chk_quant_quantifym0, self.chk_quant_divbym0]
         return [int(widget.isChecked()) for widget in quant_wids]
-
-    # noinspection PyTypeChecker
-    def prep_suppression_vec(self):
-        str_timings = self.le_sup_pulse_vec.text().strip()
-        if str_timings == "":
-            return []
-
-        num_timings: List[str] = []
-        for delim in [",", " ", ";"]:
-            if delim in str_timings:
-                num_timings = str_timings.split(delim)
-                break
-        # Last attempt
-        if len(num_timings) == 0:
-            num_timings: List[str, float] = re.findall(r"[0-9.]+", str_timings)
-            if len(num_timings) == 0:
-                return []
-
-        idx: int
-        for idx, timing in enumerate(num_timings.copy()):
-            timing = timing.strip()
-            if not self.isDigit(timing):
-                return []
-            num_timings[idx] = float(timing)
-        return num_timings
-
-    # noinspection PyTypeChecker
-    def prep_skipdummyasl_vec(self):
-        str_slices2skip: str = self.le_skipdummyasl.text()
-        if str_slices2skip == "":
-            return None
-
-        vec_slices2skip: List[str] = []
-        for delim in [",", " ", ";"]:
-            if delim in str_slices2skip:
-                vec_slices2skip = str_slices2skip.split(delim)
-                break
-        # Last attempt
-        if len(vec_slices2skip) == 0:
-            vec_slices2skip: List[str, float] = re.findall(r"[0-9]+", str_slices2skip)
-            if len(vec_slices2skip) == 0:
-                return None
-
-        idx: int
-        for idx, timing in enumerate(vec_slices2skip.copy()):
-            timing = timing.strip()
-            if not timing.isdigit():
-                return None
-            vec_slices2skip[idx] = int(timing)
-        return vec_slices2skip
 
     def prep_pvc_kernel_vec(self):
         return [self.spinbox_pvckernel_1.value(), self.spinbox_pvckernel_2.value(), self.spinbox_pvckernel_3.value()]
@@ -1097,6 +1057,20 @@ class xASL_Parms(QMainWindow):
         for wiget, val in zip(quant_wids, quant_vector):
             wiget.setChecked(bool(val))
 
+    def get_m0_pos_in_asl(self, m0_pos_vec: list):
+        if m0_pos_vec is None:
+            self.le_m0_posinasl.setText("")
+            return
+        if len(m0_pos_vec) == 0:
+            self.le_m0_posinasl.setText("")
+            return
+        if not all([isinstance(x, int) for x in m0_pos_vec]):
+            self.import_error_logger.append("M0 Position in ASL")
+            self.le_m0_posinasl.setText("")
+            return
+        str_m0posinasl = ", ".join([str(pos) for pos in m0_pos_vec])
+        self.le_m0_posinasl.setText(str_m0posinasl)
+
     def get_suppression_vec(self, suppr_vec: List[float]):
         if len(suppr_vec) == 0:
             self.le_sup_pulse_vec.setText("")
@@ -1110,6 +1084,7 @@ class xASL_Parms(QMainWindow):
     def get_skipdummyasl_vec(self, skip_vec: List[int]):
         if skip_vec is None:
             self.le_skipdummyasl.setText("")
+            return
         if not all([isinstance(x, int) for x in skip_vec]):
             self.import_error_logger.append("Skip Dummy ASL Vector")
             self.le_skipdummyasl.setText("")
@@ -1188,6 +1163,9 @@ class xASL_Parms(QMainWindow):
                 self.cmb_easl_type.setCurrentIndex(self.cmb_easl_type.findText("Local ExploreASL Compiled"))
                 self.le_easl_mcr.setText(str(loaded_parms["MyCompiledPath"]))
                 self.le_mrc_dir.setText(str(loaded_parms["MCRPath"]))
+            # TODO Docker Scenario goes here
+            elif easl_type == "DOCKER_IMAGE":
+                pass
             else:
                 pass
 

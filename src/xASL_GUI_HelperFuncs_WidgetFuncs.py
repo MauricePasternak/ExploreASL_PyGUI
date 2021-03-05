@@ -6,14 +6,15 @@ from src.xASL_GUI_HelperClasses import (DandD_Graphing_ListWidget2LineEdit, Dand
 from typing import Tuple, Union, List
 from pathlib import Path
 from os import sep
+from platform import system
 from more_itertools import peekable, interleave_longest
 import re
 
 
 def set_formlay_options(formlay: QFormLayout,
                         field_growth: Union[str, QFormLayout.FieldGrowthPolicy] = QFormLayout.ExpandingFieldsGrow,
-                        formside_alignment: Union[Tuple[str, str],
-                                                  Tuple[Qt.Alignment, Qt.Alignment]] = (Qt.AlignLeft, Qt.AlignTop),
+                        formside_alignment: Union[Tuple[str],
+                                                  Tuple[Qt.Alignment]] = (Qt.AlignLeft, Qt.AlignTop),
                         labelside_alignment: Union[str, Qt.Alignment] = Qt.AlignLeft,
                         row_wrap_policy: Union[str, QFormLayout.RowWrapPolicy] = QFormLayout.WrapLongRows,
                         vertical_spacing: int = None,
@@ -32,11 +33,13 @@ def set_formlay_options(formlay: QFormLayout,
             - "right"
             - "top"
             - "bottom"
+            - "vcenter"
         • labelside_alignment: string or Qt.Alignment. For string options, acceptable strings are:
             - "left"
             - "right"
             - "top"
             - "bottom"
+            - "vcenter
         • row_wrap_policy: string or QFormLayout RowWrapPolicy. For string options, acceptable strings are:
             - "dont_wrap" (Fields are always beside Labels)
             - "wrap_long" (Labels column has enough spacing to accomodate the widest label)
@@ -50,25 +53,34 @@ def set_formlay_options(formlay: QFormLayout,
     field_dict = {"at_size_hint": QFormLayout.FieldsStayAtSizeHint,
                   "expanding_fields_grow": QFormLayout.ExpandingFieldsGrow,
                   "all_nonfixed_grow": QFormLayout.AllNonFixedFieldsGrow}
-    align_dict = {"left": Qt.AlignLeft, "right": Qt.AlignRight, "top": Qt.AlignTop, "bottom": Qt.AlignBottom}
+    align_dict = {"left": Qt.AlignLeft, "right": Qt.AlignRight, "top": Qt.AlignTop, "bottom": Qt.AlignBottom,
+                  "vcenter": Qt.AlignVCenter}
     wrap_dict = {"dont_wrap": QFormLayout.DontWrapRows,
                  "wrap_long": QFormLayout.WrapLongRows,
                  "wrap_all": QFormLayout.WrapAllRows}
+
+    formside_bits = None
+    labelside_bits = None
+    for label in labelside_alignment:
+        bit = align_dict[label] if isinstance(label, str) else label
+        if labelside_bits is None:
+            labelside_bits = bit
+        else:
+            labelside_bits |= bit
+    for form in formside_alignment:
+        bit = align_dict[form] if isinstance(form, str) else form
+        if formside_bits is None:
+            formside_bits = bit
+        else:
+            formside_bits |= bit
 
     if isinstance(field_growth, str):
         formlay.setFieldGrowthPolicy(field_dict[field_growth])
     else:
         formlay.setFieldGrowthPolicy(field_growth)
 
-    if isinstance(formside_alignment[0], str):
-        formlay.setFormAlignment(align_dict[formside_alignment[0]] | align_dict[formside_alignment[1]])
-    else:
-        formlay.setFormAlignment(formside_alignment[0] | formside_alignment[1])
-
-    if isinstance(labelside_alignment, str):
-        formlay.setLabelAlignment(align_dict[labelside_alignment])
-    else:
-        formlay.setLabelAlignment(labelside_alignment)
+    formlay.setFormAlignment(formside_bits)
+    formlay.setLabelAlignment(labelside_bits)
 
     if isinstance(row_wrap_policy, str):
         formlay.setRowWrapPolicy(wrap_dict[row_wrap_policy])
@@ -231,6 +243,8 @@ def robust_qmsg(parent=None, msg_type="warning", title: str = "", body: Union[st
 
     """
     msg_box = QMessageBox()
+    if system() == "Darwin":
+        msg_box.setDefaultButton(QMessageBox.Ok)
     if parent is None:
         parent = QWidget()
     if isinstance(body, list) and isinstance(variables, list):

@@ -1,5 +1,6 @@
 from PySide2.QtWidgets import *
 from PySide2.QtCore import Signal, Slot
+from src.xASL_GUI_HelperFuncs_WidgetFuncs import robust_qmsg
 import pandas as pd
 from pathlib import Path
 import numpy as np
@@ -40,32 +41,38 @@ class xASL_GUI_Data_Loader(QWidget):
         self.parent_cw: xASL_Plotting
         stats_dir = Path(self.parent_cw.le_analysis_dir.text()) / "Population" / "Stats"
         if any([not stats_dir.exists(), not stats_dir.is_dir(), len(list(stats_dir.glob("*.tsv"))) == 0]):
-            QMessageBox().warning(self.parent_cw, self.parent_cw.plot_errs["BadStudyDir"][0],
-                                  self.parent_cw.plot_errs["BadStudyDir"][1], QMessageBox.Ok)
+            robust_qmsg(self.parent_cw, title=self.parent_cw.plot_errs["BadStudyDir"][0],
+                        body=self.parent_cw.plot_errs["BadStudyDir"][1])
             return
-
+        print("Loading in Data")
         # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         # First Section - Load in the ExploreASL Stats directory data
         atlas = {"MNI": "MNI_structural", "Hammers": "Hammers"}[self.parent_cw.cmb_atlas_selection.currentText()]
         pvc = {"With PVC": "PVC2", "Without PVC": "PVC0"}[self.parent_cw.cmb_pvc_selection.currentText()]
         stat = {"Mean": "mean", "Median": "median",
                 "Coefficient of Variation": "CoV"}[self.parent_cw.cmb_stats_selection.currentText()]
-        # Get the relevant files; exit if not all files can be found
-        try:
-            gm_file = next(stats_dir.glob(f'{stat}_*_TotalGM*{pvc}.tsv'))
-            wm_file = next(stats_dir.glob(f'{stat}_*_DeepWM*{pvc}.tsv'))
-            atlas_file = next(stats_dir.glob(f'{stat}_*_{atlas}*{pvc}.tsv'))
-        except StopIteration:
-            return
         # Clearing of appropriate widgets to accomodate new data
         self.parent_cw.lst_varview.clear()
         # Extract each as a dataframe and merge them
+        pat_gm = f'{stat}_*_TotalGM*{pvc}.tsv'
+        pat_wm = f'{stat}_*_DeepWM*{pvc}.tsv'
+        pat_atlas = f'{stat}_*_{atlas}*{pvc}.tsv'
         dfs = []
-        for file in [gm_file, wm_file, atlas_file]:
+        for pattern in [pat_gm, pat_wm, pat_atlas]:
+            try:
+                file = next(stats_dir.glob(pattern))
+            except StopIteration:
+                continue
             df = pd.read_csv(file, sep='\t')
             df.drop(0, axis=0, inplace=True)  # First row is unnecessary
             df = df.loc[:, [col for col in df.columns if "Unnamed" not in col]]
             dfs.append(df)
+        if len(dfs) == 0:
+            robust_qmsg(self.parent_cw, title="No Relevant Dataframes Found",
+                        body="Could not locate any of the indicated atlas/pvc/stat .tsv files in the Stats directory "
+                             "of this study. Has the user run the Population Module? If not, please run that module "
+                             "before re-attempting.")
+            return
         df: pd.DataFrame = pd.concat(dfs, axis=1)
         df = df.T.drop_duplicates().T
 
