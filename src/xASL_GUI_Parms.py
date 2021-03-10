@@ -2,7 +2,6 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2ListWidget, xASL_FormLayout
-from src.xASL_GUI_Executor_ancillary import is_earlier_version
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (make_scrollbar_area, make_droppable_clearable_le, set_formlay_options,
                                                   dir_check, robust_getdir, robust_getfile, robust_qmsg)
 import json
@@ -379,7 +378,7 @@ class xASL_Parms(QMainWindow):
         self.vlay_atlases = QVBoxLayout()
         self.chk_atlas_GM = QCheckBox(text="Grey Matter", checked=True)
         self.chk_atlas_WM = QCheckBox(text="White Matter", checked=True)
-        self.chk_atlas_MNI = QCheckBox(text="MNI", checked=False)
+        self.chk_atlas_MNI = QCheckBox(text="MNI Structural", checked=False)
         self.chk_atlas_hammers = QCheckBox(text="Hammers", checked=False)
         self.chk_atlas_HOcort = QCheckBox(text="Harvard Cortical", checked=False)
         self.chk_atlas_HOsub = QCheckBox(text="Harvard Subcortical", checked=False)
@@ -646,7 +645,6 @@ class xASL_Parms(QMainWindow):
                 return
             json_parms["MyPath"] = self.le_easl_dir.text()
             json_parms["EXPLOREASL_TYPE"] = "LOCAL_UNCOMPILED"
-            pathforchecking = str(easl_dir)
         elif self.current_easl_type == "Local ExploreASL Compiled":
             errs = [self.parms_errs["InvalidMCRDir"][0], self.parms_errs["InvalidMCRDir"][1]]
             s1, mrc_dir = dir_check(self.le_mrc_dir.text(), self, {"basename_fits_regex": ["v\\d{2,3}", errs]})
@@ -657,7 +655,6 @@ class xASL_Parms(QMainWindow):
             s2, easl_mcr = dir_check(self.le_easl_mcr.text(), self, {"rcontains": ["xASL_latest*", errs]})
             if not s2:
                 return
-            pathforchecking = str(easl_mcr)
             json_parms["MyCompiledPath"] = str(easl_mcr)
             json_parms["MCRPath"] = str(mrc_dir)
             json_parms["EXPLOREASL_TYPE"] = "LOCAL_COMPILED"
@@ -992,6 +989,7 @@ class xASL_Parms(QMainWindow):
                 return default
 
         idx: int
+        str_element: str
         for idx, str_element in enumerate(vec_version.copy()):
             element = str_element.strip()
             if not self.isDigit(element):
