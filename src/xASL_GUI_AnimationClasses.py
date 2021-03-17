@@ -4,21 +4,24 @@ from PySide2.QtCore import QByteArray, QSize, Signal, Slot
 
 
 class xASL_ImagePlayer(QLabel):
-    def __init__(self, filepath, parent=None, h_offset=0, v_offset=5):
+    def __init__(self, filepath, parent=None, alignment=Qt.AlignLeft, h_offset=0, v_offset=5,
+                 initial_movie_size=None):
         """
         A modified QLabel which features a GIF movie that can be played
 
             Parameters:
                 • filepath: The filepath to the .gif file which will be played
                 • parent: The parent of this widget
+                • alignment: The alignment of the movie w.r.t the label itself
                 • h_offset: When resizing based on a buddy widget, the additional horizontal size that should be given
                 • v_offset: When resizing based on a buddy widget, the additional vertical size that should be given
-
+                • initial_movie_size: None, QSize or a 2-element tuple to indicate the initial pixel dimensions that
+                the movie should be set to
         """
         super(xASL_ImagePlayer, self).__init__(parent=parent)
         self.h_offset, self.v_offset = h_offset, v_offset
         self.setContentsMargins(0, 0, 0, 0)
-        self.setAlignment(Qt.AlignLeft)
+        self.setAlignment(alignment)
 
         # Load the file into a QMovie with the appropriate size
         self.movie = QMovie(str(filepath), QByteArray(), self)
@@ -27,6 +30,11 @@ class xASL_ImagePlayer(QLabel):
 
         self.setMovie(self.movie)
         self.ping()
+
+        if initial_movie_size is not None:
+            if isinstance(initial_movie_size, tuple):
+                initial_movie_size = QSize(*initial_movie_size)
+            self.movie.setScaledSize(initial_movie_size)
 
     def ping(self):
         self.movie.start()

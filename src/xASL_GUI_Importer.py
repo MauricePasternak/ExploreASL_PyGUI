@@ -194,7 +194,7 @@ class xASL_GUI_Importer(QMainWindow):
         self.hlay_rootdir.addWidget(self.btn_setrootdir)
         self.chk_uselegacy = QCheckBox(checked=True)
         self.chk_uselegacy.setToolTip(self.import_tips["chk_uselegacy"])
-        self.formlay_rootdir.addRow("Raw Root Directory", self.hlay_rootdir)
+        self.formlay_rootdir.addRow("Source Root Directory", self.hlay_rootdir)
         self.formlay_rootdir.addRow("Use Legacy Import", self.chk_uselegacy)
 
         # Next specify the QLabels that can be dragged to have their text copied elsewhere

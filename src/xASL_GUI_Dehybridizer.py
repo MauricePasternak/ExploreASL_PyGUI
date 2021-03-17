@@ -45,8 +45,10 @@ class xASL_GUI_Dehybridizer(QWidget):
         self.SetupUI_UserSpecifyHybridDir()
         self.SetupUI_LeftandRightSections()
         movieplayer_path = Path(self.config["ProjectDir"]) / "media" / "processing.gif"
-        self.expanddirs_movieplayer = xASL_ImagePlayer(movieplayer_path)
-        self.expanddirs_movieplayer.setAlignment(Qt.AlignCenter)
+        self.expanddirs_movieplayer = xASL_ImagePlayer(movieplayer_path, alignment=Qt.AlignCenter,
+                                                       initial_movie_size=(self.config["ScreenSize"][0] // 51,
+                                                                           self.config["ScreenSize"][1] // 28))
+        self.expanddirs_movieplayer.setMaximumHeight(self.config["ScreenSize"][1] // 24)
 
         self.chk_makebackup = QCheckBox(text="(STRONGLY RECOMMENDED) Make a backup of the source directory "
                                              "before folder restructuring?", checked=True)
@@ -70,7 +72,7 @@ class xASL_GUI_Dehybridizer(QWidget):
         # MacOS additional actions
         if system() == "Darwin":
             set_formlay_options(self.formlay_basedirs, vertical_spacing=3)
-            self.mainlay.setContentsMargins(5, 0, 5, 5)
+        self.mainlay.setContentsMargins(5, 0, 5, 5)
 
     def SetupUI_UserSpecifyHybridDir(self):
         # First, specify the root directory

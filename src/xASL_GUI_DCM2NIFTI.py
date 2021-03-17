@@ -508,7 +508,7 @@ class DCM2NIFTI_Converter:
             stderr, return_code = result.stderr, result.returncode
         else:
             p = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 text=True, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                                 text=True, shell=True)
             p.wait()
             stdout, stderr = p.communicate()
             return_code = p.returncode
