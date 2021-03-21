@@ -793,11 +793,13 @@ class xASL_GUI_Importer(QMainWindow):
 
         now_str = datetime.now().strftime("%a-%b-%d-%Y_%H-%M-%S")
         try:
-            log_path = analysis_dir / f"Import_Log_{now_str}.log"
+            log_path = analysis_dir / "Logs" / "Import Logs" / f"Import_Log_{now_str}.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "w") as log_writer:
                 log_writer.write(f"\n{'#' * 50}\n".join(logs))
         except PermissionError:
-            log_path = analysis_dir / f"Import_Log_{now_str}_backup.log"
+            log_path = analysis_dir / "Logs" / "Import Logs" / f"Import_Log_{now_str}_backup.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "w") as log_writer:
                 log_writer.write("\n\n".join(logs))
 

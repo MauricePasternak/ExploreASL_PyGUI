@@ -80,11 +80,9 @@ class ExploreASL_Worker(QRunnable):
         self.signals = ExploreASL_WorkerSignals()
         self.is_running = False
         self.print_and_log(f"%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n"
-                           f"Initialized Worker with the following givens:\n"
+                           f"Initialized Worker {self.iworker} of {self.nworkers} with the following givens:\n"
                            f"\tExploreASL Type: {self.easl_scenario}\n"
                            f"\tDataPar Path: {self.par_path}\n"
-                           f"\tIWorker: {self.iworker}\n"
-                           f"\tNWorkers: {self.nworkers}\n"
                            f"\tIModules: {self.imodules}", msg_type="info")
 
     # noinspection RegExpRedundantEscape
@@ -839,9 +837,13 @@ class xASL_Executor(QMainWindow):
                 with open(tmp_file) as tmp_reader:
                     content.append(tmp_reader.read())
                 tmp_file.unlink(missing_ok=True)
+
+            # Concatenate content to write, prepare the log dir & file, then write to it
             to_write = "\n\n".join(content)
             err_write_date_str = datetime.now().strftime("%a-%b-%d-%Y_%H-%M-%S")
-            with open(study_dir / f"Run_Log_{err_write_date_str}.log", "w") as log_writer:
+            dst_logfile = study_dir / "Logs" / "Processing Logs" / f"Run_Log_{err_write_date_str}.log"
+            dst_logfile.parent.mkdir(parents=True, exist_ok=True)
+            with open(dst_logfile, "w") as log_writer:
                 log_writer.write(to_write)
 
             # Finally, parse the exit signatures
@@ -949,7 +951,6 @@ class xASL_Executor(QMainWindow):
         if self.config["DeveloperMode"]:
             print("%" * 60)
         translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
-        self.loggers = []
         self.workers = []
         self.watchers = []
         self.total_process_dbt = 0
@@ -1028,7 +1029,7 @@ class xASL_Executor(QMainWindow):
             # Regex check for subject hits
             hits = []
             for subject_path in ana_path.iterdir():
-                if any([subject_path.name in {"lock", "Population"}, subject_path.is_file(),
+                if any([subject_path.name in {"lock", "Population", "Logs"}, subject_path.is_file(),
                         subject_path.name in excluded_subjects]):
                     continue
                 hits.append(bool(regex.search(subject_path.name)))

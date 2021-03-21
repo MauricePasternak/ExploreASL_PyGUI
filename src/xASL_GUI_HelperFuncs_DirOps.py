@@ -1,9 +1,10 @@
 from pathlib import Path
-from json import load, dump, JSONDecodeError
+from json import load, loads, dump, JSONDecodeError
 from typing import Union, List, Any
 import pandas as pd
 from numpy import isnan
 from shutil import copyfile
+import logging
 
 
 ########################################################################################################################
@@ -40,7 +41,10 @@ def robust_read_csv(df_path: Union[Path, str], **kwargs):
 
 
 def interpret_value(value: Any):
-    if isinstance(value, (int, float, list, dict, set)):
+    if isinstance(value, (int, float, list, dict, set)) or value is None:
+        if isinstance(value, str):
+            if value == "NONE":  # This will be the only way to actually force a None value (null) to be assigned
+                return None
         return value
     if value == "":  # Case: empty string; just return it
         return ""
@@ -56,6 +60,13 @@ def interpret_value(value: Any):
             return to_return[0]
         else:
             return to_return
+    elif value.startswith("{") and value.endswith("}"):
+        value = value.replace('“', '"').replace('”', '"')
+        try:
+            to_return = loads(value)
+        except JSONDecodeError:
+            to_return = None
+        return to_return
     elif value.lower() in ["true", "t", "yes", "y"]:  # Case: it's a positive boolean
         return True
     elif value.lower() in ["false", "f", "no", "n"]:  # Case: it's a negative boolean
@@ -74,26 +85,31 @@ def alter_json_sidecar(json_path: Union[Path, str], action: str, key: str, value
     """
     json_path = Path(json_path)
     if any([not json_path.exists(), key is None]):
-        return
+        return False, f"{str(json_path)} did not exist"
     try:
         with open(json_path, "r") as sidecar_reader:
             sidecar_data = load(sidecar_reader)
-            if action.lower() in ["remove", "purge", "delete"]:
+            if action.lower() in {"remove", "purge", "delete"}:
                 del sidecar_data[key]
             else:
                 sidecar_data[key] = value
     except KeyError as key_err:
-        print(f"Encountered a KeyError with key {key}.\n{key_err}")
-        return
+        msg = f"Encountered a KeyError with key {key}:\t{key_err}\n" \
+              f"Was the user attempting to remove a non-existent key?"
+        print(msg)
+        return False, msg
     except JSONDecodeError as json_err:
-        print(f"Encountered a JSONDecodeError with with file {json_path}\n{json_err}")
-        return
+        msg = f"Encountered a JSONDecodeError with with file {json_path}:\n\t{json_err}"
+        print(msg)
+        return False, msg
     with open(json_path, "w") as sidecar_writer:
         dump(sidecar_data, sidecar_writer, indent=3)
+    return True, "Success"
 
 
 def alter_sidecars(root_dir: Union[str, Path], subjects: Union[List[str], str, Path],
-                   which_scan: str, action: str, key: str = None, value: Any = None):
+                   which_scan: str, action: str, key: str = None, value: Any = None,
+                   logger: logging.Logger = logging.getLogger()):
     """
     Changes the json sidecars of specified subjects in a study directory
 
@@ -104,52 +120,86 @@ def alter_sidecars(root_dir: Union[str, Path], subjects: Union[List[str], str, P
     :param action: one of "remove" or "alter"; defines whether the key in the sidecar is changed or deleted
     :param key: the name of the sidecar key to change
     :param value: the new value the sidecar should take on, if any
+    :param logger: the logging object that records processing errors
     """
     # Defensive Programming
-    root_dir = Path(root_dir)
+    root_dir = Path(root_dir).resolve()
+    logger.info(f"Assessing the following directory: {str(root_dir)}")
     if not root_dir.exists():
-        raise ValueError("root_dir argument was provided a filepath that does not exist")
+        logger.error(f"The indicated directory: {str(root_dir)} does not exist!")
+        return False
     if which_scan.lower() not in ["asl", "t1", "m0"]:
-        raise ValueError("which_scan argument must be one of 'ASL' or 'T1' or 'M0'")
-    else:
-        scan_translator = {"asl": "*ASL*.json", "t1": "*T1*.json", "m0": "*M0*.json"}
+        logger.error(f"An unknown scan type was provided: {which_scan}. "
+                     f"Could not process the sidecars of this scan type")
+        return False
+
+    scan_translator = {"asl": "*ASL4D*.json", "t1": "*T1*.json", "m0": "*M0*.json"}
 
     # Get a dict whose keys are subject names and whose values are a dict of sidecar key and new value
     if isinstance(subjects, (str, Path)):
         df = robust_read_csv(subjects)
-        df.set_index(df.columns[0], inplace=True)
+        if "SUBJECT" not in df.columns:
+            logger.error(f"The read-in dataframe did not contain the essential SUBJECT column")
+            return False
+        df.set_index("SUBJECT", inplace=True)
         iter_dict: dict = df.T.to_dict()
     elif isinstance(subjects, list):
         iter_dict: dict = {subject: {key: value} for subject in subjects}
     else:
-        raise TypeError("The subjects argument did not fit into any of the expected types.\n"
-                        "Please provide either a file with a column of names and a column of values\n"
-                        "or provide a list of strings representing subjects as well as the appropriate\n"
-                        "key and values that will be applied to all")
+        return False
 
+    n_subjects_found = 0
+    results = []  # A list of tuples of (successful, msg)
+    skipped = []
     for subject, key_val_dict in iter_dict.items():
+        # Get the subject
         try:
             subject_path = next(root_dir.rglob(subject))
             if not subject_path.is_dir():
                 continue
             print(subject_path)
+            n_subjects_found += 1
         except StopIteration:
+            skipped.append(subject)
             continue
-        for key, value in key_val_dict.items():
-            interpreted_value = interpret_value(value)
-            try:
-                json_path = next(subject_path.rglob(scan_translator[which_scan.lower()]))
-            except StopIteration:
+
+        # Retrieve the jsons of interest, interpret the value, then alter the sidecars
+        for k, v in key_val_dict.items():
+            json_paths = tuple(subject_path.rglob(scan_translator[which_scan.lower()]))
+            if len(json_paths) == 0:
                 continue
-            if action.lower() in ["remove", "purge", "delete"]:
-                alter_json_sidecar(json_path=json_path, action=action, key=key, value=interpreted_value)
-            else:
-                if isinstance(interpreted_value, (list, dict, str)):
-                    alter_json_sidecar(json_path=json_path, action=action, key=key, value=interpreted_value)
-                elif not isnan(interpreted_value):
-                    alter_json_sidecar(json_path=json_path, action=action, key=key, value=interpreted_value)
-                else:
-                    continue
+
+            interpreted_value = interpret_value(v)
+            try:
+                is_nan = isnan(interpreted_value)
+                if len(is_nan) > 1:
+                    is_nan = any(is_nan)
+            except TypeError:  # TypeError occurs if the interpreted_value is not numeric
+                is_nan = False
+
+            # At the current time, NaNs will be skipped
+            if is_nan:
+                continue
+
+            for json_file in json_paths:
+                succes, msg = alter_json_sidecar(json_path=json_file, action=action, key=k, value=interpreted_value)
+                results.append((str(json_file), succes, msg))
+
+    if n_subjects_found == 0:
+        logger.error(f"Could not locate any of the specified subjects in {str(root_dir)}")
+        return False
+
+    # Parse the results variable into a neat-looking string
+    results_str = "\n".join([f"File:\t{file}\n\tSuccessful Operation?: {success}\n\tExit Message: {msg}"
+                             for file, success, msg in results])
+    logger.info(results_str)
+    _, statuses, _ = zip(*results)
+
+    # Return a status code depending on whether everything went smoothly or not
+    if all(statuses):
+        return True
+    else:
+        return False
 
 
 def merge_directories(roots: List[Union[Path, str]],

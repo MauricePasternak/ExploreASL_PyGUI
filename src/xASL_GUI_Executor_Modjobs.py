@@ -9,6 +9,8 @@ from functools import partial
 from pathlib import Path
 from pprint import pprint
 from platform import system
+from datetime import datetime as dt
+import logging
 
 
 class xASL_GUI_MergeDirs(QWidget):
@@ -179,6 +181,17 @@ class xASL_GUI_ModSidecars(QWidget):
         self.root_dir = Path(self.parent.le_modjob.text())
         self.mainlay = QVBoxLayout(self)
 
+        self.log_file = self.root_dir / "Logs" / "JSON Sidecar Modlogs" / "JSON Sidecar Modification.log"
+        self.log_file.parent.mkdir(exist_ok=True)
+        if not self.log_file.exists():
+            with open(self.log_file, "w") as toucher:
+                toucher.write("")
+        self.logger = logging.Logger(name="ModSidecarsLogger", level=logging.DEBUG)
+        self.handler = logging.FileHandler(filename=str(self.log_file))
+        fmt = logging.Formatter(fmt="%(message)s")
+        self.handler.setFormatter(fmt)
+        self.logger.addHandler(self.handler)
+
         # Grp 1 - Editing Jsons from a csv config file
         self.grp_fromfile = QGroupBox(title="Specify config from a CSV file", checkable=True, checked=True)
         self.grp_fromfile.clicked.connect(partial(self.ctrl_which_option, widget=self.grp_fromfile))
@@ -276,16 +289,22 @@ class xASL_GUI_ModSidecars(QWidget):
 
         # Ascertain which types of scans to search for regardless of method
         which_scans = []
+        alter_sidecar_results = []
         for scan_type, widget in zip(["asl", "t1", "m0"], [self.chk_asl, self.chk_t1, self.chk_m0]):
             if widget.isChecked():
                 which_scans.append(scan_type)
-        del scan_type, widget
+        del scan_type
+
+        action = "remove" if self.cmb_actiontype.currentText() == "Remove a field" else "alter"
 
         # User wishes to alter sidecars using a pre-configured csv file
         if self.grp_fromfile.isChecked():
+            start_msg = f"{str(dt.now())} - STARTING JSON SIDECAR ALTERATION"
+            self.logger.info("#" * len(start_msg) + "\n" + start_msg)
             for scan_type in which_scans:
-                alter_sidecars(root_dir=self.root_dir, subjects=self.le_fromfile.text(), which_scan=scan_type,
-                               action="remove" if self.cmb_actiontype.currentText() == "Remove a field" else "alter")
+                res = alter_sidecars(root_dir=self.root_dir, subjects=self.le_fromfile.text(), which_scan=scan_type,
+                                     action=action, logger=self.logger)
+                alter_sidecar_results.append(res)
         # User wishes to alter sidecars using the drag & drop list
         else:
             # Get the list of subjects
@@ -300,15 +319,30 @@ class xASL_GUI_ModSidecars(QWidget):
                             body=self.parent.exec_errs["SubjectsNotFound"][1])
                 return
 
+            start_msg = f"{str(dt.now())} - STARTING JSON SIDECAR ALTERATION"
+            self.logger.info("#" * len(start_msg) + "\n" + start_msg)
             for scan_type in which_scans:
-                alter_sidecars(root_dir=self.root_dir, subjects=subs, which_scan=scan_type,
-                               action="remove" if self.cmb_actiontype.currentText() == "Remove a field" else "alter",
-                               key=self.le_key.text(), value=interpret_value(self.le_value.text()))
-        # Afterwards...
-        robust_qmsg(self, title="Finished json sidecar operation",
-                    body="Completed the requested json sidecar operation on the indicated subjects")
+                res = alter_sidecars(root_dir=self.root_dir, subjects=subs, which_scan=scan_type,
+                                     action=action, key=self.le_key.text(), value=interpret_value(self.le_value.text()),
+                                     logger=self.logger)
+                alter_sidecar_results.append(res)
+        # Give a specific message depending on the results
+        if all(alter_sidecar_results):
+            robust_qmsg(self, msg_type="information", title="Finished json sidecar operation",
+                        body="Completed the requested json sidecar operation on the indicated subjects")
+        else:
+            robust_qmsg(self, msg_type="information", title="Finished json sidecar operation with errors",
+                        body="The requested json sidecar operation finished with some errors. These may be false, "
+                             f"but the user is recommended to check the following log file:\n{self.log_file}")
         QApplication.restoreOverrideCursor()
         return
+
+    def closeEvent(self, event):
+        self.handler.close()
+        self.logger.removeHandler(self.handler)
+        del self.handler
+        del self.logger
+        super(xASL_GUI_ModSidecars, self).closeEvent(event)
 
 
 class xASL_GUI_RerunPrep(QWidget):
@@ -541,7 +575,8 @@ class xASL_GUI_TSValter(QWidget):
         else:
             meta_path = Path(self.le_metadatafile.text()).resolve()
         if any([not meta_path.exists(), meta_path.is_dir()]):
-            robust_qmsg(self, "Could not load metadata", "You have indicated either a non-existent path or a directory")
+            robust_qmsg(self, msg_type="warning", title="Could not load metadata",
+                        body="You have indicated either a non-existent path or a directory")
             return
 
         self.df_metadata: pd.DataFrame = robust_read_csv(meta_path)

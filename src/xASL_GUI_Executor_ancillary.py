@@ -86,7 +86,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
 
         for subject_path in analysis_directory.iterdir():
             # Disregard files, standard directories, subjects that fail regex, and subjects that are to be excluded
-            if any([subject_path.is_file(), subject_path.name in ["Population", "lock"],
+            if any([subject_path.is_file(), subject_path.name in ["Population", "lock", "Logs"],
                     subject_path.name in parms["exclusion"], not incl_regex.search(subject_path.name)]):
                 continue
             # Account for SkipIfNo flags
@@ -145,7 +145,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
         # Must iterate through both the subject level listing AND the session level (ASL_1, ASL_2, etc.) listing
         for subject_path in analysis_directory.iterdir():
             # Disregard files, standard directories, subjects that fail regex and subjects that are to be excluded
-            if any([subject_path.is_file(), subject_path.name in ["Population", "lock"],
+            if any([subject_path.is_file(), subject_path.name in ["Population", "lock", "Logs"],
                     subject_path.name in parms["exclusion"], not incl_regex.search(subject_path.name)]):
                 continue
             aslmod_dict[subject_path.name] = {}
