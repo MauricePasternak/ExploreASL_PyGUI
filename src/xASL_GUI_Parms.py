@@ -88,7 +88,7 @@ class xASL_Parms(QMainWindow):
 
     def prep_widget_dicts(self):
         self.d_atlases = {"TotalGM": self.chk_atlas_GM, "DeepWM": self.chk_atlas_WM,
-                          "MNI_structural": self.chk_atlas_MNI, "Hammers": self.chk_atlas_hammers,
+                          "MNI_Structural": self.chk_atlas_MNI, "Hammers": self.chk_atlas_hammers,
                           "HOcort_CONN": self.chk_atlas_HOcort, "HOsub_CONN": self.chk_atlas_HOsub,
                           "Mindboggle_OASIS_DKT31_CMA": self.chk_atlas_oasis}
         self.d_m0 = {"Proton density scan (M0) was acquired": "separate_scan",

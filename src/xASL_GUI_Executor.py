@@ -1384,7 +1384,7 @@ class ExploreASL_Watcher(QRunnable):
                 #                                     subject=detected_subject.group(), run=run)
             elif detected_module.group(1) == "Population":
                 msg = f"Completed {self.pop_status_file_translator[created_path.name]} in the Population module"
-                files_to_skip = self.determine_skip(which_dict="Population", created_status_path=created_path)
+                # files_to_skip = self.determine_skip(which_dict="Population", created_status_path=created_path)
 
             workload_val = self.workload_translator[created_path.name]
 

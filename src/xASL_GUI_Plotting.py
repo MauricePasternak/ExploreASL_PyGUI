@@ -102,7 +102,8 @@ class xASL_Plotting(QMainWindow):
         self.le_metadata.setToolTip(self.plot_tips["le_metadata"])
         self.cmb_atlas_selection = QComboBox()
         self.cmb_atlas_selection.setToolTip(self.plot_tips["cmb_atlas_selection"])
-        self.cmb_atlas_selection.addItems(["MNI", "Hammers"])
+        self.cmb_atlas_selection.addItems(["MNI", "Hammers", "Harvard-Oxford Cortical", "Harvard-Oxford Subcortical",
+                                           "OASIS"])
         self.cmb_pvc_selection = QComboBox()
         self.cmb_pvc_selection.setToolTip(self.plot_tips["cmb_pvc_selection"])
         self.cmb_pvc_selection.addItems(["Without PVC", "With PVC"])

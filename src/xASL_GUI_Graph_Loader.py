@@ -23,17 +23,25 @@ class xASL_GUI_Data_Loader(QWidget):
         self.long_data_orig = pd.DataFrame()  # This will be the target of dtype alteration
         self.long_data_to_subset = pd.DataFrame()  # This will be the target of subsetting
         self.long_data = pd.DataFrame()  # This will be the target of plotting
-
-        self.dtype_guide = {"SUBJECT": "object",
-                            "LongitudinalTimePoint": "category",
-                            "SubjectNList": "category",
-                            "Site": "category",
-                            "AcquisitionTime": "float64",
-                            "GM_vol": "float64",
-                            "WM_vol": "float64",
-                            "CSF_vol": "float64",
-                            "GM_ICVRatio": "float64",
-                            "GMWM_ICVRatio": "float64"}
+        self.atlas_guide = {
+            "MNI": "MNI_structural",
+            "OASIS": "Mindboggle_OASIS",
+            "Harvard-Oxford Cortical": "HOcort",
+            "Harvard-Oxford Subcortical": "HOsub",
+            "Hammers": "Hammers"
+        }
+        self.dtype_guide = {
+            "SUBJECT": "object",
+            "LongitudinalTimePoint": "category",
+            "SubjectNList": "category",
+            "Site": "category",
+            "AcquisitionTime": "float64",
+            "GM_vol": "float64",
+            "WM_vol": "float64",
+            "CSF_vol": "float64",
+            "GM_ICVRatio": "float64",
+            "GMWM_ICVRatio": "float64"
+        }
 
     def load_exploreasl_data(self):
         # Cautionary measures
@@ -47,10 +55,11 @@ class xASL_GUI_Data_Loader(QWidget):
         print("Loading in Data")
         # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         # First Section - Load in the ExploreASL Stats directory data
-        atlas = {"MNI": "MNI_structural", "Hammers": "Hammers"}[self.parent_cw.cmb_atlas_selection.currentText()]
+        atlas = self.atlas_guide[self.parent_cw.cmb_atlas_selection.currentText()]
         pvc = {"With PVC": "PVC2", "Without PVC": "PVC0"}[self.parent_cw.cmb_pvc_selection.currentText()]
         stat = {"Mean": "mean", "Median": "median",
                 "Coefficient of Variation": "CoV"}[self.parent_cw.cmb_stats_selection.currentText()]
+
         # Clearing of appropriate widgets to accomodate new data
         self.parent_cw.lst_varview.clear()
         # Extract each as a dataframe and merge them

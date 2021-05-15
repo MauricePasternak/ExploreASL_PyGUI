@@ -155,6 +155,7 @@ class xASL_MainWin(QMainWindow):
 
     # The actual function that sets the analysis directory
     def set_analysis_dir(self, directory: str):
+        #TODO put a try-except block here for OSError
         if any([directory == "", not Path(directory).exists(), not Path(directory).is_dir()]):
             return
         else:
