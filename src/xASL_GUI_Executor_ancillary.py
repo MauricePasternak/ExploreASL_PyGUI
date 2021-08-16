@@ -74,7 +74,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
 
     def get_structural_workload(analysis_directory: Path, parms: dict, incl_regex: re.Pattern,
                                 workload_translator: dict):
-        path_key = "MyPath" if parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
+        path_key = "MyPath"
         structuralmod_dict = {}
         status_files = []
         workload = {"010_LinearReg_T1w2MNI.status", "020_LinearReg_FLAIR2T1w.status",
@@ -87,7 +87,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
         for subject_path in analysis_directory.iterdir():
             # Disregard files, standard directories, subjects that fail regex, and subjects that are to be excluded
             if any([subject_path.is_file(), subject_path.name in ["Population", "lock", "Logs"],
-                    subject_path.name in parms["exclusion"], not incl_regex.search(subject_path.name)]):
+                    subject_path.name in parms["dataset"]["exclusion"], not incl_regex.search(subject_path.name)]):
                 continue
             # Account for SkipIfNo flags
             if not is_valid_for_analysis(path=subject_path, parms=parms, glob_dict=glob_dictionary):
@@ -114,7 +114,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
 
     def get_asl_workload(analysis_directory, parms: dict, workload_translator: dict, incl_regex: re.Pattern,
                          conditions: List[Tuple[str, bool]] = None):
-        path_key = "MyPath" if parms["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
+        path_key = "MyPath"
         aslmod_dict = {}
         status_files = []
         glob_dictionary = {"ASL": "*ASL*.nii*", "FLAIR": "*FLAIR.nii*", "M0": "*M0.nii*"}
@@ -146,7 +146,7 @@ def calculate_anticipated_workload(parmsdict, run_options, translators):
         for subject_path in analysis_directory.iterdir():
             # Disregard files, standard directories, subjects that fail regex and subjects that are to be excluded
             if any([subject_path.is_file(), subject_path.name in ["Population", "lock", "Logs"],
-                    subject_path.name in parms["exclusion"], not incl_regex.search(subject_path.name)]):
+                    subject_path.name in parms["dataset"]["exclusion"], not incl_regex.search(subject_path.name)]):
                 continue
             aslmod_dict[subject_path.name] = {}
             for run_path in subject_path.iterdir():

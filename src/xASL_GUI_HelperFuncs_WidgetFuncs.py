@@ -266,7 +266,7 @@ def robust_qmsg(parent=None, msg_type="warning", title: str = "", body: Union[st
 
 def robust_getfile(dialogue_caption: str = "", default_dir: Union[Path, str] = Path.home(),
                    dialogue_filter: str = "", permitted_suffixes: List[str] = None,
-                   qmsgs: bool = True) -> (bool, Path):
+                   qmsgs: bool = True) -> Tuple[bool, Path]:
     """
     Convenience function for retrieving a valid Path object from a QFileDialogue
 
@@ -312,7 +312,7 @@ def robust_getfile(dialogue_caption: str = "", default_dir: Union[Path, str] = P
 
 
 def dir_check(directory: Union[Path, str], parent=None, requirements: dict = None,
-              qmsgs: bool = False) -> (bool, Union[None, Path]):
+              qmsgs: bool = False) -> Tuple[bool, Union[None, Path]]:
     """
     Convenience function for checking whether a given path has fulfilled certain requirements
 
@@ -406,7 +406,7 @@ def dir_check(directory: Union[Path, str], parent=None, requirements: dict = Non
     return True, directory
 
 def robust_getdir(parent=None, dialog_caption: str = "", default_dir: Union[str, Path] = Path.home(),
-                  requirements: dict = None, qmsgs: bool = True, lineedit=None) -> (bool, Union[None, Path]):
+                  requirements: dict = None, qmsgs: bool = True, lineedit=None) -> Tuple[bool, Union[None, Path]]:
     """
     Meta-function for returning a directory from a QFileDialogue.
 

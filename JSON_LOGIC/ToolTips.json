@@ -52,7 +52,7 @@
     "chk_quant_pwi2label": "Specify whether to convert PWI arbitrary units to label units (checked)\nor omit this step (unchecked)",
     "chk_quant_quantifym0": "Specify whether to quantify the M0 arbitrary units (checked)\nor omit this step (unchecked)",
     "chk_quant_divbym0": "Specify whether to perform the division calculation by the M0 image (checked)\nor omit this step (unchecked)",
-    "chk_save_cbf4d": "Specify whether to also save the 4D CBF timeseries if the ASL volume was a timeseries (checked)\n or omit this step (unchecked)",
+    "chk_quant_savecbf4d": "Specify whether to also save the 4D CBF timeseries if the ASL volume was a timeseries (checked)\n or omit this step (unchecked)",
     "cmb_ncomparts": "Specify the number of compartments to model during quantification",
     "cmb_m0_algorithm": "Specify whether to use the newer M0 processing algorithm or the standard one",
     "spinbox_gmscale": "Specify whether the M0 image should be multiplied by a specific factor.\nThis is useful when you have background suppression but no M0 image acquired\nwithout suppression. If you know the M0 scalefactor, you can use the control\nimage as M0 and apply this factor to scale back what was suppressed by the\nbackground suppression",

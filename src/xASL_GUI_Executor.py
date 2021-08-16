@@ -15,7 +15,9 @@ from src.xASL_GUI_Executor_Modjobs import (xASL_GUI_RerunPrep, xASL_GUI_TSValter
                                            xASL_GUI_ModSidecars, xASL_GUI_MergeDirs)
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (set_widget_icon, make_droppable_clearable_le, set_formlay_options,
                                                   robust_qmsg, dir_check, robust_getdir)
+from src.xASL_GUI_Schemas import DataParSchemaStrict, parse_errors
 from pprint import pprint
+from pydantic import ValidationError
 from collections import defaultdict
 import subprocess
 from shutil import rmtree, which
@@ -38,7 +40,13 @@ class ExploreASL_Worker(QRunnable):
     Worker thread for running lauching an ExploreASL MATLAB session with the given arguments
     """
 
-    def __init__(self, worker_parms, iworker, nworkers, imodules, worker_env):
+    def __init__(self,
+                 worker_parms: dict,
+                 iworker: int,
+                 nworkers: int,
+                 imodules,
+                 worker_env
+                 ):
         super().__init__()
         # Main Attributes
         self.worker_parms: dict = worker_parms
@@ -58,18 +66,16 @@ class ExploreASL_Worker(QRunnable):
         # Parsing Attributes
         self.regex_errstart = re.compile(r"ERROR: Job iteration terminated!")
         self.regex_errend = re.compile(r"CONT: but continue with next iteration!")
-        self.regex_findtarget = re.compile(r"ASL_module_(ASL|Structural|Population)"
-                                           r"(?:%%%([^#%&{}\\<>*?/$!'\":@+`|=]+))?"
-                                           r"(?:%%%([^#%&{}\\<>*?/$!'\":@+`|=]+))?\b")
+        self.regex_findtarget = re.compile(
+            r"=== (?:Subject: (?P<Subject>\w+), )?"
+            r"(?:Session: (?P<Session>\w+), )?"
+            r"(?:Module: xASL_module_(?P<Module>Structural|ASL|Population).*)==="
+        )
         self.is_collecting_stdout_err = False
         self.has_easl_errors = False
 
         # Set up the Logging-related Attributes
-        try:
-            study_name: str = self.worker_parms["name"]
-        except KeyError:
-            study_name: str = f"Unspecified Study Name"
-        self.logger = logging.Logger(name=study_name, level=logging.DEBUG)
+        self.logger = logging.Logger(name=self.worker_parms["name"], level=logging.DEBUG)
         basename = f"tmp_RunWorker_{str(self.iworker).zfill(3)}.log"
         self.handler = logging.FileHandler(filename=Path(self.analysis_dir) / basename, mode='w')
         self.handler.setFormatter(logging.Formatter(fmt="%(asctime)s - %(name)s - %(levelname)s\n%(message)s"))
@@ -93,15 +99,16 @@ class ExploreASL_Worker(QRunnable):
         self.print_and_log(f"Worker {self.iworker}: Beginning Run", msg_type="info")
         self.print_and_log(f"Worker {self.iworker}: ExploreASL Type = {self.easl_scenario}", msg_type="info")
         if self.easl_scenario == "LOCAL_UNCOMPILED":
-            mpath = self.worker_parms["WORKER_MATLAB_CMD_PATH"]
             exploreasl_path = self.worker_parms["MyPath"]
-            process_data = 1
-            skip_pause = 1
+            ImportModules = 0
+            bPause = 0
+            ProcessModules = "[" + ' '.join([str(item) for item in self.imodules]) + "]"
 
             # Generate the string that the command line will feed into the MATLAB session
-            func_line = f"('{self.par_path}', {process_data}, {skip_pause}, {self.iworker}, {self.nworkers}, " \
-                        f"[{' '.join([str(item) for item in self.imodules])}])"
-            matlab_cmd = "matlab" if which("matlab") is not None else mpath
+            func_line = f"('{self.par_path}', {ImportModules}, {ProcessModules}, {bPause}, {self.iworker}, " \
+                        f"{self.nworkers})"
+
+            matlab_cmd = "matlab" if which("matlab") is not None else self.worker_parms["WORKER_MATLAB_CMD_PATH"]
             if self.worker_parms["WORKER_MATLAB_VER"] >= 2019:
                 cmd_path = [f"{matlab_cmd}", "-nodesktop", "-nosplash", "-batch",
                             f"cd('{exploreasl_path}'); ExploreASL_Master{func_line}; exit"]
@@ -112,6 +119,7 @@ class ExploreASL_Worker(QRunnable):
             # Prepare the Subprocess
             self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
                                f"{cmd_path}", msg_type="info")
+            print(" ".join(cmd_path))
             if system() == "Windows":
                 self.print_and_log(f"Worker {self.iworker}: Was instructed to not create any windows as well.", "info")
                 self.proc = psutil.Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -120,35 +128,53 @@ class ExploreASL_Worker(QRunnable):
                 self.proc = psutil.Popen(cmd_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         elif self.easl_scenario == "LOCAL_COMPILED":
-            process_data = 1
-            skip_pause = 1
-            compiled_easl_path = self.worker_parms["MyCompiledPath"]
+            ProcessModules = '[' + ' '.join([str(item) for item in self.imodules]) + ']'
+            path_datapar = self.worker_parms["D"]["ROOT"]
+
+            # This path may not exist yet. It is created by run_xASL_latest and houses the ExploreASL.m files
+            path_compiled_easl_createdpath = Path(self.worker_parms["MyPath"])
+
+            # This path is the folder with the run_xASL_latest script
+            path_compiled_easl_launcher_dir = path_compiled_easl_createdpath.parent.parent
+
             glob_pat = "*.exe" if system() == "Windows" else "*.sh"
 
             # Ensure the easl launch script actually has executable permissions
-            compiled_easl_script = next(Path(compiled_easl_path).glob(glob_pat))
-            compiled_easl_script.chmod(0o775)
-            compiled_easl_script = str(compiled_easl_script)
-            # On Linux and Mac, the xASL_latest script also needs to be granted permission
+            compiled_easl_launcher = next(path_compiled_easl_launcher_dir.glob(glob_pat))
+            compiled_easl_launcher.chmod(0o775)
+            compiled_easl_launcher = str(compiled_easl_launcher)
+            # On Linux and Mac, the xASL_latest ancillary script in that same folder also needs to be granted permission
             if system() != "Windows":
-                ancillary_script = Path(compiled_easl_path).resolve() / "xASL_latest"
+                ancillary_script = path_compiled_easl_launcher_dir / "xASL_latest"
                 ancillary_script.chmod(0o775)
 
             # Generate the string that the command line will feed into the complied MATLAB session
             if system() == "Windows":
-                func_line = f'{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} ' \
-                            f'"[{" ".join([str(item) for item in self.imodules])}]"'
-                cmd_line = f"{compiled_easl_script} {func_line}"
+                cmd_line = [str(compiled_easl_launcher),  # The run_xASL_latest.exe file
+                            f'"{str(path_datapar)}"',  # The study directory
+                            f'"0"',  # Import Modules Command
+                            f'{ProcessModules}',  # Process Modules Command
+                            f'"0"',  # Whether to pause or not
+                            f'"{self.iworker}"',  # iWorker
+                            f'"{self.nworkers}"'  # nWorkers
+                            ]
                 self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
                                    f"{cmd_line}", msg_type="info")
                 self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                          env=self.worker_env, creationflags=subprocess.CREATE_NO_WINDOW)
             else:
-                linux_bs = f"'{self.imodules}'"
-                func_line = f'"{self.par_path} {process_data} {skip_pause} {self.iworker} {self.nworkers} {linux_bs}"'
-                cmd_line = [compiled_easl_script, self.worker_parms["MCRPath"], func_line]
+                cmd_line = [str(compiled_easl_launcher),  # The run_xASL_latest.sh file
+                            str(self.worker_parms["MCRPath"]),  # The MCR directory ending with /v97
+                            f'"{str(path_datapar)}"',  # The study directory
+                            f'"0"',  # Import Modules Command
+                            f'{ProcessModules}',  # Process Modules Command
+                            f'"0"',  # Whether to pause or not
+                            f'"{self.iworker}"',  # iWorker
+                            f'"{self.nworkers}"'  # nWorkers
+                            ]
+
                 self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
-                                   f"{' '.join(cmd_line)}", msg_type="info")
+                                   f"{cmd_line}", msg_type="info")
                 self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                          env=self.worker_env)
 
@@ -166,15 +192,24 @@ class ExploreASL_Worker(QRunnable):
                 break
 
             output = self.proc.stdout.readline().strip()  # This line is blocking in nature
+            print(f"{output=}")
             # Break out of the process is no longer running
             if output == '' and self.proc.poll() is not None:
                 break
 
             # TODO When ExploreASL grants the ability to latch onto a new module/subject/run, get those givens to
             #  refresh the context of the error
-            # elif self.regex_findtarget.search(output):
-            #     module, subject, run = self.regex_findtarget.search(output).groups()
-            #     context = f"Given the following context:\nModule:\t{module}\nSubject:\t{subject}\nRun:\t{run}"
+            elif self.regex_findtarget.search(output):
+                process_content = self.regex_findtarget.search(output).groupdict(default=None)
+                prologue = "Beginning to process: "
+                epilogue = f" in the study: {self.worker_parms['name']}"
+                body = ""
+                pprint(process_content)
+                for name in ["Module", "Subject", "Session"]:
+                    if process_content[name] is not None:
+                        body += f"{name}: {process_content[name]}"
+                self.signals.signal_inform_output.emit(prologue + body + epilogue)
+                context = body
 
             # If the line is the start of an error message, activate collecting mode
             elif self.regex_errstart.search(output):
@@ -186,7 +221,8 @@ class ExploreASL_Worker(QRunnable):
                 err_container.append("")
                 msg = "\n".join(err_container)
                 self.print_and_log(f"Worker {self.iworker} detected the following Error message from "
-                                   f"ExploreASL:{context}\n{msg}")
+                                   f"ExploreASL which occurred under the following context:{context}\n"
+                                   f"Message:\n\n{msg}")
                 err_container.clear()
                 self.is_collecting_stdout_err = False
                 n_collected = 0
@@ -865,7 +901,7 @@ class xASL_Executor(QMainWindow):
         # Otherwise, make the correct report
         report_str = 'ExploreASL_GUI Error Run Report:'
         final_msg = ["\n" + "%" * 50 + "\n" +
-                     " " * ((150 - len(report_str))//2) + report_str + " " * ((150 - len(report_str))//2) + "\n" +
+                     " " * ((150 - len(report_str)) // 2) + report_str + " " * ((150 - len(report_str)) // 2) + "\n" +
                      "%" * 50]
         descs = ["were terminated by the user",
                  "had one or more errors detected within ExploreASL (please check the RunLog for that study)",
@@ -950,7 +986,7 @@ class xASL_Executor(QMainWindow):
     def run_Explore_ASL(self):
         if self.config["DeveloperMode"]:
             print("%" * 60)
-        translator = {"Structural": [1], "ASL": [2], "Both": [1, 2], "Population": [3]}
+        translator = {"Structural": [1, 0, 0], "ASL": [0, 1, 0], "Both": [1, 1, 0], "Population": [0, 0, 1]}
         self.workers = []
         self.watchers = []
         self.total_process_dbt = 0
@@ -984,58 +1020,66 @@ class xASL_Executor(QMainWindow):
             # Step 1 - For the study, load in the parameters
             forbidden = {"", ".", "/", "\\", "~"}
             if path.text() in forbidden:
-                robust_qmsg(self, title=self.exec_errs["Forbidden Study Character"][0],
-                            body=self.exec_errs["Forbidden Study Character"][1], variables=[path.text()])
+                robust_qmsg(self,
+                            title=self.exec_errs["Forbidden Study Character"][0],
+                            body=self.exec_errs["Forbidden Study Character"][1],
+                            variables=[path.text()])
                 # self.set_widgets_activation_states(True)
                 return
 
-            ana_path = Path(path.text().replace("~", str(Path.home()))).resolve()
+            ana_path = Path(path.text())
             try:
                 parms_file = next(ana_path.glob("DataPar*.json"))
             except StopIteration:
-                robust_qmsg(self, title=self.exec_errs["DataPar File Not Found"][0],
-                            body=self.exec_errs["DataPar File Not Found"][1], variables=[str(ana_path)])
+                robust_qmsg(self,
+                            title=self.exec_errs["DataPar File Not Found"][0],
+                            body=self.exec_errs["DataPar File Not Found"][1],
+                            variables=[str(ana_path)])
                 return
 
             # Load in the DataPar.json file and Extract essential parameters
             try:
-                # First load in the file
+                # First load in the file and validate it with pydantic
                 with open(parms_file) as f:
-                    parms: dict = json.load(f)
+                    raw_parms: dict = json.load(f)
 
-                str_regex: str = parms["subject_regexp"].strip("^$")
-                regex: re.Pattern = re.compile(str_regex)
-                easl_scenario: str = parms["EXPLOREASL_TYPE"]
-                excluded_subjects: list = parms["exclusion"]
-                root_in_parms: str = parms["D"]["ROOT"]
+                try:
+                    validated_parms = DataParSchemaStrict(**raw_parms)
+                except ValidationError as errors:
+                    err_msgs = parse_errors(errors.errors())
+                    preface = f"Incompatible DataPar file for study:\n{str(ana_path)}\n"
+                    if len(err_msgs) > 5:
+                        err_msg = preface + "\n".join(err_msgs[:5] + "\nSeveral other errors were also observed.")
+                    else:
+                        err_msg = preface + "\n".join(err_msgs)
+                    robust_qmsg(self,
+                                title="Errors detected within DataPar file",
+                                body=err_msg)
+                    return
+                validated_parms = validated_parms.dict()
+                easl_scenario: str = validated_parms["EXPLOREASL_TYPE"]
+                root_in_parms: str = validated_parms["D"]["ROOT"]
 
             except json.decoder.JSONDecodeError as json_read_error:
-                robust_qmsg(self, title=self.exec_errs["BadDataParFileJson"][0],
+                robust_qmsg(self,
+                            title=self.exec_errs["BadDataParFileJson"][0],
                             body=self.exec_errs["BadDataParFileJson"][1],
                             variables=[str(ana_path), f"{json_read_error}"])
                 return
+
             except KeyError as parms_keyerror:
-                robust_qmsg(self, title=self.exec_errs["BadDataParFileKeys"][0],
+                robust_qmsg(self,
+                            title=self.exec_errs["BadDataParFileKeys"][0],
                             body=self.exec_errs["BadDataParFileKeys"][1],
                             variables=[str(ana_path), f"{parms_keyerror}"])
                 return
 
             # Check that the parms file's D.ROOT matches the lineedit's resolved filepath
             if root_in_parms != str(ana_path):
-                robust_qmsg(self, title=self.exec_errs["NoStartExploreASL"][0],
-                            body=self.exec_errs["NoStartExploreASL"][1], variables=[str(ana_path)])
-                return
-
-            # Regex check for subject hits
-            hits = []
-            for subject_path in ana_path.iterdir():
-                if any([subject_path.name in {"lock", "Population", "Logs"}, subject_path.is_file(),
-                        subject_path.name in excluded_subjects]):
-                    continue
-                hits.append(bool(regex.search(subject_path.name)))
-            if not any(hits):
-                robust_qmsg(self, title=self.exec_errs["NoStartExploreASL"][0],
-                            body=self.exec_errs["NoStartExploreASL"][1], variables=[str(ana_path)])
+                robust_qmsg(self,
+                            title=self.exec_errs["NoStartExploreASL"][0],
+                            body=self.exec_errs["NoStartExploreASL"][1],
+                            variables=[str(ana_path)])
                 return
 
             # Perform the appropriate checks depending on the ExploreASL Scenario (local, compiled, docker, etc.)
@@ -1045,13 +1089,15 @@ class xASL_Executor(QMainWindow):
                 if not can_proceed:
                     return
                 else:
-                    parms["WORKER_MATLAB_VER"] = int_mlab_ver
-                    parms["WORKER_MATLAB_CMD_PATH"] = self.config["MATLAB_CMD_PATH"]
+                    validated_parms["WORKER_MATLAB_VER"] = int_mlab_ver
+                    validated_parms["WORKER_MATLAB_CMD_PATH"] = self.config["MATLAB_CMD_PATH"]
             elif easl_scenario == "LOCAL_COMPILED":
                 pass
             else:
-                robust_qmsg(self, title=self.exec_errs["Unsupported ExploreASL Scenario"][0],
-                            body=self.exec_errs["Unsupported ExploreASL Scenario"][1], variables=[str(ana_path)])
+                robust_qmsg(self,
+                            title=self.exec_errs["Unsupported ExploreASL Scenario"][0],
+                            body=self.exec_errs["Unsupported ExploreASL Scenario"][1],
+                            variables=[str(ana_path)])
                 return
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1061,61 +1107,30 @@ class xASL_Executor(QMainWindow):
                 pass
             elif easl_scenario == "LOCAL_COMPILED":
                 # First, get the Runtime path
-                runtime_path = parms.get("MCRPath", None)
-                if runtime_path is None:
-                    robust_qmsg(self, title=self.exec_errs["Unknown MATLAB Runtime"][0],
-                                body=self.exec_errs["Unknown MATLAB Runtime"][1])
-                    return
-                runtime_path = Path(runtime_path).resolve()
+                runtime_path = Path(validated_parms.get("MCRPath"))
 
-                # Last-minute quality control for the nature of the MATLAB Runtime path
-                system_dict = {"Windows": ["PATH", ";", "win64"],
-                               "Linux": ["LD_LIBRARY_PATH", ":", "glnxa64"],
-                               "Darwin": ["DYLD_LIBRARY_PATH", ":", "maci64"]}
-                x = system()
-                runtime_paths = peekable(runtime_path.rglob(system_dict[x][2]))
-                is_dir_valid, runtime_path = dir_check(runtime_path, self,
-                                                       {"basename_fits_regex": ["v\\d{2}", []],
-                                                        "rcontains": [system_dict[x][2], []]
-                                                        }, qmsgs=False)
-                if not is_dir_valid:
-                    robust_qmsg(self, title=self.exec_errs["Bad MATLAB Runtime"][0],
-                                body=self.exec_errs["Bad MATLAB Runtime"][1],
-                                variables=[str(ana_path)])
-                    return
-
+                # Each subprocess must be given additional paths to have access to for the compiled ExploreASL
+                # Keys are System names values are lists of [ENV Variable, Paths delimiter, MATLAB compiled glob char]
+                system_dict = {
+                    "Windows": ["PATH", ";", "win64"],
+                    "Linux": ["LD_LIBRARY_PATH", ":", "glnxa64"],
+                    "Darwin": ["DYLD_LIBRARY_PATH", ":", "maci64"]
+                }
+                ENV_VARNAME, PATHS_DELIMITER, GLOB_CHAR = system_dict[system()]
+                runtime_paths = peekable(runtime_path.rglob(GLOB_CHAR))
                 try:
-                    current_paths = worker_env.get(system_dict[x][0], "")
+                    current_paths = worker_env.get(ENV_VARNAME, "")
                     if isinstance(current_paths, (list, tuple)):
                         current_paths = "".join(current_paths)
                     located_paths = [str(path) for path in runtime_paths if
                                      all([path.is_dir(), str(path) not in current_paths])]
-                    paths2add = system_dict[x][1].join(located_paths)
+                    paths2add = PATHS_DELIMITER.join(located_paths)
                     current_paths += paths2add
-                    worker_env[system_dict[x][0]] = current_paths
-                except KeyError:
-                    return
-
-                # Next, check the compiled EASL Directory
-                compiled_easl = parms.get("MyCompiledPath", None)
-                if compiled_easl is None:
-                    robust_qmsg(self, title=self.exec_errs["Unknown CompiledEASL Directory"][0],
-                                body=self.exec_errs["Unknown CompiledEASL Directory"][1],
-                                variables=[str(ana_path)])
-                    return
-                if system() == "Windows":
-                    is_dir_valid, compiled_easl = dir_check(compiled_easl, self,
-                                                            {"contains": ["*.ctf", []]
-                                                             }, qmsgs=False)
-                else:
-                    is_dir_valid, compiled_easl = dir_check(compiled_easl, self,
-                                                            {"contains": ["*.ctf", []],
-                                                             "child_file_exists": ["xASL_latest", []]
-                                                             }, qmsgs=False)
-                if not is_dir_valid:
-                    robust_qmsg(self, title=self.exec_errs["Bad CompiledEASL Directory"][0],
-                                body=self.exec_errs["Bad CompiledEASL Directory"][1],
-                                variables=[str(ana_path)])
+                    worker_env[ENV_VARNAME] = current_paths
+                except KeyError as e:
+                    robust_qmsg(self,
+                                title="Could not set up the environment for the worker.",
+                                body=f"The following error was detected: {e}")
                     return
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1124,7 +1139,7 @@ class xASL_Executor(QMainWindow):
             for ii in range(box.count()):
                 if ii < int(box.currentText()):
                     worker = ExploreASL_Worker(
-                        worker_parms=parms,
+                        worker_parms=validated_parms,
                         iworker=ii + 1,  # iWorker
                         nworkers=int(box.currentText()),  # nWorkers
                         imodules=translator[run_opts.currentText()],  # Which modules Structural, ASL, Both, Population
@@ -1134,6 +1149,8 @@ class xASL_Executor(QMainWindow):
                     inner_worker_block.append(worker)
                     debt -= 1
                     self.total_process_dbt -= 1
+                else:
+                    break
 
             # Add the block to the main workers argument
             self.workers.append(inner_worker_block)
@@ -1142,7 +1159,7 @@ class xASL_Executor(QMainWindow):
             # Step 4 - Calculate the anticipated workload based on missing .STATUS files; adjust the progressbar's
             # maxvalue from that
             # This now ALSO makes the lock dirs that do not exist
-            workload, expected_status_files = calculate_anticipated_workload(parmsdict=parms,
+            workload, expected_status_files = calculate_anticipated_workload(parmsdict=validated_parms,
                                                                              run_options=run_opts.currentText(),
                                                                              translators=self.exec_translators)
 
@@ -1180,16 +1197,15 @@ class xASL_Executor(QMainWindow):
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%
             # Step 5 - Create a Watcher for that study
-            watcher = ExploreASL_Watcher(target=path.text(),  # the analysis directory
-                                         regex=str_regex,  # the regex used to recognize subjects
-                                         watch_debt=debt,  # the debt used to determine when to stop watching
-                                         study_idx=study_idx,
-                                         # the identifier used to know which progressbar to signal
-                                         translators=self.exec_translators,
-                                         config=self.config,
-                                         anticipated_paths=set(expected_status_files),
-                                         datapar_dict=parms
-                                         )
+            watcher = ExploreASL_Watcher(
+                target=path.text(),  # the analysis directory
+                watch_debt=debt,  # the debt used to determine when to stop watching
+                study_idx=study_idx,  # the identifier used to know which progressbar to signal
+                translators=self.exec_translators,
+                config=self.config,
+                anticipated_paths=set(expected_status_files),
+                datapar_dict=validated_parms
+            )
             self.textedit_textoutput.append(f"Setting a Watcher thread on {str(ana_path)}")
 
             # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1215,8 +1231,8 @@ class xASL_Executor(QMainWindow):
                 resume_btn.clicked.connect(worker.resume_run)
                 stop_btn.clicked.connect(worker.terminate_run)
 
-                self.textedit_textoutput.append(
-                    f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study:\n{ana_path}")
+                prep_msg = f"Preparing Worker {idx + 1} of {len(inner_worker_block)} for study:\n{ana_path}"
+                self.textedit_textoutput.append(prep_msg)
 
         ######################################
         # THIS IS NOW OUTSIDE OF THE FOR LOOPS
@@ -1253,7 +1269,13 @@ class ExploreASL_Watcher(QRunnable):
     3)
     """
 
-    def __init__(self, target, regex, watch_debt, study_idx, translators, config, anticipated_paths: set,
+    def __init__(self,
+                 target: str,
+                 watch_debt,
+                 study_idx,
+                 translators,
+                 config: dict,
+                 anticipated_paths: set,
                  datapar_dict: dict):
         super().__init__()
         self.signals = ExploreASL_WatcherSignals()
@@ -1262,7 +1284,7 @@ class ExploreASL_Watcher(QRunnable):
         self.datapar_dict = datapar_dict
 
         # Regexes
-        self.subject_regex = re.compile(regex)
+        self.subject_regex = re.compile(datapar_dict["subject_regexp"].strip("^$"))
         self.module_regex = re.compile('module_(ASL|Structural|Population)')
         delimiter = "\\\\" if system() == "Windows" else "/"
         self.asl_struct_regex = re.compile(
@@ -1287,9 +1309,9 @@ class ExploreASL_Watcher(QRunnable):
         self.observer.schedule(event_handler=self.event_handler,
                                path=str(self.dir_to_watch),
                                recursive=True)
-        path_key = "MyPath" if self.datapar_dict["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED" else "MyCompiledPath"
-
-        if all([is_earlier_version(easl_dir=self.datapar_dict[path_key], threshold_higher=120, higher_eq=False),
+        path_key = "MyPath"
+        if all([is_earlier_version(easl_dir=self.datapar_dict[path_key],
+                                   threshold_higher=120, higher_eq=False),
                 len(list(self.dir_to_watch.parent.glob("*/*FLAIR*"))) == 0
                 ]):
             self.struct_status_file_translator = translators["Structural_Module_Filename2Description_PRE120_NOFLAIR"]
@@ -1344,6 +1366,10 @@ class ExploreASL_Watcher(QRunnable):
     # Processes the information sent from the event hander and emits signals to update widgets in the main Executor
     @Slot(str)
     def process_message(self, created_path):
+        print(f"Received Message: {created_path}")
+        # print(f"{self.subject_regex=}")
+        # print(f"{self.module_regex=}")
+
         if created_path in self.msgs_seen:
             print(f"{created_path} was already seen")
             return

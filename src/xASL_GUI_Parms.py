@@ -3,7 +3,9 @@ from PySide2.QtGui import *
 from PySide2.QtCore import QSize
 from src.xASL_GUI_HelperClasses import DandD_FileExplorer2ListWidget, xASL_FormLayout
 from src.xASL_GUI_HelperFuncs_WidgetFuncs import (make_scrollbar_area, make_droppable_clearable_le, set_formlay_options,
-                                                  dir_check, robust_getdir, robust_getfile, robust_qmsg)
+                                                  robust_getdir, robust_getfile, robust_qmsg)
+from src.xASL_GUI_Schemas import (DataParSchemaStrict, DataParSchemaLenient, TRANSLATOR, INVERSE_TRANSLATOR,
+                                  parse_errors)
 import json
 import re
 from pathlib import Path
@@ -14,6 +16,7 @@ from shutil import which
 from typing import List, Union
 from platform import system
 from nilearn import image
+from pydantic import ValidationError
 
 
 class xASL_Parms(QMainWindow):
@@ -65,7 +68,6 @@ class xASL_Parms(QMainWindow):
         self.can_update_slicereadouttime = False
 
         # Main UI Setup
-        self.prep_nonwidget_dicts()
         self.UI_Setup_Basic()
         self.UI_Setup_Advanced()
         self.UI_Setup_ProcessingSettings()
@@ -82,10 +84,6 @@ class xASL_Parms(QMainWindow):
     ######################################
     # Class Attribute Organizing Functions
     ######################################
-    def prep_nonwidget_dicts(self):
-        self.d_sequencetype = {"3D GRaSE": "3D_GRASE", "3D Spiral": "3D_spiral", "2D EPI": "2D_EPI"}
-        self.d_labelingtype = {"Pulsed ASL": "PASL", "Pseudo-continuous ASL": "PCASL", "Continuous ASL": "CASL"}
-
     def prep_widget_dicts(self):
         self.d_atlases = {"TotalGM": self.chk_atlas_GM, "DeepWM": self.chk_atlas_WM,
                           "MNI_Structural": self.chk_atlas_MNI, "Hammers": self.chk_atlas_hammers,
@@ -114,17 +112,17 @@ class xASL_Parms(QMainWindow):
 
         # The ExploreASL directory possibilities
         self.hlay_mrc_dir, self.le_mrc_dir, self.btn_mrc_dir = make_droppable_clearable_le(
-            btn_connect_to=self.set_mcr_dir, default="")
+            btn_connect_to=self.get_mcr_dir, default="")
         self.hlay_easl_mcr, self.le_easl_mcr, self.btn_easl_mcr = make_droppable_clearable_le(
-            btn_connect_to=self.set_exploreasl_mcr, default="")
+            btn_connect_to=self.get_exploreasl_mcr, default="")
         self.hlay_easl_dir, self.le_easl_dir, self.btn_easl_dir = make_droppable_clearable_le(
-            btn_connect_to=self.set_exploreasl_dir, default='')
+            btn_connect_to=self.get_exploreasl_dir, default='')
 
         # The path to the study directory
         self.le_studyname = QLineEdit(text="My Study")
         self.chk_overwrite_for_bids = QCheckBox(checked=False)
         self.hlay_study_dir, self.le_study_dir, self.btn_study_dir = make_droppable_clearable_le(
-            le_connect_to=self.read_first_asl_json, btn_connect_to=self.set_study_dir, default='')
+            le_connect_to=self.read_first_asl_json, btn_connect_to=self.get_study_dir, default='')
         self.le_study_dir.setPlaceholderText("Indicate the analysis directory filepath here")
 
         self.le_subregex = QLineEdit(text='\\d+')
@@ -139,10 +137,10 @@ class xASL_Parms(QMainWindow):
         self.lst_excluded_subjects = DandD_FileExplorer2ListWidget()
         self.lst_excluded_subjects.setMinimumHeight(self.config["ScreenSize"][1] // 10)
         self.btn_excluded_subjects = QPushButton("Clear Excluded", clicked=self.lst_excluded_subjects.clear)
-        self.cmb_vendor = self.make_cmb_and_items(["Siemens", "Philips", "GE", "GE_WIP"])
-        self.cmb_sequencetype = self.make_cmb_and_items(self.d_sequencetype.keys())
+        self.cmb_vendor = self.make_cmb_and_items(TRANSLATOR["Vendor"].keys(), 2)
+        self.cmb_sequencetype = self.make_cmb_and_items(TRANSLATOR["Sequence"].keys(), 1)
         self.cmb_sequencetype.currentTextChanged.connect(self.update_readout_dim)
-        self.cmb_labelingtype = self.make_cmb_and_items(self.d_labelingtype.keys())
+        self.cmb_labelingtype = self.make_cmb_and_items(TRANSLATOR["LabelingType"].keys(), 2)
         self.cmb_labelingtype.currentTextChanged.connect(self.autocalc_slicereadouttime)
         self.lab_spin_m0_isseparate = QLabel(text="M0 Single Value")
         self.spinbox_m0_isseparate = QDoubleSpinBox(minimum=1, maximum=1E12, value=1E6)
@@ -193,7 +191,7 @@ class xASL_Parms(QMainWindow):
         self.formlay_seqparms = QFormLayout(self.cont_seqparms)
         self.cmb_nsup_pulses = self.make_cmb_and_items(["0", "2", "4", "5"], 1)
         self.le_sup_pulse_vec = QLineEdit(placeholderText="Vector of timings, in seconds, of suppression pulses")
-        self.cmb_readout_dim = self.make_cmb_and_items(["3D", "2D"])
+        self.cmb_readout_dim = self.make_cmb_and_items(TRANSLATOR["readout_dim"], 0)
         self.spinbox_initialpld = QDoubleSpinBox(maximum=10000, minimum=0, value=1800)
         self.spinbox_initialpld.valueChanged.connect(self.autocalc_slicereadouttime)
         self.spinbox_labdur = QDoubleSpinBox(maximum=10000, minimum=0, value=800)
@@ -230,12 +228,14 @@ class xASL_Parms(QMainWindow):
         self.chk_quant_pwi2label = QCheckBox(checked=True)
         self.chk_quant_quantifym0 = QCheckBox(checked=True)
         self.chk_quant_divbym0 = QCheckBox(checked=True)
-        self.chk_save_cbf4d = QCheckBox(checked=False)
+        self.chk_quant_savecbf4d = QCheckBox(checked=False)
+        self.chk_quant_basil = QCheckBox(checked=False)
         descs = ["Lambda", "Arterial T2*", "Blood T1", "Tissue T1", "Number of Compartments", "Apply Scaling to ASL",
-                 "Apply Scaling to M0", "Convert PWI to Label", "Quantify M0", "Divide by M0", "Save CBF as Timeseries"]
+                 "Apply Scaling to M0", "Convert PWI to Label", "Quantify M0", "Divide by M0", "Save CBF as Timeseries",
+                 "Use BASIL Pipeline"]
         widgets = [self.spinbox_lambda, self.spinbox_artt2, self.spinbox_bloodt1, self.spinbox_tissuet1,
                    self.cmb_ncomparts, self.chk_quant_applyss_asl, self.chk_quant_applyss_m0, self.chk_quant_pwi2label,
-                   self.chk_quant_quantifym0, self.chk_quant_divbym0, self.chk_save_cbf4d]
+                   self.chk_quant_quantifym0, self.chk_quant_divbym0, self.chk_quant_savecbf4d, self.chk_quant_basil]
         for description, widget in zip(descs, widgets):
             self.formlay_quantparms.addRow(description, widget)
             if system() == "Darwin":
@@ -248,7 +248,7 @@ class xASL_Parms(QMainWindow):
         self.vlay_m0parms, self.scroll_m0parms, self.cont_m0parms = make_scrollbar_area(self.grp_m0parms)
         self.scroll_m0parms.setMinimumHeight(self.config["ScreenSize"][1] // 16)
         self.formlay_m0parms = QFormLayout(self.cont_m0parms)
-        self.cmb_m0_algorithm = self.make_cmb_and_items(["New Image Processing", "Standard Processing"], 0)
+        self.cmb_m0_algorithm = self.make_cmb_and_items(TRANSLATOR["M0_conventionalProcessing"].keys(), 1)
         self.spinbox_gmscale = QDoubleSpinBox(maximum=100, minimum=0.01, value=1, singleStep=0.01)
         for description, widget in zip(["M0 Processing Algorithm", "GM Scale Factor"],
                                        [self.cmb_m0_algorithm, self.spinbox_gmscale]):
@@ -263,8 +263,9 @@ class xASL_Parms(QMainWindow):
         self.vlay_envparms, self.scroll_envparms, self.cont_envparms = make_scrollbar_area(self.grp_envparms)
         self.scroll_envparms.setMinimumHeight(self.config["ScreenSize"][1] // 17.5)
         self.formlay_envparms = QFormLayout(self.cont_envparms)
-        (self.hlay_fslpath, self.le_fslpath,
-         self.btn_fslpath) = make_droppable_clearable_le(btn_connect_to=self.set_fslpath)
+        (self.hlay_fslpath,
+         self.le_fslpath,
+         self.btn_fslpath) = make_droppable_clearable_le(btn_connect_to=self.get_fslpath)
         fsl_filepath = which("fsl")
         if fsl_filepath is not None:
             self.le_fslpath.setText(str(Path(fsl_filepath)))
@@ -321,7 +322,7 @@ class xASL_Parms(QMainWindow):
         # Set up the Structural Processing Parameters
         self.vlay_strpparms, self.scroll_strpparms, self.cont_strpparms = make_scrollbar_area(self.grp_strpparms)
         self.formlay_strpparms = QFormLayout(self.cont_strpparms)
-        self.cmb_segmethod = self.make_cmb_and_items(["CAT12", "SPM12"], 0)
+        self.cmb_segmethod = self.make_cmb_and_items(TRANSLATOR["SegmentSPM12"].keys(), 0)
         self.chk_runlongreg = QCheckBox(checked=False)
         self.chk_run_dartel = QCheckBox(checked=False)
         self.chk_hammersroi = QCheckBox(checked=False)
@@ -342,10 +343,9 @@ class xASL_Parms(QMainWindow):
         self.vlay_aslpparms, self.scroll_aslpparms, self.cont_aslpparms = make_scrollbar_area(self.grp_aslpparms)
         self.formlay_aslpparms = QFormLayout(self.cont_aslpparms)
 
-        self.cmb_imgcontrast = self.make_cmb_and_items(["Automatic", "Control --> T1w", "CBF --> pseudoCBF",
-                                                        "Force CBF --> pseudoCBF"], 0)
-        self.cmb_affineregbase = self.make_cmb_and_items(["Based on PWI CoV", "Enabled", "Disabled"])
-        self.cmb_dctreg = self.make_cmb_and_items(["Disabled", "Enabled + no PVC", "Enabled + PVC"])
+        self.cmb_imgcontrast = self.make_cmb_and_items(TRANSLATOR["bRegistrationContrast"].keys(), 2)
+        self.cmb_affineregbase = self.make_cmb_and_items(TRANSLATOR["bAffineRegistration"].keys(), 2)
+        self.cmb_dctreg = self.make_cmb_and_items(TRANSLATOR["bDCTRegistration"].keys(), 2)
         self.chk_regm0toasl = QCheckBox(checked=True)
         self.chk_usemniasdummy = QCheckBox(checked=False)
         self.chk_nativepvc = QCheckBox(checked=False)
@@ -517,7 +517,7 @@ class xASL_Parms(QMainWindow):
                 bad_jsons.append(asl_sidecar)
 
             # Polish up certain fields
-            asl_sidecar_data["LabelingType"] = self.d_labelingtype[self.cmb_labelingtype.currentText()]
+            asl_sidecar_data["LabelingType"] = TRANSLATOR["LablingType"][self.cmb_labelingtype.currentText()]
             asl_sidecar_data["PostLabelingDelay"] = self.spinbox_initialpld.value() / 1000
             if self.cmb_labelingtype.currentText() in ["Pseudo-continuous ASL", "Continuous ASL"]:
                 asl_sidecar_data["LabelingDuration"] = self.spinbox_labdur.value() / 1000
@@ -587,6 +587,7 @@ class xASL_Parms(QMainWindow):
         subject_list = [self.lst_included_subjects.item(idx).text() for idx in range(n_subjects)]
         extractor = rexpy.Extractor(subject_list)
         extractor.extract()
+        assert extractor.results is not None
         inferred_regex = extractor.results.rex[0]
         del extractor
         if inferred_regex:
@@ -595,26 +596,26 @@ class xASL_Parms(QMainWindow):
     #########################################
     # LineEdit-setting and checking Functions
     #########################################
-    def set_mcr_dir(self):
+    def get_mcr_dir(self):
         errs = [self.parms_errs["InvalidMCRDir"][0], self.parms_errs["InvalidMCRDir"][1]]
         robust_getdir(self, "Path to MATLAB Runtime Directory", self.config["DefaultRootDir"],
                       {"basename_fits_regex": ["v\\d{2,3}", errs]}, lineedit=self.le_mrc_dir)
 
-    def set_exploreasl_mcr(self):
+    def get_exploreasl_mcr(self):
         errs = [self.parms_errs["InvalidCompiledExploreASLDir"][0], self.parms_errs["InvalidCompiledExploreASLDir"][1]]
         robust_getdir(self, "Path to local ExploreASL compiled runtime", self.config["DefaultRootDir"],
                       {"rcontains": ["xASL_latest*", errs]}, lineedit=self.le_easl_mcr)
 
-    def set_exploreasl_dir(self):
+    def get_exploreasl_dir(self):
         errs = [self.parms_errs["InvalidExploreASLDir"][0], self.parms_errs["InvalidExploreASLDir"][1]]
         robust_getdir(self, "Path to local ExploreASL directory", self.config["DefaultRootDir"],
                       {"child_file_exists": ["ExploreASL_Master.m", errs]}, lineedit=self.le_easl_dir)
 
-    def set_study_dir(self):
+    def get_study_dir(self):
         robust_getdir(self, "Path to study directory", self.config["DefaultRootDir"],
                       requirements=None, lineedit=self.le_study_dir)
 
-    def set_fslpath(self):
+    def get_fslpath(self):
         robust_getdir(self, "Path to FSL 'bin' Directory", self.config["DefaultRootDir"],
                       {"child_dir_exists": ["fsl", self.parms_errs["InvalidFSLDirectory"]]}, lineedit=self.le_fslpath)
 
@@ -622,46 +623,18 @@ class xASL_Parms(QMainWindow):
     # Main Functions for this module - saving to json and loading from json
     #######################################################################
     def save_widgets2json(self):
-        # Defensive programming first
-        forbidden = ["", ".", "/", "~"]
-        # First check, the study directory specified must be a legitimate directory filepath
-        study_dir = Path(self.le_study_dir.text()).resolve()
-        if any([self.le_study_dir.text() in forbidden, not study_dir.exists(), not study_dir.is_dir()]):
-            robust_qmsg(self, title=self.parms_errs["InvalidStudyDirectory"][0],
-                        body=self.parms_errs["InvalidStudyDirectory"][1], variables=[f"{str(study_dir)}"])
-            return
-        # Next, the regex field has to be something reasonable
-        if self.le_subregex.text() in ["", "^$", "^", "$", "/", "\\"]:
-            robust_qmsg(self, title=self.parms_errs["InvalidRegex"][0], body=self.parms_errs["InvalidRegex"][1],
-                        variables=[f"{self.le_subregex.text()}"])
-            return
         json_parms = {}
         # Next, the nature of the current ExploreASL types must be valid
         if self.current_easl_type == "Local ExploreASL Directory":
-            valid, easl_dir = dir_check(self.le_easl_dir.text(), self)
-            if not valid or self.le_easl_dir.text() in forbidden:
-                robust_qmsg(self, title=self.parms_errs["InvalidExploreASLDir"][0],
-                            body=self.parms_errs["InvalidExploreASLDir"][1])
-                return
             json_parms["MyPath"] = self.le_easl_dir.text()
+            json_parms["MCRPath"] = ""
             json_parms["EXPLOREASL_TYPE"] = "LOCAL_UNCOMPILED"
         elif self.current_easl_type == "Local ExploreASL Compiled":
-            errs = [self.parms_errs["InvalidMCRDir"][0], self.parms_errs["InvalidMCRDir"][1]]
-            s1, mrc_dir = dir_check(self.le_mrc_dir.text(), self, {"basename_fits_regex": ["v\\d{2,3}", errs]})
-            if not s1:
-                return
-            errs = [self.parms_errs["InvalidCompiledExploreASLDir"][0],
-                    self.parms_errs["InvalidCompiledExploreASLDir"][1]]
-            s2, easl_mcr = dir_check(self.le_easl_mcr.text(), self, {"rcontains": ["xASL_latest*", errs]})
-            if not s2:
-                return
-            json_parms["MyCompiledPath"] = str(easl_mcr)
-            json_parms["MCRPath"] = str(mrc_dir)
+            json_parms["MyPath"] = self.le_easl_mcr.text()
+            json_parms["MCRPath"] = self.le_mrc_dir.text()
             json_parms["EXPLOREASL_TYPE"] = "LOCAL_COMPILED"
-            if "MyPath" in json_parms:
-                del json_parms["MyPath"]
-        # TODO Docker scenario goes here
         else:
+            # TODO Docker scenario goes here
             raise ValueError(f"Unexpected value for current_easl_type: {self.current_easl_type}")
 
         # Next check: you cannot have ControlAsM0 and BackgroundSuppressionNumberPulses greater than zero if no
@@ -687,10 +660,8 @@ class xASL_Parms(QMainWindow):
             "name": self.le_studyname.text(),
             "D": {"ROOT": self.le_study_dir.text()},
             "subject_regexp": self.le_subregex.text(),
-            "exclusion": [self.lst_excluded_subjects.item(row).text() for row in
-                          range(self.lst_excluded_subjects.count())],
-            "M0_conventionalProcessing":
-                {"New Image Processing": 0, "Standard Processing": 1}[self.cmb_m0_algorithm.currentText()],
+            "dataset": {"exclusion": [self.lst_excluded_subjects.item(row).text() for row in
+                                      range(self.lst_excluded_subjects.count())]},
             "M0": self.activate_dict(self.d_m0)[self.cmb_m0_isseparate.currentText()],
             "M0_GMScaleFactor": float(self.spinbox_gmscale.value()),
             "M0PositionInASL4D": partial(self.prep_vec, le=self.le_m0_posinasl)(),
@@ -698,18 +669,22 @@ class xASL_Parms(QMainWindow):
             # Sequence Parameters
             "readout_dim": self.cmb_readout_dim.currentText(),
             "Vendor": self.cmb_vendor.currentText(),
-            "Sequence": self.d_sequencetype[self.cmb_sequencetype.currentText()],
+            "Sequence": TRANSLATOR["Sequence"][self.cmb_sequencetype.currentText()],
             "DummyScanPositionInASL4D": partial(self.prep_vec, le=self.le_skipdummyasl)(),
 
             # General Processing Parameters
-            "Quality": {"High": 1, "Low": 0}[self.cmb_quality.currentText()],
+            "Quality": TRANSLATOR["Quality"][self.cmb_quality.currentText()],
             "DELETETEMP": int(self.chk_deltempfiles.isChecked()),
             "SkipIfNoFlair": int(self.chk_skipnoflair.isChecked()),
             "SkipIfNoM0": int(self.chk_skipnom0.isChecked()),
             "SkipIfNoASL": int(self.chk_skipnoasl.isChecked()),
 
             # Structural Processing Parameters
-            "SegmentSPM12": {"SPM12": 1, "CAT12": 0}[self.cmb_segmethod.currentText()],
+            "settings": {
+                "M0_conventionalProcessing": TRANSLATOR["M0_conventionalProcessing"]
+                [self.cmb_m0_algorithm.currentText()],
+                "SegmentSPM12": TRANSLATOR["SegmentSPM12"][self.cmb_segmethod.currentText()],
+            },
             "bRunModule_LongReg": int(self.chk_runlongreg.isChecked()),
             "bRunModule_DARTEL": int(self.chk_run_dartel.isChecked()),
             "bHammersCAT12": int(self.chk_hammersroi.isChecked()),
@@ -720,12 +695,9 @@ class xASL_Parms(QMainWindow):
             "SpikeRemovalThreshold": float(self.spinbox_spikethres.value()),
             "motion_correction": int(self.chk_motioncorrect.isChecked()),
 
-            "bRegistrationContrast": {"Automatic": 2, "Control --> T1w": 0, "CBF --> pseudoCBF": 1,
-                                      "Force CBF --> pseudoCBF": 3}[self.cmb_imgcontrast.currentText()],
-            "bAffineRegistration": {"Based on PWI CoV": 2, "Enabled": 1, "Disabled": 0}
-            [self.cmb_affineregbase.currentText()],
-            "bDCTRegistration": {"Disabled": 0, "Enabled + no PVC": 1, "Enabled + PVC": 2}
-            [self.cmb_dctreg.currentText()],
+            "bRegistrationContrast": TRANSLATOR["bRegistrationContrast"][self.cmb_imgcontrast.currentText()],
+            "bAffineRegistration": TRANSLATOR["bAffineRegistration"][self.cmb_affineregbase.currentText()],
+            "bDCTRegistration": TRANSLATOR["bDCTRegistration"][self.cmb_dctreg.currentText()],
             "bRegisterM02ASL": int(self.chk_removespikes.isChecked()),
             "bUseMNIasDummyStructural": int(self.chk_usemniasdummy.isChecked()),
             "bPVCNativeSpace": int(self.chk_nativepvc.isChecked()),
@@ -737,19 +709,21 @@ class xASL_Parms(QMainWindow):
             "MakeNIfTI4DICOM": int(self.chk_outputcbfmaps.isChecked()),
 
             # Quantification Parameters
+            "bUseBasilQuantification": self.chk_quant_basil.isChecked(),
             "ApplyQuantification": self.prep_quantparms(),
             "Q": {
                 "BackgroundSuppressionNumberPulses": int(self.cmb_nsup_pulses.currentText()),
                 "BackgroundSuppressionPulseTime": partial(self.prep_vec, le=self.le_sup_pulse_vec, regex=r"[0-9.]+",
                                                           default=[])(),
-                "LabelingType": self.d_labelingtype[self.cmb_labelingtype.currentText()],
+                "LabelingType": TRANSLATOR["LabelingType"][self.cmb_labelingtype.currentText()],
                 "Initial_PLD": float(self.spinbox_initialpld.value()),
                 "LabelingDuration": float(self.spinbox_labdur.value()),
                 "SliceReadoutTime": float(self.spinbox_slice_readout.value()),
                 "Lambda": float(self.spinbox_lambda.value()),
                 "T2art": float(self.spinbox_artt2.value()),
                 "TissueT1": float(self.spinbox_tissuet1.value()),
-                "nCompartments": int(self.cmb_ncomparts.currentText())
+                "nCompartments": int(self.cmb_ncomparts.currentText()),
+                "SaveCBF4D": self.chk_quant_savecbf4d.isChecked()
             },
             # Masking Parameters
             "S": {
@@ -758,6 +732,24 @@ class xASL_Parms(QMainWindow):
             }
         })
 
+        # First use the strict schema to ascertain the errors with the data to inform the user
+        err_msgs = None
+        validated_datapar = None
+        try:
+            validated_datapar = DataParSchemaStrict(**json_parms)
+        except ValidationError as errors:
+            err_msgs = parse_errors(errors.errors())
+
+        if err_msgs:
+            if len(err_msgs) > 5:
+                err_msg = "\n".join(err_msgs[:5] + ["\n Several other errors were also observed."])
+            else:
+                err_msg = "\n".join(err_msgs)
+            robust_qmsg(self, title="Errors detected within loaded file", body=err_msg)
+            return
+
+        assert validated_datapar is not None
+        study_dir = Path(validated_datapar.D.ROOT)
         try:
             with open(study_dir / "DataPar.json", 'w') as w:
                 json.dump(json_parms, w, indent=3)
@@ -800,39 +792,72 @@ class xASL_Parms(QMainWindow):
             return
 
         # Preliminary Functions to run
-        self.get_easl_paths(loaded_parms=parms)  # Ensure the correct easl setup is in play first!
+        self.set_easl_paths(loaded_parms=parms)  # Ensure the correct easl setup is in play first!
+
+        # First use the strict schema to ascertain the errors with the data to inform the user
+        err_msgs = None
+        try:
+            DataParSchemaStrict(**parms)
+        except ValidationError as errors:
+            err_msgs = parse_errors(errors.errors())
+
+        if err_msgs:
+            addenum = "\nDefault values will now be attempted to be placed in these locations."
+            if len(err_msgs) > 5:
+                err_msg = "\n".join(err_msgs[:5] + ["\n Several other errors were also observed."]) + addenum
+            else:
+                err_msg = "\n".join(err_msgs) + addenum
+            robust_qmsg(self, title="Errors detected within loaded file", body=err_msg)
 
         # Main Setting
-        json_setter = {
+        loaded_schema = DataParSchemaLenient(**parms)
+        loaded_schema_dict = loaded_schema.dict()
+        JSON2WIDGET_SETTER_GUIDE = {
             "name": self.le_studyname.setText,
             "D": {"ROOT": self.le_study_dir.setText},
             "subject_regexp": self.le_subregex.setText,
-            "exclusion": self.lst_excluded_subjects.addItems,
-            "M0_conventionalProcessing": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
-                                                 widget=self.cmb_m0_algorithm,
-                                                 args={0: "New Image Processing", 1: "Standard Processing"}),
-            "M0": self.get_m0,
+            "dataset": {"exclusion": self.lst_excluded_subjects.addItems},
+            "settings": {
+                "M0_conventionalProcessing": partial(self.main_setter,
+                                                     action="cmb_setCurrentIndex_translate",
+                                                     widget=self.cmb_m0_algorithm,
+                                                     args={0: "New Image Processing", 1: "Standard Processing"}),
+                "SegmentSPM12": partial(self.main_setter,
+                                        action="cmb_setCurrentIndex_translate",
+                                        widget=self.cmb_segmethod,
+                                        args={1: "SPM12", 0: "CAT12"}),
+            },
+
+            "M0": self.set_m0,
             "M0_GMScaleFactor": self.spinbox_gmscale.setValue,
-            "M0PositionInASL4D": self.get_m0_pos_in_asl,
+            "M0PositionInASL4D": self.set_m0_pos_in_asl,
 
             # Sequence Parameters
-            "readout_dim": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_readout_dim),
-            "Vendor": partial(self.main_setter, action="cmb_setCurrentIndex_simple", widget=self.cmb_vendor),
-            "Sequence": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_sequencetype,
-                                args=self.rev_dict(self.d_sequencetype)),
-            "DummyScanPositionInASL4D": self.get_skipdummyasl_vec,
+            "readout_dim": partial(self.main_setter,
+                                   action="cmb_setCurrentIndex_translate",
+                                   widget=self.cmb_readout_dim,
+                                   args=INVERSE_TRANSLATOR["readout_dim"]),
+            "Vendor": partial(self.main_setter,
+                              action="cmb_setCurrentIndex_translate",
+                              widget=self.cmb_vendor,
+                              args=INVERSE_TRANSLATOR["Vendor"]),
+            "Sequence": partial(self.main_setter,
+                                action="cmb_setCurrentIndex_translate",
+                                widget=self.cmb_sequencetype,
+                                args=INVERSE_TRANSLATOR["Sequence"]),
+            "DummyScanPositionInASL4D": self.set_skipdummyasl_vec,
 
             # General Processing Parameters
-            "Quality": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_quality,
-                               args={0: "Low", 1: "High"}),
+            "Quality": partial(self.main_setter,
+                               action="cmb_setCurrentIndex_translate",
+                               widget=self.cmb_quality,
+                               args=INVERSE_TRANSLATOR["Quality"]),
             "DELETETEMP": self.chk_deltempfiles.setChecked,
             "SkipIfNoFlair": self.chk_skipnoflair.setChecked,
             "SkipIfNoM0": self.chk_skipnom0.setChecked,
             "SkipIfNoASL": self.chk_skipnoasl.setChecked,
 
             # Structural Processing Parameters
-            "SegmentSPM12": partial(self.main_setter, action="cmb_setCurrentIndex_translate", widget=self.cmb_segmethod,
-                                    args={1: "SPM12", 0: "CAT12"}),
             "bRunModule_LongReg": self.chk_runlongreg.setChecked,
             "bRunModule_DARTEL": self.chk_run_dartel.setChecked,
             "bHammersCAT12": self.chk_hammersroi.setChecked,
@@ -843,16 +868,18 @@ class xASL_Parms(QMainWindow):
             "SpikeRemovalThreshold": self.spinbox_spikethres.setValue,
             "motion_correction": self.chk_motioncorrect.setChecked,
 
-            "bRegistrationContrast": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
+            "bRegistrationContrast": partial(self.main_setter,
+                                             action="cmb_setCurrentIndex_translate",
                                              widget=self.cmb_imgcontrast,
-                                             args={2: "Automatic", 0: "Control --> T1w", 1: "CBF --> pseudoCBF",
-                                                   3: "Force CBF --> pseudoCBF"}),
-            "bAffineRegistration": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
+                                             args=INVERSE_TRANSLATOR["bRegistrationContrast"]),
+            "bAffineRegistration": partial(self.main_setter,
+                                           action="cmb_setCurrentIndex_translate",
                                            widget=self.cmb_affineregbase,
-                                           args={0: "Disabled", 1: "Enabled", 2: "Based on PWI CoV"}),
-            "bDCTRegistration": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
+                                           args=INVERSE_TRANSLATOR["bAffineRegistration"]),
+            "bDCTRegistration": partial(self.main_setter,
+                                        action="cmb_setCurrentIndex_translate",
                                         widget=self.cmb_dctreg,
-                                        args={0: "Disabled", 1: "Enabled + no PVC", 2: "Enabled + PVC"}),
+                                        args=INVERSE_TRANSLATOR["bDCTRegistration"]),
             "bRegisterM02ASL": self.chk_regm0toasl.setChecked,
             "bUseMNIasDummyStructural": self.chk_usemniasdummy.setChecked,
             "bPVCNativeSpace": self.chk_nativepvc.setChecked,
@@ -864,21 +891,27 @@ class xASL_Parms(QMainWindow):
             "FSLdirectory": self.le_fslpath.setText,
 
             # Quantification Parameters
+            "bUseBasilQuantification": self.chk_quant_basil.setChecked,
             "ApplyQuantification": self.get_quantparms,
             "Q": {
-                "BackgroundSuppressionNumberPulses": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
+                "BackgroundSuppressionNumberPulses": partial(self.main_setter,
+                                                             action="cmb_setCurrentIndex_simple",
                                                              widget=self.cmb_nsup_pulses),
                 "BackgroundSuppressionPulseTime": self.get_suppression_vec,
-                "LabelingType": partial(self.main_setter, action="cmb_setCurrentIndex_translate",
-                                        widget=self.cmb_labelingtype, args=self.rev_dict(self.d_labelingtype)),
+                "LabelingType": partial(self.main_setter,
+                                        action="cmb_setCurrentIndex_translate",
+                                        widget=self.cmb_labelingtype,
+                                        args=INVERSE_TRANSLATOR["LabelingType"]),
                 "Initial_PLD": self.spinbox_initialpld.setValue,
                 "LabelingDuration": self.spinbox_labdur.setValue,
                 "SliceReadoutTime": self.spinbox_slice_readout.setValue,
                 "Lambda": self.spinbox_lambda.setValue,
                 "T2art": self.spinbox_artt2.setValue,
                 "TissueT1": self.spinbox_tissuet1.setValue,
-                "nCompartments": partial(self.main_setter, action="cmb_setCurrentIndex_simple",
-                                         widget=self.cmb_ncomparts)
+                "nCompartments": partial(self.main_setter,
+                                         action="cmb_setCurrentIndex_simple",
+                                         widget=self.cmb_ncomparts),
+                "SaveCBF4D": self.chk_quant_savecbf4d.setChecked
             },
             # Masking Parameters
             "S": {
@@ -896,18 +929,18 @@ class xASL_Parms(QMainWindow):
             "motion_correction", "bRegisterM02ASL", "bUseMNIasDummyStructural", "bPVCorrectionNativeSpace",
             "bPVCorrectionGaussianMM",
             # Quantification Parms
-            "SaveCBF4D"
+            "SaveCBF4D", "bUseBasilQuantification",
         }
-        to_ignore = {"MyPath", "EXPLOREASL_TYPE", "MyCompiledPath", "MCRPath"}
+        to_ignore = {"MyPath", "EXPLOREASL_TYPE", "MCRPath"}
 
-        for key, call in parms.items():
+        for key, arg_or_callable in loaded_schema_dict.items():
             if key in to_ignore:
                 continue
             try:
-                if isinstance(call, dict):
-                    for subkey, subcall in call.items():
+                if isinstance(arg_or_callable, dict):
+                    for subkey, subcall in arg_or_callable.items():
                         try:
-                            json_setter[key][subkey](subcall)
+                            JSON2WIDGET_SETTER_GUIDE[key][subkey](subcall)
                         except TypeError as te:
                             print(f"TypeError encountered with key {key} and subkey {subkey}")
                             print(te)
@@ -916,10 +949,10 @@ class xASL_Parms(QMainWindow):
                             print(ke)
                 else:
                     if key in to_bool:
-                        json_setter[key](bool(call))
+                        JSON2WIDGET_SETTER_GUIDE[key](bool(arg_or_callable))
                     else:
                         try:
-                            json_setter[key](call)
+                            JSON2WIDGET_SETTER_GUIDE[key](arg_or_callable)
                         except KeyError as ke:
                             print(f"KeyError encountered with key {key}")
                             print(ke)
@@ -1029,7 +1062,7 @@ class xASL_Parms(QMainWindow):
     ###############################################
     # Convenience methods for translation from json
     ###############################################
-    def get_m0(self, m0_val: Union[str, int, float]):
+    def set_m0(self, m0_val: Union[str, int, float]):
         if isinstance(m0_val, str):
             translator = {"separate_scan": "Proton density scan (M0) was acquired",
                           "UseControlAsM0": "Use mean control ASL as M0 mimic"}
@@ -1055,7 +1088,7 @@ class xASL_Parms(QMainWindow):
         for wiget, val in zip(quant_wids, quant_vector):
             wiget.setChecked(bool(val))
 
-    def get_m0_pos_in_asl(self, m0_pos_vec: list):
+    def set_m0_pos_in_asl(self, m0_pos_vec: list):
         if m0_pos_vec is None:
             self.le_m0_posinasl.setText("")
             return
@@ -1079,7 +1112,7 @@ class xASL_Parms(QMainWindow):
         str_suppr_vec = ", ".join([str(suppr_val) for suppr_val in suppr_vec])
         self.le_sup_pulse_vec.setText(str_suppr_vec)
 
-    def get_skipdummyasl_vec(self, skip_vec: List[int]):
+    def set_skipdummyasl_vec(self, skip_vec: List[int]):
         if skip_vec is None:
             self.le_skipdummyasl.setText("")
             return
@@ -1123,7 +1156,7 @@ class xASL_Parms(QMainWindow):
 
     def fill_subject_list(self, loaded_parms: dict):
         try:
-            analysis_dir = Path(loaded_parms["D"]["ROOT"]).resolve()
+            analysis_dir = Path(loaded_parms["D"]["ROOT"])
             if any([not analysis_dir.exists(), not analysis_dir.is_dir(),
                     loaded_parms["D"]["ROOT"] in [".", "", "/"]]):
                 return
@@ -1133,25 +1166,25 @@ class xASL_Parms(QMainWindow):
             includedsubs = [path.name for path in analysis_dir.iterdir()
                             if all([path.name not in ["lock", "Population"],  # Filter out default directories
                                     regex.search(path.name),  # Must match the indicated regex
-                                    path.name not in loaded_parms["exclusion"],  # Cannot be an excluded subject
+                                    path.name not in loaded_parms["dataset"]["exclusion"],  # Cannot be excluded subject
                                     path.is_dir()  # Must be a directory
                                     ])]
             print(f"{includedsubs=}")
             if len(includedsubs) > 0:
                 self.lst_included_subjects.clear()
-                self.lst_included_subjects.addItems(includedsubs)
+                self.lst_included_subjects.addItems(sorted(includedsubs))
 
-            excludedsubs = loaded_parms["exclusion"]
+            excludedsubs = loaded_parms["dataset"]["exclusion"]
             print(f'{excludedsubs=}')
             if len(excludedsubs) > 0:
                 self.lst_excluded_subjects.clear()
-                self.lst_excluded_subjects.addItems(excludedsubs)
+                self.lst_excluded_subjects.addItems(sorted(excludedsubs))
 
         except KeyError as subload_kerr:
             print(f"{self.fill_subject_list.__name__} received a KeyError: {subload_kerr}")
             return
 
-    def get_easl_paths(self, loaded_parms: dict):
+    def set_easl_paths(self, loaded_parms: dict):
         try:
             easl_type = loaded_parms["EXPLOREASL_TYPE"]
             if easl_type == "LOCAL_UNCOMPILED":
@@ -1159,7 +1192,7 @@ class xASL_Parms(QMainWindow):
                 self.le_easl_dir.setText(str(loaded_parms["MyPath"]))
             elif easl_type == "LOCAL_COMPILED":
                 self.cmb_easl_type.setCurrentIndex(self.cmb_easl_type.findText("Local ExploreASL Compiled"))
-                self.le_easl_mcr.setText(str(loaded_parms["MyCompiledPath"]))
+                self.le_easl_mcr.setText(str(loaded_parms["MyPath"]))
                 self.le_mrc_dir.setText(str(loaded_parms["MCRPath"]))
             # TODO Docker Scenario goes here
             elif easl_type == "DOCKER_IMAGE":
@@ -1168,7 +1201,7 @@ class xASL_Parms(QMainWindow):
                 pass
 
         except KeyError as easlpaths_kerr:
-            print(f"{self.get_easl_paths.__name__} received a KeyError: {easlpaths_kerr}")
+            print(f"{self.set_easl_paths.__name__} received a KeyError: {easlpaths_kerr}")
             return
 
     ############################################
