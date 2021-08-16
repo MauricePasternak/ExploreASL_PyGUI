@@ -311,6 +311,7 @@ class QuantitativeFieldsStrict(BaseModel):
     def n_compartments_validate(cls, val):
         if val not in {1, 2}:
             raise ValueError("The indicated number of compartments for quantification must be either 1 or 2")
+        return val
 
     @validator("SaveCBF4D")
     @classmethod
@@ -533,15 +534,19 @@ class DataParSchemaStrict(BaseModel):
     @validator("MyPath")
     @classmethod
     def validate_MyPath(cls, val, values):
-        path = _fileIO.pathcheck_aspath(val)
-        if not path:
-            raise ValueError("This field was found to no longer exist")
 
-        if not _fileIO.pathcheck_valid_dir(path):
-            raise ValueError("This field needs to point to a directory.")
+        if not val or not isinstance(val, (Path, str)):
+            raise ValueError("An invalid value was supplied for this field")
 
         # ExploreASL from Github
         if values["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED":
+            path = _fileIO.pathcheck_aspath(val)
+            if not path:
+                raise ValueError("This field was found to no longer exist")
+
+            if not _fileIO.pathcheck_valid_dir(path):
+                raise ValueError("This field needs to point to a directory.")
+
             if not _fileIO.pathcheck_child_fits_regex(path, "ExploreASL_Master.m"):
                 raise ValueError("ExploreASL Directory was compromised as it did not contain a master script.")
             return str(path)
@@ -551,6 +556,26 @@ class DataParSchemaStrict(BaseModel):
         # that contains the run_xASL_latest script. The section will contain ExploreASL.m ; this MyPath key must point
         # to the latter
         elif values["EXPLOREASL_TYPE"] == "LOCAL_COMPILED":
+            initial_path = Path(val)
+            # Scenario 1: User has indicated the later xASL_latest folder which does not exist yet
+            try:
+                if all([
+                    # These custom basename methods work with non-existent paths
+                    _fileIO.pathcheck_basename_regex(initial_path, "xASL_.*"),
+                    _fileIO.pathcheck_basename_regex(initial_path.parent, "xASL_.*_mcr"),
+                    _fileIO.pathcheck_filechild_exists(initial_path.parent.parent, "xASL_latest.ctf")
+                ]):
+                    return str(initial_path)
+            except (ValueError, AttributeError):
+                raise ValueError("An invalid value or corrupt series of characters was supplied for this field")
+
+            # Otherwise, need to proceed as if verifying a legitimate file
+            path = _fileIO.pathcheck_aspath(initial_path)
+            if not path:
+                raise ValueError("This field was found to no longer exist")
+
+            if not _fileIO.pathcheck_valid_dir(path):
+                raise ValueError("This field needs to point to a directory.")
 
             # First try to find out if the ExploreASL_Master.m file can be derived
             match = peekable(path.rglob("ExploreASL_Master.m"))
@@ -563,16 +588,17 @@ class DataParSchemaStrict(BaseModel):
                 else:
                     return str(path)
 
-            # Scenario 1: User has indicated the early xASL_latest folder and has not yet run the run_xASL_latest.sh
+            # Scenario 2: User has indicated the early xASL_latest folder and has not yet run the run_xASL_latest.sh
             if all([
                 not _fileIO.pathcheck_filechild_exists(path, "ExploreASL_Master.m"),
-                _fileIO.pathcheck_filechild_exists(path, "run_xASL_latest.sh"),
+                _fileIO.pathcheck_filechild_exists(path, "run_xASL_latest.sh") or
+                _fileIO.pathcheck_filechild_exists(path, "xASL_latest.exe"),
                 _fileIO.pathcheck_filechild_exists(path, "xASL_latest.ctf")
             ]):
                 path = path / "xASL_latest_mcr" / "xASL_latest"
                 return str(path)
 
-            # Scenario 2: User has indicated the latter xASL_latest folder
+            # Scenario 3: User has indicated the latter xASL_latest folder was exists by this point
             elif all([
                 _fileIO.pathcheck_basename_regex(path, "xASL_.*"),
                 _fileIO.pathcheck_basename_regex(path.parent, "xASL_.*_mcr"),
@@ -803,16 +829,47 @@ class DataParSchemaLenient(BaseModel):
     @validator("MyPath")
     @classmethod
     def validate_MyPath(cls, val, values, field):
-        path = _fileIO.pathcheck_aspath(val)
-        if not path:
+        if not val or not isinstance(val, (Path, str)):
             return field.default
 
         # ExploreASL from Github
         if values["EXPLOREASL_TYPE"] == "LOCAL_UNCOMPILED":
-            if not _fileIO.pathcheck_child_fits_regex(path, "ExploreASL_Master.m"):
+            path = _fileIO.pathcheck_aspath(val)
+            if not path:
                 return field.default
 
+            if not _fileIO.pathcheck_valid_dir(path):
+                return field.default
+
+            if not _fileIO.pathcheck_child_fits_regex(path, "ExploreASL_Master.m"):
+                return field.default
+            return str(path)
+
+        # Note: If working with the compiled ExploreASL, the MyPath variable must point to a possibly-not-yet-existing
+        # location along the lines of ./xASL_latest/xASL_latest_mcr/xASL_latest ; The first xASL_latest is the folder
+        # that contains the run_xASL_latest script. The section will contain ExploreASL.m ; this MyPath key must point
+        # to the latter
         elif values["EXPLOREASL_TYPE"] == "LOCAL_COMPILED":
+            initial_path = Path(val)
+            # Scenario 1: User has indicated the later xASL_latest folder which does not exist yet
+            try:
+                if all([
+                    # These custom basename methods work with non-existent paths
+                    _fileIO.pathcheck_basename_regex(initial_path, "xASL_.*"),
+                    _fileIO.pathcheck_basename_regex(initial_path.parent, "xASL_.*_mcr"),
+                    _fileIO.pathcheck_filechild_exists(initial_path.parent.parent, "xASL_latest.ctf")
+                ]):
+                    return str(initial_path)
+            except (ValueError, AttributeError):
+                return field.default
+
+            # Otherwise, need to proceed as if verifying a legitimate file
+            path = _fileIO.pathcheck_aspath(initial_path)
+            if not path:
+                return field.default
+
+            if not _fileIO.pathcheck_valid_dir(path):
+                return field.default
 
             # First try to find out if the ExploreASL_Master.m file can be derived
             match = peekable(path.rglob("ExploreASL_Master.m"))
@@ -823,16 +880,17 @@ class DataParSchemaLenient(BaseModel):
                 else:
                     return str(path)
 
-            # Scenario 1: User has indicated the early xASL_latest folder and has not yet run the run_xASL_latest.sh
+            # Scenario 2: User has indicated the early xASL_latest folder and has not yet run the run_xASL_latest.sh
             if all([
                 not _fileIO.pathcheck_filechild_exists(path, "ExploreASL_Master.m"),
-                _fileIO.pathcheck_filechild_exists(path, "run_xASL_latest.sh"),
+                _fileIO.pathcheck_filechild_exists(path, "run_xASL_latest.sh") or
+                _fileIO.pathcheck_filechild_exists(path, "xASL_latest.exe"),
                 _fileIO.pathcheck_filechild_exists(path, "xASL_latest.ctf")
             ]):
                 path = path / "xASL_latest_mcr" / "xASL_latest"
                 return str(path)
 
-            # Scenario 2: User has indicated the latter xASL_latest folder
+            # Scenario 3: User has indicated the latter xASL_latest folder was exists by this point
             elif all([
                 _fileIO.pathcheck_basename_regex(path, "xASL_.*"),
                 _fileIO.pathcheck_basename_regex(path.parent, "xASL_.*_mcr"),
@@ -844,7 +902,7 @@ class DataParSchemaLenient(BaseModel):
                 return field.default
 
         else:
-            return str(path)
+            return field.default
 
     @validator("subject_regexp")
     @classmethod

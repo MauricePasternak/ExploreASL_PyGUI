@@ -57,6 +57,8 @@ class ExploreASL_Worker(QRunnable):
         self.nworkers = nworkers
         self.imodules = imodules
         self.worker_env = worker_env
+        self.process_context = ""
+        self.process_history = set()
 
         # Control Attributes
         self.terminate_attempted = False
@@ -64,7 +66,7 @@ class ExploreASL_Worker(QRunnable):
         self.proc_gone, self.proc_alive = [], []
 
         # Parsing Attributes
-        self.regex_errstart = re.compile(r"ERROR: Job iteration terminated!")
+        self.regex_errstart = re.compile(r"ERROR:[\w\s:_]+\n")
         self.regex_errend = re.compile(r"CONT: but continue with next iteration!")
         self.regex_findtarget = re.compile(
             r"=== (?:Subject: (?P<Subject>\w+), )?"
@@ -129,7 +131,7 @@ class ExploreASL_Worker(QRunnable):
 
         elif self.easl_scenario == "LOCAL_COMPILED":
             ProcessModules = '[' + ' '.join([str(item) for item in self.imodules]) + ']'
-            path_datapar = self.worker_parms["D"]["ROOT"]
+            path_studydir = self.worker_parms["D"]["ROOT"]
 
             # This path may not exist yet. It is created by run_xASL_latest and houses the ExploreASL.m files
             path_compiled_easl_createdpath = Path(self.worker_parms["MyPath"])
@@ -150,8 +152,12 @@ class ExploreASL_Worker(QRunnable):
 
             # Generate the string that the command line will feed into the complied MATLAB session
             if system() == "Windows":
+
+                # NOTE FOR FUTURE SELF: On Windows the Study path cannot be enclosed in "" quotations while in UNIX,
+                # the double quotes have to be there. In both systems, there cannot be quotes around the array of which
+                # modules to run.
                 cmd_line = [str(compiled_easl_launcher),  # The run_xASL_latest.exe file
-                            f'"{str(path_datapar)}"',  # The study directory
+                            f'{str(path_studydir)}',  # The study directory
                             f'"0"',  # Import Modules Command
                             f'{ProcessModules}',  # Process Modules Command
                             f'"0"',  # Whether to pause or not
@@ -160,12 +166,13 @@ class ExploreASL_Worker(QRunnable):
                             ]
                 self.print_and_log(f"Worker {self.iworker}: Preparing subprocess with the following commands:\n"
                                    f"{cmd_line}", msg_type="info")
+                print(" ".join(cmd_line))
                 self.proc = psutil.Popen(cmd_line, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                          env=self.worker_env, creationflags=subprocess.CREATE_NO_WINDOW)
             else:
                 cmd_line = [str(compiled_easl_launcher),  # The run_xASL_latest.sh file
                             str(self.worker_parms["MCRPath"]),  # The MCR directory ending with /v97
-                            f'"{str(path_datapar)}"',  # The study directory
+                            f'"{str(path_studydir)}"',  # The study directory
                             f'"0"',  # Import Modules Command
                             f'{ProcessModules}',  # Process Modules Command
                             f'"0"',  # Whether to pause or not
@@ -181,7 +188,7 @@ class ExploreASL_Worker(QRunnable):
         #######################
         # LISTEN DURING THE RUN
         #######################
-        err_container, n_collected, module, subject, run, context = [], 0, None, None, None, ""
+        err_container, n_collected = [], 0
         self.is_running = True
         while self.proc.is_running():
 
@@ -192,24 +199,31 @@ class ExploreASL_Worker(QRunnable):
                 break
 
             output = self.proc.stdout.readline().strip()  # This line is blocking in nature
+            new_cycle_match = self.regex_findtarget.search(output)  # Catches changes in subject, run, or module
+
             print(f"{output=}")
             # Break out of the process is no longer running
             if output == '' and self.proc.poll() is not None:
                 break
 
             # TODO When ExploreASL grants the ability to latch onto a new module/subject/run, get those givens to
-            #  refresh the context of the error
-            elif self.regex_findtarget.search(output):
-                process_content = self.regex_findtarget.search(output).groupdict(default=None)
-                prologue = "Beginning to process: "
-                epilogue = f" in the study: {self.worker_parms['name']}"
-                body = ""
-                pprint(process_content)
-                for name in ["Module", "Subject", "Session"]:
-                    if process_content[name] is not None:
-                        body += f"{name}: {process_content[name]}"
-                self.signals.signal_inform_output.emit(prologue + body + epilogue)
-                context = body
+            #  refresh the context of the error; Currently this is buggy and needs to be addressed with the main group
+            elif new_cycle_match:
+                self.print_and_log(f"Worker {self.iworker}: Has captured the following context: "
+                                   f"{new_cycle_match.groupdict()}", "info")
+            #     print(f"Worker {self.iworker} found match: {new_cycle_match.groups()}")
+            #     process_content = new_cycle_match.groupdict(default="")
+            #     prologue = "Beginning to process: "
+            #     epilogue = f"\n\t - Study Name: {self.worker_parms['name']}"
+            #     body = ""
+            #     pprint(process_content)
+            #     for name in ["Module", "Subject", "Session"]:
+            #         if process_content[name]:
+            #             body += f"\n\t - {name}: {process_content[name]} "
+            #     if f"{body}{str(self.analysis_dir)}" not in self.process_history:
+            #         self.signals.signal_inform_output.emit(prologue + body + epilogue)
+            #         self.context = body
+            #         self.process_history.add(f"{body}{str(self.analysis_dir)}")
 
             # If the line is the start of an error message, activate collecting mode
             elif self.regex_errstart.search(output):
@@ -221,7 +235,7 @@ class ExploreASL_Worker(QRunnable):
                 err_container.append("")
                 msg = "\n".join(err_container)
                 self.print_and_log(f"Worker {self.iworker} detected the following Error message from "
-                                   f"ExploreASL which occurred under the following context:{context}\n"
+                                   f"ExploreASL which occurred under the following context:{self.process_context}\n"
                                    f"Message:\n\n{msg}")
                 err_container.clear()
                 self.is_collecting_stdout_err = False

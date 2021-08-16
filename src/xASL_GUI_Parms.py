@@ -752,7 +752,7 @@ class xASL_Parms(QMainWindow):
         study_dir = Path(validated_datapar.D.ROOT)
         try:
             with open(study_dir / "DataPar.json", 'w') as w:
-                json.dump(json_parms, w, indent=3)
+                json.dump(validated_datapar.dict(), w, indent=3)
 
             # Also, if this is BIDS, write to the root level asl.json
             if (study_dir / "asl.json").exists():
