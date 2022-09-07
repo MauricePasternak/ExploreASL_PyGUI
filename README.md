@@ -1,6 +1,12 @@
+# THIS REPOSITORY IS NO LONGER MAINTAINED [PLEASE VISIT THE NEW VERSION OF THE GUI HERE](https://github.com/MauricePasternak/ExploreASLJS)
+
 # Explore ASL GUI
 
 > Complementary GUI to assist Arterial Spin Labelling analysis by ExploreASL
+
+
+
+---
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 ![Version](https://img.shields.io/badge/Version-0.2.9-yellow)
@@ -91,7 +97,7 @@ The main ExploreASL program has over 55 adjustable parameters to account for ASL
 
 ![Image of ParmsMaker](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/ParmsMaker.png)
 
-Once data is imported and parameters defined, the user will be prepared to run the main program. The Executor Module allows for multi-processing analysis of multiple studies and/or multiple subjects per study simultaneously. The user is free to pause, resume, or terminate studies independently of one another. If errors occur, the module also creates a Run_Log file with a timestamp. Inside, relevant information taken from the ExploreASL program may help with diagnosing errors and bugs. 
+Once data is imported and parameters defined, the user will be prepared to run the main program. The Executor Module allows for multi-processing analysis of multiple studies and/or multiple subjects per study simultaneously. The user is free to pause, resume, or terminate studies independently of one another. If errors occur, the module also creates a Run_Log file with a timestamp. Inside, relevant information taken from the ExploreASL program may help with diagnosing errors and bugs.
 
 ![Image of Executor](https://github.com/MauricePasternak/ExploreASL_GUI/blob/master/github_media/Windows/Executor.png)
 
@@ -163,7 +169,7 @@ For the Github page of main program that this GUI interfaces with, click on the 
 
 A: The underlying toolkit utilized in the creation of this program is PySide2, a Python wrapper around the cross-platform C++ software Qt. As such, the program should be compatible with the most common operating systems, including:
 - Windows 10
-- Mac OS X: 10.14 (Mojave), 10.15 (Catalina), and 10.16 (BigSur) 
+- Mac OS X: 10.14 (Mojave), 10.15 (Catalina), and 10.16 (BigSur)
 - Linux 20.04 LTS (tested; earlier versions such as 18.04 may be unstable)
 
 > **Q: Do I need MATLAB in order to run this program?**
@@ -208,7 +214,7 @@ A: Use the main window's menu: File --> Specify path to MATLAB executable. The p
 
 > **Q: I have a formidable computer with dozens of cores, and I got a Segmentation Violation Detected error in the "ExploreASL run - errors.txt" file. What does this mean?**
 
-A: It's not a fault of the GUI or ExploreASL itself. It's a fault of MATLAB and how its glnax64 library plays with the current kernel/version of your operating system, leading to a crash when a significant number of cores are used for an extended period of time. You can simply press "Run ExploreASL" again. The program will pick up approximately from where it left off thanks to the .status file system. 
+A: It's not a fault of the GUI or ExploreASL itself. It's a fault of MATLAB and how its glnax64 library plays with the current kernel/version of your operating system, leading to a crash when a significant number of cores are used for an extended period of time. You can simply press "Run ExploreASL" again. The program will pick up approximately from where it left off thanks to the .status file system.
 
 > **Q: Is it safe to stop a study being run?**
 

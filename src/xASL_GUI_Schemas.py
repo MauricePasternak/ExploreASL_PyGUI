@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator, root_validator, ValidationError
+from pydantic import BaseModel, Field, validator, root_validator, ValidationError
 from typing import Any, List, Union, Optional
 from pathlib import Path
 # from pprint import pprint
@@ -280,7 +280,7 @@ class QuantitativeFieldsStrict(BaseModel):
     Initial_PLD: Union[int, float]
     LabelingDuration: Union[int, float]
     SliceReadoutTime: Union[int, float]
-    Lambda: Union[int, float]
+    Lambda: Union[int, float] = Field(gt=0, le=1)
     T2art: Union[int, float]
     TissueT1: Union[int, float]
     nCompartments: int
