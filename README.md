@@ -8,7 +8,7 @@
 
 ---
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: LGPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 ![Version](https://img.shields.io/badge/Version-0.2.9-yellow)
 ![PythonVersions](https://img.shields.io/badge/Python-3.8-green)
 
@@ -228,6 +228,6 @@ A: Unlike termination, pausing studies should be safe. The program will simply p
 
 ## License
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: LGPL v3](https://img.shields.io/badge/License-LGPLv3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0)
 
-- **[GPL license](https://www.gnu.org/licenses/gpl-3.0-standalone.html)**
+- **[LGPL license](https://www.gnu.org/licenses/lgpl-3.0-standalone.html)**
